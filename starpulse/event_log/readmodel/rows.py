@@ -6,7 +6,7 @@ from sqlalchemy import Connection, bindparam, delete, func, insert, select
 from sqlalchemy.dialects import sqlite
 
 from starpulse.event_log.readmodel.fold import Row
-from starpulse.event_log.readmodel.tables import criteria, tasks
+from starpulse.event_log.readmodel.tables import board_keys, criteria, tasks
 
 
 def load(db: Connection, task_id: str) -> Row | None:
@@ -28,7 +28,7 @@ def load_at(db: Connection, task_id: str) -> tuple[Row | None, int]:
     items = db.execute(
         select(criteria).where(criteria.c.task_id == task_id).order_by(criteria.c.kind, criteria.c.n)
     ).mappings()
-    row = {key: value for key, value in found.items() if key != "seq"} | {
+    row = {key: value for key, value in found.items() if key not in ("seq", "uuid")} | {
         "criteria": [{key: value for key, value in item.items() if key != "task_id"} for item in items]
     }
     return row, found["seq"]
@@ -45,7 +45,11 @@ def save_all(db: Connection, folded: Iterable[tuple[Row, int]]) -> None:
     items = list(folded)
     if not items:
         return
-    values = [{key: value for key, value in row.items() if key != "criteria"} | {"seq": seq} for row, seq in items]
+    values = [
+        {key: value for key, value in row.items() if key != "criteria"}
+        | {"seq": seq, "uuid": (row["meta"] or {}).get("uuid") or ""}
+        for row, seq in items
+    ]
     upsert = sqlite.insert(tasks)
     db.execute(
         upsert.on_conflict_do_update(index_elements=["id"], set_={key: upsert.excluded[key] for key in values[0] if key != "id"}),
@@ -54,3 +58,14 @@ def save_all(db: Connection, folded: Iterable[tuple[Row, int]]) -> None:
     db.execute(delete(criteria).where(criteria.c.task_id == bindparam("task")), [{"task": row["id"]} for row, _ in items])
     if numbered := [{"task_id": row["id"]} | item for row, _ in items for item in row["criteria"]]:
         db.execute(insert(criteria), numbered)
+    db.execute(delete(board_keys).where(board_keys.c.task_id == bindparam("task")), [{"task": row["id"]} for row, _ in items])
+    names = [
+        {"token": token, "task_id": row["id"], "kind": kind}
+        for row, _ in items
+        for kind, tokens in (("uuid", [row["meta"].get("uuid")]), ("alias", row["meta"].get("aliases") or []))
+        for token in tokens
+        if token
+    ]
+    if names:
+        keys = sqlite.insert(board_keys)
+        db.execute(keys.on_conflict_do_update(index_elements=["token"], set_={"task_id": keys.excluded.task_id, "kind": keys.excluded.kind}), names)

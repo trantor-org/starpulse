@@ -51,14 +51,14 @@ def _main_green(config: Config, pins: GitHub) -> MainGreen | None:
     if not (config.owner_source and config.board_repo):
         return None
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    return MainGreen(config.board_repo, pins.head, GitHubReader(connect(token)))
+    return MainGreen(config.board_repo, pins.head, GitHubReader(connect(token, caller="delivery_wiring")))
 
 
 def _stranded_checks(pulls: PullStore) -> Callable[[dict[str, Any]], None] | None:
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if not token:
         return None
-    reader = GitHubReader(connect(token))
+    reader = GitHubReader(connect(token, caller="delivery_wiring"))
     return lambda record: settle_checks(pulls, reader, record, time.time())
 
 
@@ -131,6 +131,7 @@ def start_delivery(
             alive=board.alive,
             enqueued=board.enqueued,
             closed=board.closed,
+            archived=board.archived,
             live=live,
             main_green=_main_green(config, pins),
             owner_source=config.owner_source,

@@ -694,20 +694,6 @@
       "title": "ClaimRelease",
       "type": "object"
     },
-    "CompleteRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/complete`: move the Done task `task` into the board's completed tasks.",
-      "properties": {
-        "task": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "task"
-      ],
-      "title": "CompleteRequest",
-      "type": "object"
-    },
     "Completed": {
       "properties": {
         "task": {
@@ -3890,6 +3876,11 @@
         },
         "name": {
           "type": "string"
+        },
+        "priority": {
+          "default": 0,
+          "description": "Which state wins when a task's dependencies would put it in more than one: the higher number wins, a tie keeps the task where it is.",
+          "type": "integer"
         },
         "role": {
           "anyOf": [
@@ -7425,7 +7416,7 @@
     },
     "TaskPutRequest": {
       "additionalProperties": false,
-      "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over, park it or\ndispatch a session to it.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that\nname only an `assignee` dispatch that session to the task, which the task actor pins; the `base` assignee is the\nholder, found dead, whose lease the dispatch ends first. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`\n(the archived task returns to the board), `interactive: true` (the unattended task is taken over) and `park`\n(the held task pauses for the one reason it names, with the `comment` beside it).",
+      "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, take it over, park it\nor dispatch a session to it.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that\nname only an `assignee` dispatch that session to the task, which the task actor pins; the `base` assignee is the\nholder, found dead, whose lease the dispatch ends first. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `completed: true`\n(the Done task moves into the board's completed tasks), `archived: false` (the archived task returns to the\nboard), `interactive: true` (the unattended task is taken over) and `park` (the held task pauses for the one\nreason it names, with the `comment` beside it).",
       "properties": {
         "actor": {
           "anyOf": [
@@ -7465,6 +7456,18 @@
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "completed": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
             },
             {
               "type": "null"
@@ -7576,6 +7579,16 @@
           ],
           "default": null,
           "description": "When an archived task last changed in the read model: a Done task's entry into Done."
+        },
+        "id": {
+          "default": "",
+          "description": "The task's stored UUID, which never changes with its key; empty for a task with none yet.",
+          "type": "string"
+        },
+        "key": {
+          "default": "",
+          "description": "The task's key, such as `TASK-45`: the same as `task`.",
+          "type": "string"
         },
         "record": {
           "additionalProperties": true,
@@ -8283,9 +8296,6 @@
           },
           {
             "$ref": "#/$defs/RetireRequest"
-          },
-          {
-            "$ref": "#/$defs/CompleteRequest"
           },
           {
             "$ref": "#/$defs/CreateRequest"

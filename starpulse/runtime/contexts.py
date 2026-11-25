@@ -524,6 +524,7 @@ def run_contexts(
     if starters is None:
         log = EventLog(database_url(config.database_url, base))
         child_cpu.keep_process(log, child)
+        log.keep_wakes(child)
         starters = default_starters(config, path, base, log, names, stop, go)
         boot = os.environ.get(BOOT_ENV)
         if started is None and boot:

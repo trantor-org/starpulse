@@ -20,6 +20,7 @@ from starpulse.event_log.readmodel.declared import Declared, declared_fields
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.readmodel.projector import Projector
 from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.readmodel.signals import EVENTS
 from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.assembly import assemble, declared
@@ -114,7 +115,7 @@ class Placed:
         """Fold on each wake of the log until `stop`: what a write instance's Board writer appends."""
         thread = threading.Thread(
             target=self.log.run_on_wake,
-            args=(stop, self.fold, "the read model pass failed"),
+            args=(stop, self.fold, "the read model pass failed", EVENTS),
             name="placed-follow",
             daemon=True,
         )

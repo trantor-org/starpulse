@@ -18,6 +18,7 @@ from sqlalchemy.dialects import sqlite
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.table_registry import definition, is_stamped, stamp_of, swap, write_stamp
 from starpulse.event_log.tables import settings, signal_folds, task_phase_spend, task_sessions
+from starpulse.event_log.signals import setting
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.session_ledger import REVISION
 from starpulse.flow_metrics.model import spend
@@ -131,5 +132,5 @@ class TaskSpend:
         return len(changed)
 
     def follow(self, stop: StopEvent) -> None:
-        """Run `catch_up` after each append or another process's commit until `stop` is set."""
-        self._events.run_on_wake(stop, self.catch_up, "task spend catch-up failed")
+        """Run `catch_up` each time another process moves the signal revision, until `stop` is set."""
+        self._events.run_on_wake(stop, self.catch_up, "task spend catch-up failed", setting(REVISION))

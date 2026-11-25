@@ -162,9 +162,7 @@ class TaskCreator(Protocol):
     `acceptanceCriteria`); a caller in the same process may pass any other field `TaskEditor` sets. `cohort` says the
     task is one of a batch of two or more. A successful `Written.output` is the new task's id."""
 
-    def __call__(
-        self, title: str, details: Mapping[str, Any], /, actor: str = ..., cohort: bool = ...
-    ) -> Written: ...
+    def __call__(self, title: str, details: Mapping[str, Any], /, actor: str = ..., cohort: bool = ...) -> Written: ...
 
 
 #: Every open milestone as `{id, title, outcome, specs, adrs, retro, description}`, oldest id first.
@@ -319,3 +317,6 @@ class Board:
     wrote it; a raise is logged and the move stands."""
     attach: Callable[[EventLog], None]
     """What a context that reads the Board from the read model, and so never calls `start`, needs of the event log `start` would have been handed there."""
+    archived: Callable[[str], None]
+    """Tells the board that the task actor archived a task, given its id, so it can close the pull requests the task
+    leaves open; a raise is logged and the archive stands."""

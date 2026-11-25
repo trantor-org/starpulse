@@ -167,6 +167,7 @@ BUCKETS_S = (0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 
 PROJECTION_METRIC = "starpulse_task_actor_projection_seconds"
 HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
 MERGE_MOVE_METRIC = "starpulse_task_merge_move_seconds"
+PARK_RELEASE_METRIC = "starpulse_task_park_release_seconds"
 RECEIPT_DONE_METRIC = "starpulse_task_receipt_done_seconds"
 MERGE_LOCK_WAIT_METRIC = "starpulse_task_actor_merge_lock_wait_seconds"
 MERGE_BOARD_WRITE_METRIC = "starpulse_task_actor_merge_board_write_seconds"
@@ -189,6 +190,8 @@ _CHECKPOINT_DEBOUNCE_S = 10.0
 _NOTICE_JOIN_S = 10.0
 #: The bounds of the projection and handoff histograms: a pin walk takes seconds, and the 10 s bound is the measure.
 SLOW_BUCKETS_S = (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
+#: The bounds of the park-release histogram: a release takes seconds, and a late one hours.
+PARK_RELEASE_BUCKETS_S = (1.0, 10.0, 60.0, 300.0, 900.0, 3600.0, 14400.0, 43200.0)
 #: Seconds to wait before each retry of a write that found the board database locked.
 LOCK_BACKOFF_S = (0.1, 0.4, 1.6)
 
@@ -338,6 +341,7 @@ class TaskActor:
         parked: Callable[[str], None] = _ignore,
         released: Callable[[str], None] = _ignore,
         closed: Callable[[str], None] = _ignore,
+        archived: Callable[[str], None] = _ignore,
         returned: Callable[[str], None] = _ignore,
         alive: Callable[[str], bool] = lambda _task: False,
         enqueued: Callable[[str], None] = _ignore,
@@ -428,6 +432,7 @@ class TaskActor:
         self._tell = parked
         self._released = released
         self._closed = closed
+        self._archived = archived
         self._returned = returned
         self._alive = alive
         self._enqueued = enqueued
@@ -506,6 +511,9 @@ class TaskActor:
         #: Seconds from a pull request's merge to the write that moved the task citing it.
         self._merge_move = Histogram(SLOW_BUCKETS_S)
         self._receipt_done = Histogram(BUCKETS_S)
+        #: Seconds from the first event a Waiting task was released on to the write that moved it, and when each was heard.
+        self._park_release = Histogram(PARK_RELEASE_BUCKETS_S)
+        self._heard_at: dict[str, float] = {}
         #: Seconds a merge webhook waited for the lock, and the board write that moved the task it merged.
         self._merge_lock_wait = Histogram(SLOW_BUCKETS_S)
         self._merge_board_write = Histogram(SLOW_BUCKETS_S)
@@ -569,6 +577,9 @@ class TaskActor:
                 ),
                 *self._merge_move.lines(
                     MERGE_MOVE_METRIC, "Seconds from a pull request's merge to the write that moved its task."
+                ),
+                *self._park_release.lines(
+                    PARK_RELEASE_METRIC, "Seconds from an event a parked task waited on to the write that released it."
                 ),
                 *self._receipt_done.lines(
                     RECEIPT_DONE_METRIC, "Seconds from receiving a merge webhook to the write that moved its task."
@@ -949,6 +960,7 @@ class TaskActor:
             for subject in gate
             if self._happened(subject, commits.get(subject), 0.0 if subject in accepted else entered)
         }
+        logger.info("task actor: %s waits on %s, already heard %s", name, sorted(gate), sorted(heard))
         self._unwatch(name)
         self._gates[name] = gate
         if commits:
@@ -972,6 +984,7 @@ class TaskActor:
             if not self._until[subject]:
                 del self._until[subject]
         self._heard.pop(name, None)
+        self._heard_at.pop(name, None)
         self._commits.pop(name, None)
 
     def event_seen(self, subject: str, sha: str | None = None) -> None:
@@ -985,8 +998,10 @@ class TaskActor:
                 if (commit := self._commits.get(name, {}).get(subject)) is None
                 or self._contains(sha, self._merge_of(commit))
             )
+            logger.info("task actor: event %s matched Waiting tasks %s", subject, names or "none")
             for name in names:
                 self._heard.setdefault(name, set()).add(subject)
+                self._heard_at.setdefault(name, self._wall())
             self.touch([TaskTouched(name, Trigger.ON_ALERT, subject) for name in names])
 
     def _merge_of(self, commit: str) -> str | None:
@@ -1523,6 +1538,8 @@ class TaskActor:
                 return self._fault(agent, f"fact {fact}", error)
             if held is None:
                 continue
+            if fact == "deps_unresolved" and target and self._feed.roles.outranks(agent["state"], target):
+                continue  # the lane outranks the one the dependency leads to: the task stays where it is
             evidence, comment = held
             if fact == "move_requested":
                 target = self._moves.get((agent["state"], f"{event}:{derivation.requested_lane(evidence)}"))
@@ -1536,7 +1553,7 @@ class TaskActor:
             if fact in _ASKS:
                 changes = {"description": section_set(agent["description"], "Needs attention", comment)}
                 if fact == "overdue" and derivation.dead(self._port, agent):
-                    changes["dependencies"] = []  # Needs attention carries none; the reason names them
+                    changes["dependencies"] = []  # a dead wait: the reason names them
             if target == agent["state"]:  # a stay: a ready pull request is enqueued, any other fact holds the lane
                 if fact == "pr_ready":
                     self._notice(
@@ -2180,6 +2197,10 @@ class TaskActor:
             roles = self._feed.roles
             if source == roles.working and target == roles.waiting:
                 self._notice(self._tell, name, "was parked but its holder was not told")
+            if source == roles.waiting and (heard_at := self._heard_at.pop(name, None)) is not None:
+                lag = max(0.0, self._wall() - heard_at)
+                self._park_release.observe(lag)
+                logger.info("task actor: %s released to %s %.1f s after its event", name, target, lag)
             if source == roles.waiting and target == roles.working:
                 self._released_visit.add(name)
             if source == roles.waiting and target in (roles.ready, roles.review, roles.working):
@@ -2198,6 +2219,8 @@ class TaskActor:
                 )
             if target == roles.done:
                 self._notice(self._closed, name, "was closed but the board was not told")
+            if self._is_closed(target):
+                self._notice(self._archived, name, "was archived but the board was not told")
             return True
         logger.warning("task actor: %s was not moved to %s: %s", name, target, written.output)
         moved = False
@@ -2240,7 +2263,7 @@ class TaskActor:
         name, lane = agent["id"], agent["state"]
         reason = f"{FAULT} {step}: {error}"
         dependencies = tuple(agent.get("dependencies", ()))
-        if dependencies:  # Needs attention carries none, so the reason names them
+        if dependencies:  # a fault drops the wait: the reason names them
             reason += f" (was waiting on {', '.join(dependencies)})"
         if self._faults.get(name) == (lane, reason):
             return False

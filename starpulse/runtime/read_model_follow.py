@@ -6,6 +6,7 @@ import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
+from starpulse.event_log.readmodel.signals import EVENTS, FOLD
 from starpulse.event_log.wake import StopEvent
 
 if TYPE_CHECKING:
@@ -67,13 +68,13 @@ def follow(projector: _Projector | None, feed: _Feed, stop: StopEvent, log: Even
     if projector is not None:
         threading.Thread(
             target=log.run_on_wake,
-            args=(stop, _giving_up(projector.fold_tasks), "StarPulse: the task fold pass failed"),
+            args=(stop, _giving_up(projector.fold_tasks), "StarPulse: the task fold pass failed", EVENTS),
             name="task-fold",
             daemon=True,
         ).start()
     thread = threading.Thread(
         target=log.run_on_wake,
-        args=(stop, _giving_up(fold), "StarPulse: the read model pass failed"),
+        args=(stop, _giving_up(fold), "StarPulse: the read model pass failed", FOLD),
         name="read-model-follow",
         daemon=True,
     )

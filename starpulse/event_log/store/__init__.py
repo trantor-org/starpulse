@@ -8,9 +8,10 @@ from starpulse.event_log.store.event_store import (
     Upcasters,
     lacks_history,
 )
-from starpulse.event_log.store.tables import metadata
+from starpulse.event_log.store.tables import NEWEST_EVENT, metadata
 
 __all__ = [
+    "NEWEST_EVENT",
     "metadata",
     "EventStore",
     "NewEvent",

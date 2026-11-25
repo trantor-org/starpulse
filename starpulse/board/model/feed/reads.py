@@ -1,5 +1,6 @@
 """Feed reads: a task, its moves and the machine tasks the page shows."""
 
+import re
 import time
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
@@ -14,6 +15,9 @@ from starpulse.board.model.feed.shared import (
 )
 from starpulse.event_log.lane_events import done_lanes
 from starpulse.machine_engine.model.transitions import lane_id
+
+
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
 
 class ReadMethods:
@@ -68,7 +72,9 @@ class ReadMethods:
         held = [key for key, row in rows.items() if row is not None]
         live = [key for key in held if not rows[key]["archived"]]
         key = next(iter(live or held), task_id)
-        return key, rows.get(key)
+        if (row := rows.get(key)) is not None and str(row["id"]).lower() != key.lower():
+            key = str(row["id"])  # a UUID or alias the read model resolved: draw it under the task's own key
+        return key, row
 
     def _read_model_moves(self, summary: Mapping[str, Any]) -> dict:
         """The moves a read-model Task offers: the Board machine's out of its lane, a done Task's reopen among them."""
@@ -124,8 +130,10 @@ class ReadMethods:
         return None if row is None else self._read_model_agent(key, lean, row, settled_done=True)
 
     def current_id(self, task_id: str) -> str:
-        """The id the task answers to now: `task_id` itself unless a rename gave the task another."""
-        return self._aliases.get(task_id, task_id)
+        """The id the task answers to now: `task_id` itself unless a rename gave the task another or it is the task's UUID."""
+        if (named := self._aliases.get(task_id)) is not None:
+            return named
+        return (self._read_model.resolve(task_id) if _UUID.fullmatch(task_id) else None) or task_id
 
     def is_open(self, task_id: str) -> bool:
         """Whether `held` finds the task, without building the moves and standing verdicts (one read of the task's file

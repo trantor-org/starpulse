@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 PLACE = "starpulse.place"  # in a request's scope: its place among the streams open
 WORKERS = "starpulse.workers"  # in a request's scope: the limiter of the threads it runs on, the reserve for a light one
 SPANS = "starpulse.spans"  # in a timed request's scope: the dict its handler adds named seconds to, for the slow line
+CAUGHT_UP_S = "starpulse.caught_up_s"  # in a request's scope: the seconds it waited to apply what the workers keep
 RAN = "starpulse.ran"  # in a timed request's scope: what its worker thread calls once it has the request
 
 

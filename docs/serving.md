@@ -371,8 +371,8 @@ GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for th
                    `process_threads`, `process_open_fds` and `process_start_time_seconds`, which moves on every
                    restart. With `[board.actor]`, also `starpulse_task_actor_refusals_total` and the
                    `starpulse_task_actor_latency_seconds`, `starpulse_task_actor_projection_seconds` and
-                   `starpulse_task_actor_handoff_seconds`, `starpulse_task_merge_move_seconds` and
-                   `starpulse_task_receipt_done_seconds` histograms, and the gauges
+                   `starpulse_task_actor_handoff_seconds`, `starpulse_task_merge_move_seconds`,
+                   `starpulse_task_park_release_seconds` and `starpulse_task_receipt_done_seconds` histograms, and the gauges
                    `starpulse_task_actor_recovery_finished` and `starpulse_task_actor_merged_review_waiting`
 GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doctor` against this server's snapshot and config,
                    each {check, status (pass, warn, fail), reason}, held for a minute; the Ledger's banner reads it.
@@ -593,6 +593,7 @@ type = "native"
 # alive = "my-alive {id}"  # exits 0 while the session holding the task is alive; `pr_unfinished_alive` holds on it, `pr_unfinished_dead` on a nonzero exit
 # enqueued = "my-enqueued {id}"  # runs when a same-lane route fires (an `ENQUEUE` that leaves the task where it is), such as queueing a green Review pull request for merge
 # closed = "my-closed {id}"  # runs after the task actor moves a task to Done, so the board can file what follows the close (see Task actor)
+# archived = "my-archived {id}"  # runs after the task actor archives a task, so the board can close the pull requests it leaves open (see Task actor)
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 # transcripts = "~/.claude/projects"  # where Claude Code writes each session's transcript; the harness telemetry reads a session's last turn there, and a terminal halt (a synthetic error reply opening `Autocompact is thrashing`) ends the session with a `SESSION_ENDED` event; only the transcript's last 64 KiB is read
 # types = ["spike", "bug"]  # the names a task's `type` may take; a write setting any other is refused with this list in its reason, so with no list any non-empty type is accepted and a board names none of its own
@@ -616,7 +617,7 @@ type = "native"
 #   on       = { to = "Done" }                 a write that enters Done (`from = [...]` narrows it to those states)
 #            | { to = "Done", while = true }   ... and a write that leaves the task in Done
 #            | { write = true }                every write, whatever the task's state
-#   require  = one primitive: field, label, section, body, block, dependencies, checklist, readable, retained, no_implied_dependency, pull_proof, matrix_profile, qa_verdict, pulls_ready, pulls_failing, pulls_clear, pulls_changed, or all_of, any_of, exactly_one,
+#   require  = one primitive: field, label, section, body, block, dependencies, checklist, readable, retained, no_implied_dependency, pull_proof, matrix_profile, qa_verdict, pulls_ready, pulls_failing, pulls_clear, pulls_changed, archive_cited, or all_of, any_of, exactly_one,
 #              none_of over a list of them
 #   unless_actor = ["temporal/reconciler"]         actors the rule does not judge: operator, agent, <instance>/<workflow>
 # [[board.guards]]
@@ -1254,7 +1255,7 @@ A move from the working lane (the first resting State the lifecycle does not end
 `parked` command once, with `{id}` replaced by the task's id, so a board can tell the session that holds the task. A
 move from Waiting to Ready runs the board's `released` command the same way, so a board can resume the session that
 parked the task. A task In Progress whose holder settles idle (the harness machine's `SESSION_SETTLED`, from the session's Stop hook completing) runs the board's `idle` command with `{id}` and `{verdict}` `confirm`, so a board can say whether the holder is busy; a nonzero `confirm` holds the task until the next move of a machine other than the harness settles it again, which the session's own activity cancels. An idle holder is then run with `resume`, so a board can wake it in place with its next step; after two resumes with no progress the next settle runs `escalate` first, and an `escalate` that fails moves the task to Needs attention. A task with an open criterion is nudged instead: its fourth idle settle with no criterion resolved since moves it to Needs attention. A `resume` that exits nonzero is sent again at once, as a holder whose resume was lost settles no more, and the third failure in a row moves the task to Needs attention; one that exits 3 means no session can receive the wake, so no later settle comes, and moves the task to Needs attention at once. A holder that settled while the task actor was down is treated as settling when the actor has indexed its tasks, unless a later harness event for the task shows it started again.
-A move from the working lane to Review that the board refuses (an open review thread, a conflict, an unchecked criterion) publishes the `in-progress` machine event `REVIEW_REFUSED` once (reason in its data, so `task.<id>.review_refused` on the NATS bridge), until the task's facts change, so the holder is told why a ready pull request did not reach Review. A move from Review back to the working lane runs the board's `returned` command the same way, so a board can wake the session that delivered a pull request that turned draft or conflicting. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
+A move from the working lane to Review that the board refuses (an open review thread, a conflict, an unchecked criterion) publishes the `in-progress` machine event `REVIEW_REFUSED` once (reason in its data, so `task.<id>.review_refused` on the NATS bridge), until the task's facts change, so the holder is told why a ready pull request did not reach Review. A move from Review back to the working lane runs the board's `returned` command the same way, so a board can wake the session that delivered a pull request that turned draft or conflicting. A move to an archived lane runs the board's `archived` command once the same way, so a board can close the pull requests the archived task leaves open. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
 check that waits on time after the merge. A command that exits nonzero is logged; the move stands.
 
 A write the board refuses is logged and counted, and is not retried until the task's facts change; checking the last
@@ -1280,6 +1281,8 @@ failed board write of it is logged and counted in `starpulse_task_actor_refusals
   the pin walk included.
 - `starpulse_task_actor_handoff_seconds`: a histogram of the seconds from a store save to the actor reading it. The
   bounds run to 600 s, so a handoff or projection past the 10 s bound shows.
+- `starpulse_task_park_release_seconds`: a histogram of the seconds from the first event a Waiting task was released on
+  to the write that released it. The actor logs each event subject with the Waiting tasks it matched, and each release.
 - `starpulse_task_merge_move_seconds`: a histogram of the seconds from a pull request's merge time to the actor's write
   that moved a task citing it. Start recovery yields to a pending store save, task change or move before it takes its
   next task, and a save derives the tasks citing a merged pull request first, so a merge during recovery lands in a

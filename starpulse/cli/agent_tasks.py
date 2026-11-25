@@ -146,6 +146,11 @@ def linkify(text: str, base: str, pulls: Sequence[Mapping[str, Any]] = ()) -> st
     return _LINKABLE.sub(link, text)
 
 
+def _keyed(view: dict[str, Any], document: dict[str, Any]) -> dict[str, Any]:
+    """`view` with its item's UUID as `id` beside the `key` it was named by; `id` is empty for a task the board holds no record of."""
+    return {**view, "id": document.get("id", ""), "key": view["id"]}
+
+
 def _described(view: dict[str, Any], description: str, base: str) -> dict[str, Any]:
     """`view` with the task's `description`, its ids linked."""
     return {**view, "description": linkify(description, base, view["prs"])}
@@ -216,7 +221,7 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
             ],
         }
     (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
-    return _described(_active(view, snapshot), agent["description"], base)
+    return _described(_keyed(_active(view, snapshot), reply if record else {}), agent["description"], base)
 
 
 def _without_done_dependencies(
@@ -259,12 +264,12 @@ def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, A
     state = lane if lane == done or not document.get("archived") else ARCHIVED
     agent = cold_agent(record["id"], record, state, document.get("entered"))
     (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
-    return _described(view, agent["description"], base)
+    return _described(_keyed(view, document), agent["description"], base)
 
 
 def moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     shown = show(args, environ)
-    return {"task": shown["id"], "lane": shown["lane"], "moves": shown["moves"]}
+    return {"task": shown["key"], "lane": shown["lane"], "moves": shown["moves"]}
 
 
 def writer(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, str]:
@@ -700,8 +705,8 @@ def task_cold_done(args: argparse.Namespace, environ: Mapping[str, str]) -> dict
 
 
 def task_complete(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/complete"
-    status, reply = agent_wire.post(base, path, {"task": args.task})
+    base, path = agent_wire.server_url(args.server, environ), f"/api/tasks/{args.task}"
+    status, reply = agent_wire.put(base, path, {"completed": True})
     return {"task": record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
 
 

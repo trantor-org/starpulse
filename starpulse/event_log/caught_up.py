@@ -1,7 +1,8 @@
 """What other processes keep in the log, applied when a request reads it, so the process that serves requests runs no follower thread.
 
 A step runs when the log's commit count has moved since the last read, so a read with nothing committed in between costs
-none of the queries a follower's wake would; a read after a write sees the write.
+none of the queries a follower's wake would; a read after a write sees the write. Reads that wait on a running apply
+share the one that follows it: an apply that began after a read arrived is as fresh as the one that read would run.
 """
 
 import logging
@@ -20,6 +21,8 @@ class CaughtUp:
         self._every: list[Callable[[], None]] = []
         self._lock = threading.Lock()
         self._commits: int | None = None
+        self._begun = 0  # applies begun so far
+        self._landed = 0  # the number of the last apply that finished every step
 
     def state(self, name: str, apply: Callable[[], None]) -> None:
         """Apply the state kept under `name` now, and again at the first read after its version moves."""
@@ -62,13 +65,16 @@ class CaughtUp:
         return bool(self._every) or self._log.appends != self._commits
 
     def __call__(self) -> None:
+        arrived = self._begun  # before the lock: an apply numbered past it began after this read arrived
         with self._lock:  # a read and its apply finish before the next starts, so an old read never lands last
             commits = self._log.appends  # before the steps, so a commit during them is read by the next call
-            if commits != self._commits:
+            if commits != self._commits and self._landed <= arrived:
+                self._begun += 1
                 try:
                     for step in self._steps:
                         step()
                     self._commits = commits
+                    self._landed = self._begun
                 except Exception:  # the log is down: the next read tries again, with what the feed held until then
                     logger.warning("EventLog: a request could not read what the workers keep", exc_info=True)
             for step in self._every:

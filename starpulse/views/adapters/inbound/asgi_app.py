@@ -31,14 +31,16 @@ from starlette.staticfiles import StaticFiles
 
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.seam import Board
+from starpulse.contracts.reads import SLOW_READ_S
 from starpulse.event_log.caught_up import CaughtUp
 from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.adapters.inbound.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.adapters.inbound.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.adapters.inbound.api import graphql, intake, metrics
-from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, SPANS, WORKERS
+from starpulse.views.adapters.inbound.api.answering import CAUGHT_UP_S, PLACE, RAN, SPANS, WORKERS
 from starpulse.views.adapters.inbound.api.openapi import swagger
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
+from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, StreamRoute, Watch, WriteRoute
 from starpulse.views.adapters.inbound.compression import Gzip
 from starpulse.views.adapters.inbound.snapshots import Snapshots
@@ -141,7 +143,9 @@ class _CaughtUp:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         reads = scope["type"] == "http" and (scope["path"].startswith("/api/") or scope["path"] == "/graphql")
         if reads and self._caught_up.due():
+            started = time.monotonic()
             await to_thread.run_sync(self._caught_up, abandon_on_cancel=True, limiter=scope.get(WORKERS, self._workers))
+            scope[CAUGHT_UP_S] = time.monotonic() - started
         await self.app(scope, receive, send)
 
 
@@ -301,6 +305,8 @@ class _Timed:
         with self._watch(request, arrival) as timing:
             scope[RAN] = timing.ran
             scope[SPANS] = timing.spans
+            if CAUGHT_UP_S in scope:
+                timing.spans["caught_up_s"] = scope[CAUGHT_UP_S]
 
             async def answering(message: MutableMapping[str, Any]) -> None:
                 if message["type"] == "http.response.start":
@@ -344,6 +350,7 @@ class PageApp:
         self._grpc = grpc
         self._flows = flows
         self._files = _Build(directory=static, check_dir=False)
+        self._slow_s = SLOW_READ_S if seams is None else seams.services.slow_read_s
         self._workers = CapacityLimiter(REQUEST_THREADS)
         self._reserve = CapacityLimiter(RESERVE_THREADS)
         self._inflight = _Inflight()
@@ -463,12 +470,19 @@ class PageApp:
                 return
             yield frame
 
+    def _slow_watch(self, route: str) -> Watch:
+        """The `slow_read` line for a read of `route` that names no watch of its own."""
+        slow = SlowReads(route, self._slow_s)
+        return lambda request, arrival: slow.watch(request.url.query[:80], arrival)
+
     def _route(self, route: ApiRoute, observed_under: str | None = None) -> Route:
         """`route` as a Starlette route at its own path; a read is observed in the request-duration histogram under
         `observed_under` and its path template, when given."""
         at = route.path
         match route:
             case ReadRoute(_, handler, watch, params):
+                if watch is None and observed_under is not None:
+                    watch = self._slow_watch(observed_under + at)
                 timed = (
                     []
                     if watch is None

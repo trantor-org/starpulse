@@ -16,6 +16,12 @@ and on SQLite so does a commit by another process: one watcher thread per log bl
 (`event_log.watch`: inotify or kqueue) and rereads `PRAGMA data_version` when the watch fires. A `StopEvent` ends the
 wait too (`EventLog.wait_for_append`). A platform with no file watch falls back to waking every `FALLBACK_WAKE_S`, the
 sweeper's interval, and logs once that it has none.
+
+`data_version` moves on every commit, a follower's own checkpoint write included, so `run_on_wake` takes a `signal`: a
+statement for what its step reads, which the watcher reads after each commit and shares among the followers of one
+statement. The follower wakes only when that value moves. A follower of a table no event announces names that table, so
+a missing wake stalls the follower, never the commit. `EventLog.wakes` counts each follower's wakes and how many moved
+the events head; `keep_wakes` keeps them for the Page API's `/metrics`.
 """
 
 import gzip
@@ -42,7 +48,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
 from starpulse.event_log.checkpoints import Checkpoints
+from starpulse.event_log.follower_wakes import STATE as WAKES_STATE, Wakes
 from starpulse.event_log.migrate import require_migrated
+from starpulse.event_log.signals import Signals, read_value
 from starpulse.event_log.tables import events, settings, worker_state
 from starpulse.event_log.wake import FALLBACK_WAKE_S, RETRY_DELAY, StopEvent
 from starpulse.event_log.watch import open_watch
@@ -146,6 +154,7 @@ def _watch_commits(
             # after a failed check a commit may have landed before this baseline read: wake the readers once
             if not healthy or version is None or current != version:
                 _read_head(connection, owner)
+                owner._signals.probe(connection)
             if not healthy or (version is not None and current != version):
                 owner._wake()
             version, healthy = current, True
@@ -153,6 +162,7 @@ def _watch_commits(
             logger.debug("EventLog: data_version check failed: %s", exc)
             if healthy:
                 owner._forget_head()
+                owner._signals.reset()
                 owner._wake()
             connection, version, healthy = None, None, False
         del owner
@@ -248,6 +258,10 @@ class EventLog:
         self._appends = 0
         self._head: int | None = None  # the newest event id seen (0 for none), None while unknown
         self._head_moved = threading.Condition()
+        self._signals = Signals()
+        #: How often each follower woke, and whether the events head had moved.
+        self.wakes = Wakes()
+        self._wakes_child: str | None = None
         self._watching = False
         self._unwatch: Callable[[], object] | None = None
 
@@ -484,12 +498,18 @@ class EventLog:
         finally:
             stop.unlisten(self._notify)
 
-    def run_on_wake(self, stop: StopEvent, step: Callable[[], object], failure: str) -> None:
+    def run_on_wake(self, stop: StopEvent, step: Callable[[], object], failure: str, signal: str | None = None) -> None:
         """Run `step` now, then after each append or commit by another process, until `stop`; no timer ends the wait.
-        A step that raises is logged as `failure` and run again after `RETRY_DELAY`. `appends` is read before each
-        step, so a commit that lands during it ends the next wait at once."""
+        With `signal`, a statement returning what `step` reads, it runs again only when that value moved, so no
+        commit that changed something else wakes it (a log with no file to watch wakes on every append). A step that
+        raises is logged as `failure` and run again after `RETRY_DELAY`. `appends` is read before each step, so a
+        commit that lands during it ends the next wait at once. Each wake is counted under the thread's name in
+        `wakes`."""
+        follower = threading.current_thread().name
+        signal = signal if self._has_file() else None
         while not stop.is_set():
-            seen = self.appends
+            seen = self.appends if signal is None else self._signal_version(signal)
+            head = self._head
             try:
                 step()
             except Exception:
@@ -497,7 +517,39 @@ class EventLog:
                 # adr-exempt: retry
                 stop.wait(RETRY_DELAY)
                 continue
-            self.wait_for_append(seen, stop)
+            if signal is None:
+                self.wait_for_append(seen, stop)
+            else:
+                self._signals.wait(signal, seen, stop)
+            if not stop.is_set() and self.wakes.count(follower, self._head != head):
+                self._publish_wakes()
+
+    def keep_wakes(self, child: str) -> None:
+        """Keep the wake counts of this process as `child` in the log's state, now and every `PUBLISH_EVERY` wakes, for
+        the Page API to relay."""
+        self._wakes_child = child
+        self._publish_wakes()
+
+    def _publish_wakes(self) -> None:
+        if (child := self._wakes_child) is not None:
+            try:
+                self.put_state(WAKES_STATE + child, self.wakes.samples(child))
+            except Exception:
+                logger.warning("EventLog: the follower wakes were not kept for the metric", exc_info=True)
+
+    def _has_file(self) -> bool:
+        return make_url(self.url).database not in (None, "", ":memory:")
+
+    def _signal_version(self, sql: str) -> int:
+        self._watch()
+        return self._signals.version(sql, self._read_signal)
+
+    def _read_signal(self, sql: str) -> Any:
+        connection = self.engine.raw_connection()
+        try:
+            return read_value(connection.driver_connection, sql)
+        finally:
+            connection.close()
 
     def _notify(self) -> None:
         with self._appended:

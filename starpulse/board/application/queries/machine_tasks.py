@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.readmodel.signals import MACHINE_ROWS
 from starpulse.event_log.wake import StopEvent
 
 if TYPE_CHECKING:
@@ -37,7 +38,7 @@ class MachineDeltas:
         """Publish changes on a thread, on each wake of `log`, until `stop`."""
         thread = threading.Thread(
             target=log.run_on_wake,
-            args=(stop, self.publish_changes, "machine deltas: the pass failed"),
+            args=(stop, self.publish_changes, "machine deltas: the pass failed", MACHINE_ROWS),
             name="machine-deltas",
             daemon=True,
         )

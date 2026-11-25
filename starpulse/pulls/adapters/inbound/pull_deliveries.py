@@ -285,7 +285,7 @@ def start(
         threading.Thread(target=work, name=name.replace(" ", "-"), daemon=True).start()
 
     def connected() -> PullReads:
-        return PullReads(connect_client(lambda: os.environ.get(token_env or ""), app_jwt), SqlCursors(engine))
+        return PullReads(connect_client(lambda: os.environ.get(token_env or ""), app_jwt, caller="pull_deliveries"), SqlCursors(engine))
 
     reads = connected() if token_env else None
     queue = SqlQueue(engine, CONSUMER, urgent=URGENT, only=HANDLED)

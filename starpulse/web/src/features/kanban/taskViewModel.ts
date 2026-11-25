@@ -477,8 +477,8 @@ export function repoBase(prs: { url: string }[]): string | null {
   return null;
 }
 
-/** The sections that start open: the three that say what the task is for, and the ask a Needs attention task waits on. */
-export const opensByDefault = (name: string): boolean => /^(Outcome|Why|Scope|Needs attention)\b/i.test(name);
+/** The sections that start open: the three that say what the task is for. */
+export const opensByDefault = (name: string): boolean => /^(Outcome|Why|Scope)\b/i.test(name);
 
 /** The `## ` sections a task's creation writes as its own bookkeeping; the dialog does not draw them. */
 const CREATION_SECTIONS = ["Duplicate Search", "Duplicate Resolution", "ADR Needed"];

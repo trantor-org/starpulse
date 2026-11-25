@@ -17,6 +17,11 @@ class MachineState(_Api):
         description="The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` "
         "or `waiting_on_person`; null when it declares none.",
     )
+    priority: int = Field(
+        default=0,
+        description="Which state wins when a task's dependencies would put it in more than one: the higher number "
+        "wins, a tie keeps the task where it is.",
+    )
 
 
 class Cite(_Api):

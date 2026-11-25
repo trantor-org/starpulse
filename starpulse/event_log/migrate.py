@@ -32,7 +32,8 @@ __all__ = [
     "require_migrated",
 ]
 
-_MIGRATIONS = Path(__file__).parent / "migrations"
+#: Resolved at import: a release switch moving `current` under a running worker never changes the chain it checks.
+_MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 #: The last revision before the squash, and the release that carries a store there.
 PRE_SQUASH_HEAD = "0057"
 BRIDGE_RELEASE = "v0.5.0-04d5169"

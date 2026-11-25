@@ -331,10 +331,7 @@ def _acyclic(spec: Mapping[str, Any], where: str) -> Primitive:
         seen, frontier = {own.casefold()}, [own]
         while frontier:
             frontier = [
-                task
-                for value in frontier
-                for task in record.holders(name, value)
-                if task.casefold() not in seen
+                task for value in frontier for task in record.holders(name, value) if task.casefold() not in seen
             ]
             seen.update(task.casefold() for task in frontier)
         return not held & seen
@@ -405,7 +402,11 @@ class _NamesIds:
 
     @staticmethod
     def _ids(record: Record, name: str, found: re.Pattern[str]) -> dict[str, str]:
-        return {match.group(0).casefold(): match.group(0) for value in _values(record.front.get(name)) for match in found.finditer(value)}
+        return {
+            match.group(0).casefold(): match.group(0)
+            for value in _values(record.front.get(name))
+            for match in found.finditer(value)
+        }
 
     def _missing(self, record: Record) -> list[str]:
         named = self._ids(record, self._target, self._named)
@@ -448,9 +449,7 @@ def _reaches(record: "Record", starts: Collection[str], goal: str) -> bool:
     seen, frontier = set(starts), list(starts)
     while frontier and goal not in seen:
         found = record.dependencies_of(frontier)
-        frontier = list(
-            {_node(value) for values in found.values() for value in values if _node(value) not in seen}
-        )
+        frontier = list({_node(value) for values in found.values() for value in values if _node(value) not in seen})
         seen.update(frontier)
     return goal in seen
 
@@ -460,7 +459,9 @@ def _no_implied_dependency(spec: Mapping[str, Any], where: str) -> Primitive:
 
     def holds(record: Record) -> bool:
         held = [_node(value) for value in _values(record.front.get("dependencies"))]
-        kept = {_node(value) for value in _values(record.earlier.front.get("dependencies"))} if record.earlier else set()
+        kept = (
+            {_node(value) for value in _values(record.earlier.front.get("dependencies"))} if record.earlier else set()
+        )
         added = [task for task in held if task not in kept]  # only an added edge is this write's to judge
         if not added:
             return True
@@ -484,7 +485,10 @@ def _pull_proof(spec: Mapping[str, Any], where: str) -> Primitive:
 
     def named(line: str, repo: str, number: str, alone: bool) -> bool:
         owner, _, name = repo.partition("/")
-        spelled = [rf"github\.com/{re.escape(repo)}/pull/{number}(?!\d)", rf"(?<![\w/#-])(?:{re.escape(owner)}/)?{re.escape(name)}#{number}(?!\d)"]
+        spelled = [
+            rf"github\.com/{re.escape(repo)}/pull/{number}(?!\d)",
+            rf"(?<![\w/#-])(?:{re.escape(owner)}/)?{re.escape(name)}#{number}(?!\d)",
+        ]
         if alone:  # a bare number names the one pull request that holds it
             spelled.append(rf"(?<![\w/#-])#{number}(?!\d)")
         return any(re.search(text, line, re.I) for text in spelled)
@@ -494,9 +498,44 @@ def _pull_proof(spec: Mapping[str, Any], where: str) -> Primitive:
         inside = bounds.search(record.body)
         proof = [line for line in (inside.group(1) if inside else "").splitlines() if selects.search(line)]
         return all(
-            any(named(line, link[1], link[2], alone=all(other[1] == link[1] for other in links if other[2] == link[2])) for line in proof)
+            any(
+                named(line, link[1], link[2], alone=all(other[1] == link[1] for other in links if other[2] == link[2]))
+                for line in proof
+            )
             for link in links
         )
+
+    return holds
+
+
+_COMMENT_TEXT = re.compile(r"^author:[^\n]*\n---\n(.*?)\n---$", re.S | re.M)
+_ARCHIVE_CITED_KEYS = ("prefixes", "superseded", "obsolete", "exempt")
+
+
+def _archive_cited(spec: Mapping[str, Any], where: str) -> Primitive:
+    _unknown(spec, set(_ARCHIVE_CITED_KEYS), where, "archive_cited")
+    if missing := [key for key in _ARCHIVE_CITED_KEYS if not spec.get(key)]:
+        raise ValueError(f"{where}: archive_cited needs {', '.join(missing)}")
+    asking = re.compile(rf"(?:{'|'.join(map(re.escape, spec['prefixes']))})[ \t]*(.*)", re.S)
+    superseded = re.compile(rf"{re.escape(spec['superseded'])}\s+(\w+-\d+)", re.I)
+    obsolete = re.compile(rf"{re.escape(spec['obsolete'])}\s*\S", re.I)
+    exempt = {state.casefold() for state in spec["exempt"]}
+    comments = _region("comments")
+
+    def holds(record: Record) -> bool:
+        inside = comments.search(record.body)
+        latest = _COMMENT_TEXT.findall(inside[1])[-1:] if inside else []
+        asked = asking.fullmatch(latest[0].strip()) if latest else None
+        if asked is None or record.state.casefold() in exempt:
+            return True
+        pulls = [pull for pull in _pulls(record) if pull is not None]
+        if not any(pull["state"] != "CLOSED" for pull in pulls):
+            return True
+        reason = asked.group(1)
+        own = str(record.front.get("id") or "").lower()
+        cites = superseded.search(reason)
+        cited = bool(cites and cites[1].lower() != own and record.state_of(cites[1]) is not None)
+        return not any(pull["state"] == "MERGED" for pull in pulls) and (cited or bool(obsolete.search(reason)))
 
     return holds
 
@@ -607,12 +646,18 @@ class _PullsChanged:
     def __init__(self, spec: Mapping[str, Any], where: str) -> None:
         _unknown(spec, {"files", "matches", "merged_matches", "parts"}, where, "pulls_changed")
         self._globs = spec.get("files")
-        if not isinstance(self._globs, list) or not self._globs or not all(isinstance(glob, str) for glob in self._globs):
+        if (
+            not isinstance(self._globs, list)
+            or not self._globs
+            or not all(isinstance(glob, str) for glob in self._globs)
+        ):
             raise ValueError(f"{where}: pulls_changed needs `files`, a list of globs a changed file is matched against")
         try:
             self._wanted = re.compile(spec["matches"])
         except KeyError as error:
-            raise ValueError(f"{where}: pulls_changed needs `matches`, the regular expression the evidence carries") from error
+            raise ValueError(
+                f"{where}: pulls_changed needs `matches`, the regular expression the evidence carries"
+            ) from error
         except (re.error, TypeError) as error:
             raise ValueError(f"{where}: pulls_changed `matches` is not a regular expression: {error}") from error
         try:
@@ -620,7 +665,9 @@ class _PullsChanged:
             parts = spec.get("parts", {})
             self._parts = {str(name): re.compile(pattern) for name, pattern in parts.items()}
         except (re.error, TypeError, AttributeError) as error:
-            raise ValueError(f"{where}: pulls_changed `merged_matches` or `parts` is not a regular expression: {error}") from error
+            raise ValueError(
+                f"{where}: pulls_changed `merged_matches` or `parts` is not a regular expression: {error}"
+            ) from error
         self._criteria = _region("acceptance_criteria")
 
     def _unevidenced(self, record: Record) -> list[Mapping[str, Any]] | None:
@@ -631,14 +678,20 @@ class _PullsChanged:
         pulls = _pulls(record, settle="files")
         if any(pull is None for pull in pulls):
             return None  # the store holds no such pull request: the rule cannot clear, so it fails closed
-        pulls = [pull for pull in pulls if not _another_tasks(record, pull)]  # another task's delivery is its own to evidence
+        pulls = [
+            pull for pull in pulls if not _another_tasks(record, pull)
+        ]  # another task's delivery is its own to evidence
         declared = _values(record.front.get("modified_files"))  # stands for a record no read of GitHub listed files for
         if not declared and any(pull["files"] is None for pull in pulls):
             return None  # no file list to match for a pull request: the rule cannot clear, so it fails closed
         changed = [
             pull
             for pull in pulls
-            if any(fnmatchcase(path, glob) for path in (declared if pull["files"] is None else pull["files"]) for glob in self._globs)
+            if any(
+                fnmatchcase(path, glob)
+                for path in (declared if pull["files"] is None else pull["files"])
+                for glob in self._globs
+            )
         ]
         return [
             pull
@@ -725,6 +778,7 @@ _KINDS: dict[str, Callable[[Mapping[str, Any], str], Primitive]] = {
     "matrix_profile": _matrix_profile,
     "readable": _readable,
     "qa_verdict": _qa_verdict,
+    "archive_cited": _archive_cited,
     "pulls_ready": _pulls_ready,
     "pulls_failing": _pulls_failing,
     "pulls_clear": _pulls_clear,
@@ -772,7 +826,11 @@ def load(declared: object) -> tuple[Rule, ...]:
             raise ValueError(f"{where}: needs a `reason`, the refusal text both the CLI and the page show")
         on = spec.get("on")
         scopes = ("write", "create")
-        if not isinstance(on, dict) or on.keys() - _ON_KEYS or any(on.get(key, False) not in (True, False) for key in scopes):
+        if (
+            not isinstance(on, dict)
+            or on.keys() - _ON_KEYS
+            or any(on.get(key, False) not in (True, False) for key in scopes)
+        ):
             raise ValueError(f"{where}: `on` takes `to`, `from` and `while`, or `write`, or `create`")
         chosen = [bool(on.get("write")), bool(on.get("create")), bool(on.keys() & {"to", "from"})]
         if chosen.count(True) != 1 or ("while" in on and "to" not in on):
@@ -807,7 +865,11 @@ class Verdict(NamedTuple):
 
 
 def evaluate(
-    rules: tuple[Rule, ...], before: Record | None, after: Record, actor: str, warned_actors: frozenset[str] = frozenset()
+    rules: tuple[Rule, ...],
+    before: Record | None,
+    after: Record,
+    actor: str,
+    warned_actors: frozenset[str] = frozenset(),
 ) -> Verdict:
     """The verdict on the write by `actor` from `before` (None for a create) to `after`.
 

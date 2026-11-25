@@ -25,7 +25,6 @@ from starpulse.contracts.api.dto.pages import DonePage, MachineDetail, Machines
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     AdminRequest,
-    CompleteRequest,
     CreateRequest,
     DocCreateRequest,
     DocListRequest,
@@ -123,7 +122,6 @@ class ApiContract(_Api):
         StartRequest
         | StepsRequest
         | RetireRequest
-        | CompleteRequest
         | CreateRequest
         | TaskPutRequest
         | MilestoneCreateRequest

@@ -67,6 +67,7 @@ class Machine:
     citations: Mapping[tuple[str, str, str], Mapping[str, str]] = {}
     source: str | None = None
     roles: Mapping[str, str | None] = {}
+    priorities: Mapping[str, int] = {}
 
     def __init__(self, model: Any = None, start_value: str | None = None) -> None:
         self.model = SimpleNamespace() if model is None else model

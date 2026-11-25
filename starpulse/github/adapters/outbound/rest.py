@@ -2,6 +2,7 @@
 `Transport`, its `get` read, the `GitHubError` of a read that fails, and `repo_of` for a repository's `owner/name`."""
 
 import json
+import logging
 import os
 import re
 import time
@@ -10,6 +11,8 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 #: `(method, path, body)` to the GitHub REST API, answered with the HTTP status and the decoded body.
 Transport = Callable[[str, str, dict | None], tuple[int, dict]]
@@ -62,6 +65,43 @@ def get(transport: Transport, path: str) -> dict:
     return body
 
 
+_ID = re.compile(r"/(\d+)(?=/|$)")
+_SHA = re.compile(r"/[0-9a-f]{7,40}(?=/|$)")
+_TAIL = re.compile(r"(/(?:contents|rules/branches))/.+")
+
+
+def endpoint_of(path: str) -> str:
+    """The shape of a GitHub REST `path`: the query dropped and each repository, organisation, number, commit and
+    free-form tail named by its kind, so a count per endpoint stays bounded."""
+    shape = path.partition("?")[0]
+    shape = re.sub(r"^/repos/[^/]+/[^/]+", "/repos/{repo}", shape)
+    shape = re.sub(r"^/orgs/[^/]+", "/orgs/{org}", shape)
+    shape = _TAIL.sub(r"\1/{path}", shape)
+    shape = re.sub(r"/[^/]*\.\.\.[^/]*(?=/|$)", "/{range}", shape)
+    return _SHA.sub("/{sha}", _ID.sub("/{n}", shape))
+
+
+def _open(request: urllib.request.Request, path: str, timeout: float, caller: str) -> Any:
+    """`urlopen`, logging the call as one `github-rest` line, as the gh shim logs a `gh-call`: an hour's count per caller
+    and endpoint is a Loki `count_over_time` over those lines. A 304 counts, though it spends no rate limit."""
+    status: int | str = "error"
+    try:
+        response = urllib.request.urlopen(request, timeout=timeout)
+        status = response.status
+        return response
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+        raise
+    finally:
+        logger.info(
+            "github-rest caller=%s method=%s endpoint=%s status=%s",
+            caller,
+            request.get_method(),
+            endpoint_of(path),
+            status,
+        )
+
+
 _MERGEABLE = {True: "MERGEABLE", False: "CONFLICTING"}
 
 
@@ -75,7 +115,7 @@ def pull_mergeable(repo: str, number: int, timeout: float) -> str | None:
     computing after the reads or unreachable. GitHub sends no event when a push clears a conflict, so a stored flag can
     outlive it."""
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    transport = connect(token, timeout)
+    transport = connect(token, timeout, caller="pull_mergeable")
     for read in range(_MERGEABLE_READS):
         if read:
             time.sleep(_MERGEABLE_WAIT)
@@ -88,8 +128,9 @@ def pull_mergeable(repo: str, number: int, timeout: float) -> str | None:
     return None
 
 
-def connect(token: str | None, timeout: float = 30.0) -> Transport:
-    """A transport to the GitHub API (`GITHUB_API_URL`, else api.github.com), signed in with `token` when there is one."""
+def connect(token: str | None, timeout: float = 30.0, caller: str = "other") -> Transport:
+    """A transport to the GitHub API (`GITHUB_API_URL`, else api.github.com), signed in with `token` when there is one.
+    Each call is logged under `caller`."""
     base = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"} | (
         {"Authorization": f"Bearer {token}"} if token else {}
@@ -100,7 +141,7 @@ def connect(token: str | None, timeout: float = 30.0) -> Transport:
             base + path, data=None if body is None else json.dumps(body).encode(), method=method, headers=headers
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with _open(request, path, timeout, caller) as response:
                 raw = response.read()
                 decoded = json.loads(raw) if raw else {}
                 if isinstance(decoded, list):  # a list endpoint's array comes back as `{"items": [...]}`
@@ -121,11 +162,14 @@ _NEXT = re.compile(r'<([^>]+)>;\s*rel="next"')
 
 
 def connect_client(
-    token: Callable[[], str | None], app_token: Callable[[], str] | None = None, timeout: float = 30.0
+    token: Callable[[], str | None],
+    app_token: Callable[[], str] | None = None,
+    timeout: float = 30.0,
+    caller: str = "other",
 ) -> Client:
     """A conditional client to the GitHub API (`GITHUB_API_URL`, else api.github.com), signed in with the token `token`
     returns at each request, so a short-lived App token is read fresh. A path under `/app/` takes `app_token`'s App JWT
-    instead, as GitHub accepts no other credential there."""
+    instead, as GitHub accepts no other credential there. Each call is logged under `caller`."""
     base = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
 
     def send(method: str, path: str, etag: str | None) -> Reply:
@@ -136,7 +180,7 @@ def connect_client(
             headers["If-None-Match"] = etag
         request = urllib.request.Request(base + path, method=method, headers=headers)
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with _open(request, path, timeout, caller) as response:
                 raw = response.read()
                 decoded = json.loads(raw) if raw else {}
                 body = {"items": decoded} if isinstance(decoded, list) else decoded if isinstance(decoded, dict) else {}
