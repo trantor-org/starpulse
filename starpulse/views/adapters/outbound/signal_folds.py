@@ -11,15 +11,16 @@ import logging
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
-from sqlalchemy import bindparam, func, select, text
+from sqlalchemy import and_, bindparam, func, select, text
 from sqlalchemy.dialects import sqlite
 
 from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.tables import signal_folds
+from starpulse.event_log.table_registry import is_stamped
+from starpulse.event_log.tables import signal_folds, task_phase_spend, task_sessions
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.session_ledger import REVISION, VIEWS
 from starpulse.flow_metrics.model import cells
-from starpulse.views.adapters.outbound import skill_cost
+from starpulse.views.adapters.outbound import skill_cost, task_spend
 
 __all__ = ["CURSOR", "VIEWS", "SignalFolds", "changed"]
 
@@ -29,6 +30,24 @@ log = logging.getLogger(__name__)
 CURSOR = "skill_cost_cursor"
 _COUNTED = "counted"
 
+_OWN = (
+    select(signal_folds.c.first_at, signal_folds.c.result)
+    .select_from(
+        task_sessions.join(
+            signal_folds,
+            and_(
+                signal_folds.c.view == "spend",
+                signal_folds.c.harness == task_sessions.c.harness,
+                signal_folds.c.session == task_sessions.c.session,
+            ),
+        )
+    )
+    .where(task_sessions.c.task == bindparam("task"), signal_folds.c.last_at >= bindparam("floor"))
+    .order_by(task_sessions.c.harness, task_sessions.c.session)
+)
+_PEERS = select(
+    task_phase_spend.c.task, task_phase_spend.c.phase, task_phase_spend.c.profile, task_phase_spend.c.wte
+).where(task_phase_spend.c.last_at >= bindparam("floor"))
 _WINDOW = text(
     "SELECT view, harness, session, first_at, result FROM starpulse_signal_folds"
     " INDEXED BY ix_starpulse_signal_folds_last_at"  # SQLAlchemy's SQLite dialect renders no table hint
@@ -96,6 +115,23 @@ class SignalFolds:
         for row in rows:
             answer[row.view].append(_inside(row.view, row.result, since) if row.first_at < since else row.result)
         return answer
+
+    def task_spend(
+        self, task: str, since: float
+    ) -> tuple[list[Any], dict[tuple[str, str], tuple[str, float]]] | None:
+        """The spend folds of `task`'s sessions with a signal at or after `since`, cut as `window` cuts them and in the
+        order `combine_spend` takes them, and every task's phase rows with a step in that window, as `spend.task_spend`
+        weighs `task` against them; None while the task_spend family is being refolded. A peer's row is its spend over
+        all its sessions, so a task that began before `since` weighs in whole."""
+        with self._engine.connect() as db:
+            if not is_stamped(db, task_spend.FAMILY, task_spend.STAMP):
+                return None
+            own = db.execute(_OWN, {"task": task, "floor": since}).all()
+            peers = db.execute(_PEERS, {"floor": since}).all()
+        return (
+            [_inside("spend", row.result, since) if row.first_at < since else row.result for row in own],
+            {(row.task, row.phase): (row.profile, row.wte) for row in peers},
+        )
 
     def oldest(self) -> float | None:
         """The time of the oldest folded signal, None when nothing is folded: the history the views can answer."""

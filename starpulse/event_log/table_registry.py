@@ -32,6 +32,7 @@ def _t(*names: str) -> tuple[str, ...]:
 FAMILIES: dict[str, Family] = {
     "read_model": Family(_t("tasks", "task_criteria", "machine_tasks"), _t("events", "machine_events")),
     "snapshots": Family(_t("snapshots", "snapshot_deltas"), _t("tasks")),
+    "task_spend": Family(_t("task_sessions", "task_phase_spend"), _t("signal_folds")),
 }
 _DURABLE = _t(
     "events", "machine_events", "lane_changes", "signal_folds", "stream_events", "checkpoints", "settings",
