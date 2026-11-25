@@ -45,7 +45,14 @@ from starpulse.views.application.commands.guard import (
     with_request,
 )
 from starpulse.views.application.commands.lifecycle import park_task
-from starpulse.views.application.commands.moves import Dispatcher, dispatch_task, move_refusal, started_refusal
+from starpulse.views.application.commands.moves import (
+    Dispatcher,
+    Entrypoint,
+    dispatch_task,
+    move_refusal,
+    remote_control_refusal,
+    started_refusal,
+)
 from starpulse.views.application.commands.replays import Replays
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
@@ -72,6 +79,7 @@ def task_record(
     task = feed.current_id(task)
     held, archived, entered = feed.placement(task)
     if not (held or archived) and not feed.wait_replayed(0) and feed.wait_replayed(REPLAY_WAIT_S):
+        feed.repin()
         held, archived, entered = feed.placement(task)
     archived = not held and archived
     if not held and not archived:
@@ -96,7 +104,13 @@ def _spelled(field: str, value: Any) -> Any:
 
 
 def _edited(
-    request: EditRequest, feed: BoardFeed, read: TaskReader, edit: TaskEditor, *, started: Callable[[str], bool]
+    request: EditRequest,
+    feed: BoardFeed,
+    read: TaskReader,
+    edit: TaskEditor,
+    *,
+    started: Callable[[str], bool],
+    entrypoint: Entrypoint | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """One edit, as `put_task` runs it.
 
@@ -120,7 +134,7 @@ def _edited(
     if holder_refusal(feed, agent, task, who) is not None and not comment.strip():
         comment = f"Edited by session {who.session}, not the holder: {', '.join(sorted(changes))}"
     lane = lane_id(str(changes["status"])) if "status" in changes else agent["state"]
-    if lane != agent["state"] and (refused := started_refusal(feed, task, lane, started) or move_refusal(agent, task, lane, who) or holder_refusal(feed, agent, task, who)) is not None:
+    if lane != agent["state"] and (refused := (lane == feed.roles.working and remote_control_refusal(task, who.session, entrypoint)) or started_refusal(feed, task, lane, started) or move_refusal(agent, task, lane, who) or holder_refusal(feed, agent, task, who)) is not None:
         return refused  # a status written beside other fields is a move: the machine offers it to `who` or it is refused
     with EDIT_LOCK:
         if (current := read(task)) is None:
@@ -208,14 +222,14 @@ def _restored(task: str, who: Who, feed: BoardFeed, restore: TaskRestorer) -> tu
 
 
 def _dispatched(
-    task: str, request: TaskPutRequest, feed: BoardFeed, dispatch: Dispatcher | None
+    task: str, request: TaskPutRequest, feed: BoardFeed, dispatch: Dispatcher | None, entrypoint: Entrypoint | None
 ) -> tuple[int, dict[str, Any]]:
     """The dispatch an `assignee` change names: it stands alone, and names the session to pin."""
     session = request.changes["assignee"]
     if set(request.changes) != {"assignee"} or not isinstance(session, str) or not session.strip():
         return 400, {"error": "a dispatch changes only `assignee`, to the session to pin"}
     replaces = request.base.get("assignee")
-    return dispatch_task(task, session, replaces if isinstance(replaces, str) else "", feed, dispatch)
+    return dispatch_task(task, session, replaces if isinstance(replaces, str) else "", feed, dispatch, entrypoint)
 
 
 def _reopened(
@@ -371,6 +385,7 @@ def put_task(
     *,
     started: Callable[[str], bool],
     dispatch: Dispatcher | None = None,
+    entrypoint: Entrypoint | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Write `task` as `PUT /api/tasks/{id}` says: the HTTP status and JSON body of the verb the body names.
 
@@ -388,7 +403,7 @@ def put_task(
     if request.interactive is not None:
         return _taken_over(task, take_over, feed)
     if "assignee" in request.changes:
-        return _dispatched(task, request, feed, dispatch)
+        return _dispatched(task, request, feed, dispatch, entrypoint)
     edit = EditRequest(
         task=task,
         base=request.base,
@@ -400,7 +415,7 @@ def put_task(
         session=request.session,
         harness=request.harness,
     )
-    return _REPLAYS.run(request.request_key, lambda: _edited(edit, feed, board.read, board.edit, started=started))
+    return _REPLAYS.run(request.request_key, lambda: _edited(edit, feed, board.read, board.edit, started=started, entrypoint=entrypoint))
 
 
 @with_request(TaskDeleteRequest, "Archiving a task")

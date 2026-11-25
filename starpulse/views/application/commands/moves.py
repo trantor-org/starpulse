@@ -64,8 +64,24 @@ def move_refusal(agent: dict, task: str, column: str, who: Who) -> tuple[int, di
 Dispatcher = Callable[[str, str, str], bool]
 
 
+#: Names the `claude_code.entrypoint` of a session's record, empty when none runs under that id.
+Entrypoint = Callable[[str], str]
+#: The entrypoint of a Remote Control child, the session of a project thread.
+REMOTE_CONTROL = "sdk-cli"
+
+
+def remote_control_refusal(task: str, session: str, entrypoint: Entrypoint | None) -> tuple[int, dict[str, str]] | None:
+    """The 409 for a claim of `task` by a project-thread session, else None: only a board-dispatched session works a task."""
+    if session and entrypoint is not None and entrypoint(session) == REMOTE_CONTROL:
+        return 409, {
+            "error": f"{session} is a Remote Control project-thread session, and only a board-dispatched session works "
+            f"{task}: file it Ready and the scheduler dispatches a VM session, which can then claim it"
+        }
+    return None
+
+
 def dispatch_task(
-    task: str, session: str, replaces: str, feed: BoardFeed, dispatch: Dispatcher | None
+    task: str, session: str, replaces: str, feed: BoardFeed, dispatch: Dispatcher | None, entrypoint: Entrypoint | None = None
 ) -> tuple[int, dict[str, str]]:
     """Publish the dispatch of `session` to `task`, which `PUT /api/tasks/{id}` names as an `assignee` change: the HTTP
     status and JSON body.
@@ -77,6 +93,8 @@ def dispatch_task(
     """
     if dispatch is None:
         return 501, {"error": "this deployment publishes no dispatch events"}
+    if refused := remote_control_refusal(task, session, entrypoint):
+        return refused
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
     roles, holder = feed.roles, str(agent.get("assignee") or "")

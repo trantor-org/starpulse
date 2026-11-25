@@ -68,10 +68,11 @@ async def task(request: Request) -> Response:
 def _stored_records(request: Request) -> Response:
     api = seams(request)
     records = []
-    for name in query(request).get("ids", [""])[0].split(","):
-        status, body = _stored_record(api, name)
-        if status == 200:
-            records.append(body)
+    with api.feed.pinned_rows():
+        for name in query(request).get("ids", [""])[0].split(","):
+            status, body = _stored_record(api, name)
+            if status == 200:
+                records.append(body)
     return answer(request, encode("task_records", {"records": records}), 200)
 
 
@@ -166,6 +167,7 @@ def routes(api: Api) -> list[ApiRoute]:
                     landed,
                     started=started,
                     dispatch=services.dispatch,
+                    entrypoint=services.entrypoint,
                 ),
             ),
         ),

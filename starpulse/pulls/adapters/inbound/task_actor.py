@@ -162,11 +162,16 @@ PROJECTION_METRIC = "starpulse_task_actor_projection_seconds"
 HANDOFF_METRIC = "starpulse_task_actor_handoff_seconds"
 MERGE_MOVE_METRIC = "starpulse_task_merge_move_seconds"
 RECEIPT_DONE_METRIC = "starpulse_task_receipt_done_seconds"
+MERGE_LOCK_WAIT_METRIC = "starpulse_task_actor_merge_lock_wait_seconds"
+MERGE_BOARD_WRITE_METRIC = "starpulse_task_actor_merge_board_write_seconds"
 #: The facts whose write moves a task because its pull requests ended; the merge-to-move histogram observes them.
 _MERGE_FACTS = frozenset({"pr_terminal", "pr_merged", "pr_merged_unfinished"})
 #: Most seconds start recovery waits for the saves and changes pending before it takes its next task, so steady traffic
 #: slows recovery down but never stops it.
 _YIELD_S = 2.0
+#: Most seconds start recovery waits for a merge webhook that waits for the lock, a hang guard: a merge is rare and moves
+#: its task for an operator, so unlike steady traffic it is never outwaited.
+_MERGE_YIELD_S = 30.0
 #: The worker state holding the digest of the facts each task was last derived on, and of the waits and moves it was
 #: derived under, so a start derives only the tasks that changed since.
 CHECKPOINT = "pulls.task_actor_checkpoint"
@@ -476,6 +481,11 @@ class TaskActor:
         #: Seconds from a pull request's merge to the write that moved the task citing it.
         self._merge_move = Histogram(SLOW_BUCKETS_S)
         self._receipt_done = Histogram(BUCKETS_S)
+        #: Seconds a merge webhook waited for the lock, and the board write that moved the task it merged.
+        self._merge_lock_wait = Histogram(SLOW_BUCKETS_S)
+        self._merge_board_write = Histogram(SLOW_BUCKETS_S)
+        #: How many merge webhooks wait for the lock or hold it; start recovery takes no task while one does.
+        self._merging = 0
         #: The wall time the merge webhook `merge_received` derives was received at; None outside it.
         self._received: float | None = None
         #: How many store saves, task or move changes and projections wait for the lock or hold it; start recovery takes
@@ -537,6 +547,12 @@ class TaskActor:
                 ),
                 *self._receipt_done.lines(
                     RECEIPT_DONE_METRIC, "Seconds from receiving a merge webhook to the write that moved its task."
+                ),
+                *self._merge_lock_wait.lines(
+                    MERGE_LOCK_WAIT_METRIC, "Seconds a merge webhook waited for the task actor's lock."
+                ),
+                *self._merge_board_write.lines(
+                    MERGE_BOARD_WRITE_METRIC, "Seconds the board write that moved a merged pull request's task took."
                 ),
                 f"# HELP {DERIVE_METRIC} Seconds each derivation of a task's waits ran, by lane and whether a board hook ran.",
                 f"# TYPE {DERIVE_METRIC} histogram",
@@ -683,9 +699,10 @@ class TaskActor:
                 self._events.notify_all()
 
     def _yield(self) -> None:
-        """Wait, up to `_YIELD_S`, until no save, change or projection is pending."""
+        """Wait, up to `_YIELD_S`, until no save, change or projection is pending, then until no merge webhook is."""
         with self._events:
             self._events.wait_for(lambda: not (self._pending or self._saved.is_set()), timeout=_YIELD_S)
+            self._events.wait_for(lambda: not self._merging, timeout=_MERGE_YIELD_S)
 
     def _store_saved(self, saved: float) -> None:
         with self._lock:
@@ -1205,8 +1222,11 @@ class TaskActor:
         `received_at` (wall time) moves its task without waiting on the save follower, a projection or older deliveries.
         Each merge's move it lands is timed from `received_at`. A failure is logged, never raised to the consumer."""
         observed = self._clock()
+        with self._events:
+            self._merging += 1
         try:
             with self._pressing(), self._lock:
+                self._merge_lock_wait.observe(self._clock() - observed)
                 self._received = received_at
                 try:
                     self.touch(self._webhooks(self._read_pulls(), "merge webhook"), observed)
@@ -1214,6 +1234,10 @@ class TaskActor:
                     self._received = None
         except Exception:
             logger.exception("task actor: cannot derive the tasks of a merge webhook")
+        finally:
+            with self._events:
+                self._merging -= 1
+                self._events.notify_all()
 
     def main_checked(self) -> None:
         """Re-derive every open task whose checks read main's health (`_reads_main`), on the caller's thread: a finished
@@ -2063,7 +2087,10 @@ class TaskActor:
     ) -> bool:
         changes = {"status": target, **stale}
         refusal = self._judged(name, changes, comment)
+        begun = self._clock()
         written = refusal if not refusal.ok else self._apply(name, changes, comment, refusal.version)
+        if merged is not None and self._received is not None and refusal.ok:
+            self._merge_board_write.observe(self._clock() - begun)
         if written.ok and self._recovering:
             logger.error(
                 "task actor: start recovery moved %s %s -> %s, a move its lane's events missed", name, source, target
