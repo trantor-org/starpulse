@@ -7,6 +7,7 @@ checks are read once, then kept current by the deliveries, and a delivery whose 
 reads nothing. While GitHub's quota is spent no read is made. A head's rollup is published
 only when its state changes or a required check fails again with a report not seen before, and only for a pull request that is not a draft
 and a commit that is still the head its last `pull_request` delivery named: a late check of a replaced commit would swap the rollup back and forth with the new head's.
+A check that posts pending after a final result on a head whose rollup is failing is a rerun of that head: its failures read pending until they report again.
 """
 
 import hashlib
@@ -160,6 +161,7 @@ class HeadChecks:
             return Plan([], lambda: None)
         if report is None:
             self._forget(event, body)
+        rerun = report is not None and report.state == "pending" and self._results.get((report.repository, report.sha), {}).get(report.name) in _FINAL
         events: list[dict[str, Any]] = []
         rolled: dict[tuple[str, int], tuple[str, str, str]] = {}
         for head in heads:
@@ -172,10 +174,13 @@ class HeadChecks:
                 events.append(_event("CHECK_REPORTED", task, (repository, head.number, report.name, key), data | {"required": report.name in required}))
             if head.draft or self._pushed.get((repository, head.number), sha) != sha:  # a late check of a commit a push replaced
                 continue
-            state, unfinished = self._rollup(required, self._results_of(repository, sha, report))
+            results = self._results_of(repository, sha, report)
+            last = self._last.get((repository, head.number))
+            if rerun and last is not None and last[:2] == (sha, "failing"):  # a check posted again: the head's run restarted, so its failures are being redone
+                results.update({name: "pending" for name, seen in results.items() if seen == "failing"})
+            state, unfinished = self._rollup(required, results)
             refailed = state == "failing" and report is not None and report.state == "failing" and report.name in required
             mark = (sha, state, key if refailed else "")
-            last = self._last.get((repository, head.number))
             if last == mark or (last is not None and last[:2] == mark[:2] and not refailed):
                 continue
             rolled[repository, head.number] = mark
