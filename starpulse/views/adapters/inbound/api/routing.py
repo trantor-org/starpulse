@@ -19,6 +19,7 @@ from starpulse.views.adapters.inbound.api import (
     milestones,
     openapi,
     snapshot,
+    steps,
     tasks,
     view_queries,
 )
@@ -82,6 +83,7 @@ def api_routes(api: Api) -> list[ApiRoute]:
         *docs.routes(api),
         *jobs.routes(api),
         *admin.routes(api),
+        *steps.routes,
         *view_queries.routes,
         *openapi.routes,
     ]

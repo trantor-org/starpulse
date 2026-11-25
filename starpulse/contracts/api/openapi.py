@@ -100,7 +100,7 @@ _SEGMENT_TAG = {
     **dict.fromkeys("events held lanes ledger".split(), "streams"),
     **dict.fromkeys("jobs admin".split(), "jobs"),
     "intake": "ingest",
-    **dict.fromkeys("doctor health".split(), "ops"),
+    **dict.fromkeys("doctor health steps".split(), "ops"),
     "milestones": "milestones",
     "docs": "docs",
     "openapi": "pages",

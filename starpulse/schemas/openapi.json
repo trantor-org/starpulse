@@ -1084,6 +1084,47 @@
         }
       }
     },
+    "/api/steps": {
+      "post": {
+        "summary": "Record the seconds each step of an agent command took",
+        "tags": [
+          "ops"
+        ],
+        "operationId": "post_api_steps",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/retire": {
       "post": {
         "summary": "Retire a task",
@@ -8703,6 +8744,54 @@
           "last"
         ],
         "title": "Step",
+        "type": "object"
+      },
+      "StepsRequest": {
+        "additionalProperties": false,
+        "description": "`POST /api/steps`: the seconds each step of one `command` run took, and its reuse hit or miss.\n\n`steps` names at most 100 steps (`[a-z0-9_.:-]`, 64 characters) with their seconds; `outcome` is how the run ended.",
+        "properties": {
+          "command": {
+            "pattern": "^[a-z0-9_.:-]{1,64}$",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "ok",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "steps": {
+            "maxProperties": 100,
+            "patternProperties": {
+              "^[a-z0-9_.:-]{1,64}$": {
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "reuse": {
+            "anyOf": [
+              {
+                "enum": [
+                  "hit",
+                  "miss"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "command",
+          "outcome"
+        ],
+        "title": "StepsRequest",
         "type": "object"
       },
       "StripBucket": {
