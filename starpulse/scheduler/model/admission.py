@@ -169,7 +169,7 @@ def decide(
     *,
     log: bool = True,
     starting: Mapping[str, float] = MappingProxyType({}),
-    no_profile_logged: set[str] | None = None,
+    refusals_logged: dict[str, str | None] | None = None,
 ) -> list[Decision]:
     """A decision for each workable task of `tasks` in `lane`, the admitted first in enforced order, then the refused.
 
@@ -180,9 +180,9 @@ def decide(
     when nothing else needs the room, and ranks after them.
 
     `tasks` are all the open tasks, because a task's depth counts the ones waiting on it in other lanes. Each decision is
-    logged unless `log` is off, as for a read that only looks. A `NO_PROFILE` refusal is logged once while it lasts:
-    `no_profile_logged`, kept by the caller across passes, holds the tasks already logged and is trimmed to the ones still
-    refused, so a task that gains a profile and loses it logs again.
+    logged unless `log` is off, as for a read that only looks. A refusal is logged once while its cause lasts:
+    `refusals_logged`, kept by the caller across passes, maps each task already logged to its cause and is trimmed to the
+    ones still refused, so a task that is admitted and refused again, or refused for another cause, logs again.
 
     A task of `starting` (a resume or a nudge the task actor wants sent, with the time it asked) is decided whatever its
     lane: it holds its session slot already, so it draws no session, and the room it needs is the rest of its demand. It
@@ -215,11 +215,10 @@ def decide(
     enforced = sorted(admitted, key=lambda d: keys[d.task])
     ranked = [replace(d, enforced_rank=rank) for rank, d in enumerate(enforced, 1)]
     refused = sorted((d for d in decisions if not d.admitted), key=lambda d: keys[d.task])
-    if no_profile_logged is not None and log:
-        no_profile = {d.task for d in refused if d.blocked_by == NO_PROFILE}
-        refused_logged = [d for d in refused if d.blocked_by != NO_PROFILE or d.task not in no_profile_logged]
-        no_profile_logged.clear()
-        no_profile_logged |= no_profile
+    if refusals_logged is not None and log:
+        refused_logged = [d for d in refused if refusals_logged.get(d.task) != d.blocked_by]
+        refusals_logged.clear()
+        refusals_logged.update((d.task, d.blocked_by) for d in refused)
     else:
         refused_logged = refused
     for decision in [*ranked, *refused_logged] if log else ():
