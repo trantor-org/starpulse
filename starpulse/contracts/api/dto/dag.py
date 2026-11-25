@@ -2,8 +2,9 @@
 
 from pydantic import Field
 
-from starpulse.contracts.adapters import ActiveRun, RecentRun, Rerun, RunStats, RunStatus, Step
+from starpulse.contracts.adapters import ActiveRun, Pool, RecentRun, Rerun, RunStats, RunStatus, Step
 from starpulse.contracts.api._base import _Api
+from starpulse.contracts.api.dto.cue import Cue
 
 
 class DagBody(_Api):
@@ -38,15 +39,6 @@ class DagBody(_Api):
     pool: str | None = Field(default=None, description="The name of the pool the workflow runs on; empty when none.")
 
 
-class Jobs(_Api):
-    """`POST /api/jobs`: every runs workflow as the snapshot lists it, and the error a runs instance reported, with the
-    stream position the list was read at: a `jobChanges` subscription from it carries every change after."""
-
-    position: int
-    items: list[DagBody]
-    error: str | None
-
-
 class DomainDag(_Api):
     name: str
 
@@ -64,3 +56,16 @@ class Domain(_Api):
     name: str
     dags: list[DomainDag]
     processes: list[DomainProcess] = Field(default_factory=list)
+
+
+class Jobs(_Api):
+    """`POST /api/jobs`: every runs workflow as the snapshot lists it, with the domains, cues, pools and the error a runs
+    instance reported, and the stream position the list was read at: a `jobChanges` subscription from it carries every
+    change after."""
+
+    position: int
+    items: list[DagBody]
+    error: str | None
+    domains: list[Domain] = Field(description="The DAG domains the config declares.")
+    cues: list[Cue] = Field(description="The DAGs cued by a Board event.")
+    pools: list[Pool] = Field(description="The concurrency pools the DAGs run on, each named `<instance>/<pool>`.")

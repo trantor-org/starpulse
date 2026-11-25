@@ -37,12 +37,3 @@ def last_run_event(engine: Engine, run: str, task: str | None = None) -> float |
     match = (c.run == run) if task is None else or_(c.run == run, c.task == task)
     with engine.connect() as db:
         return db.execute(select(func.max(c.occurred_at)).where(match)).scalar()
-
-
-def last_machine_event(engine: Engine, machine: str, run: str) -> str | None:
-    """The name of the event machine `machine` recorded last, in the order it recorded them, for run `run` on `engine`; None
-    when it recorded none."""
-    c = machine_events.c
-    newest = select(c.event).where(c.machine == machine, c.run == run).order_by(c.id.desc())
-    with engine.connect() as db:
-        return db.execute(newest.limit(1)).scalar()

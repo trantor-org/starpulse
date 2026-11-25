@@ -355,11 +355,17 @@ class Supervisor:
             reexec = own is not None and not own.same_code(after[SELF])
             if reexec:
                 self._halt.set()
-                for name in self._sockets:
-                    self._replace(name, self._children[name])
-                outcomes = {
-                    n: self._hand_over(n, c, after[n]) for n, c in self._children.items() if n not in self._sockets
-                }
+                try:
+                    for name in self._sockets:
+                        self._replace(name, self._children[name])
+                    outcomes = {
+                        n: self._hand_over(n, c, after[n])
+                        for n, c in self._children.items()
+                        if n not in self._sockets
+                    }
+                except Exception:
+                    self._halt.clear()  # no re-exec follows a failed reload, so the children stay supervised
+                    raise
                 outcomes.update(dict.fromkeys(self._sockets, "replaced"))
             else:
                 outcomes = {n: self._apply(n, c, self._seen.get(n), after[n]) for n, c in self._children.items()}

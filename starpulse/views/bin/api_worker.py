@@ -159,7 +159,8 @@ def serve_page(
     # no follower runs in this process: what the workers keep in the log is applied when a request reads it (`CaughtUp`)
     caught_up = CaughtUp(log)
     # the Ledger a pull or run update changes is rebuilt here, so the request that applies the update never waits on it
-    feed.build_ledgers_on(ThreadPoolExecutor(1, thread_name_prefix="ledger"))
+    ledgers = ThreadPoolExecutor(1, thread_name_prefix="ledger")
+    feed.build_ledgers_on(ledgers)
     # `starpulse worker board` keeps the claim refusals and verdicts as the deltas a stream replays
     saved_after = log.head() or 0  # before the store loads: a save between the two is announced past it
     pulls = PullStore(log.engine)
@@ -250,5 +251,6 @@ def serve_page(
         httpd.run()
     finally:
         stop.set()
+        ledgers.shutdown(wait=True, cancel_futures=True)  # a running rebuild ends before the stores it reads close
         log.close()
         store.engine.dispose()

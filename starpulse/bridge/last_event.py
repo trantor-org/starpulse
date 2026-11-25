@@ -9,7 +9,6 @@ from sqlalchemy import Engine, func, select
 from starpulse.bridge.subjects import token
 from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.events import STREAM
-from starpulse.event_log.opening import last_machine_event
 from starpulse.event_log.tables import events, machine_events
 
 #: The entities whose runs index their events (`alert.<rule>`, `deploy.<component>`), so the latest one is a lookup.
@@ -32,9 +31,9 @@ def _stored_run(engine: Engine, entity: str, run: str) -> str:
         return next((name for name in db.execute(newest).scalars() if token(name) == run), run)
 
 
-def _logged(engine: Engine, entity: str, run: str) -> str | None:
+def _logged(engine: Engine, entity: str, run: str) -> tuple[str, str | None] | None:
     """The newest event `entity` appended to the log, past the recorder's cursor, for the run whose subject token is
-    `run`; None when it holds none."""
+    `run`, with the build it named; None when it holds none."""
     c = events.c
     copied = Checkpoints(engine).load(STREAM)[0] or 0
     newest = (
@@ -43,13 +42,41 @@ def _logged(engine: Engine, entity: str, run: str) -> str | None:
         .order_by(c.id.desc())
     )
     with engine.connect() as db:
-        return next((f["event"] for f in db.execute(newest).scalars() if f.get("run") is not None and token(f["run"]) == run), None)
+        return next(
+            (
+                (f["event"], (f.get("data") or {}).get("sha"))
+                for f in db.execute(newest).scalars()
+                if f.get("run") is not None and token(f["run"]) == run
+            ),
+            None,
+        )
+
+
+def _stored(engine: Engine, entity: str, run: str) -> tuple[str, str | None] | None:
+    c = machine_events.c
+    newest = select(c.event, c.sha).where(c.machine == entity, c.run == run).order_by(c.id.desc()).limit(1)
+    with engine.connect() as db:
+        row = db.execute(newest).first()
+    return (row.event, row.sha) if row else None
+
+
+def _last(engine: Engine, subject: str) -> tuple[str | None, str | None]:
+    """The event and build of the latest event of `subject`'s run when it is the subject's own, else `(None, None)`."""
+    if not readable(subject):
+        return None, None
+    _, _, entity, run, event = subject.split(".")
+    last = _logged(engine, entity, run) or _stored(engine, entity, _stored_run(engine, entity, run))
+    if last is None or token(last[0].removeprefix("PR_").lower()) != event:
+        return None, None
+    return last
 
 
 def last_event_is(engine: Engine, subject: str) -> bool:
     """Whether the latest event of `subject`'s run, as the bridge names it, is the subject's own."""
-    if not readable(subject):
-        return False
-    _, _, entity, run, event = subject.split(".")
-    last = _logged(engine, entity, run) or last_machine_event(engine, entity, _stored_run(engine, entity, run))
-    return last is not None and token(last.removeprefix("PR_").lower()) == event
+    return _last(engine, subject)[0] is not None
+
+
+def last_event_sha(engine: Engine, subject: str) -> str | None:
+    """The build the latest event of `subject`'s run named, when that event is the subject's own; None when it is
+    not, or named none (an event recorded before the column existed)."""
+    return _last(engine, subject)[1]

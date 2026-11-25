@@ -332,6 +332,7 @@ class TaskActor:
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
         latest: Callable[[str], bool] | None = None,
+        latest_sha: Callable[[str], str | None] | None = None,
         unpublished: Callable[[str], str | None] = lambda _subject: None,
         holds: Callable[[str], Sequence[str]] = _no_holds,
         parked: Callable[[str], None] = _ignore,
@@ -412,6 +413,7 @@ class TaskActor:
         self._releasable: set[str] = set()
         self._dates: dict[str, tuple[str, ...]] = {}
         self._latest = latest
+        self._latest_sha = latest_sha
         self._commits: dict[str, dict[str, str]] = {}  # a task -> the commit each subject it waits on must contain
         self._unpublished = unpublished
         self._publisher: dict[str, tuple[str | None, float]] = {}
@@ -939,9 +941,7 @@ class TaskActor:
         commits = criteria.commits(agent["description"]) if gate else {}
         if gate == self._gates.get(name, ()) and commits == self._commits.get(name, {}):
             return False
-        heard = {
-            subject for subject in gate if subject not in commits and self._latest is not None and self._latest(subject)
-        }
+        heard = {subject for subject in gate if self._happened(subject, commits.get(subject))}
         self._unwatch(name)
         self._gates[name] = gate
         if commits:
@@ -951,6 +951,12 @@ class TaskActor:
         if heard:
             self._heard[name] = heard
         return True
+
+    def _happened(self, subject: str, commit: str | None) -> bool:
+        """Whether `subject`'s last event is already recorded, and for a wait on `commit`, names a build containing it."""
+        if commit is not None:
+            return self._latest_sha is not None and self._contains(self._latest_sha(subject), commit)
+        return self._latest is not None and self._latest(subject)
 
     def _unwatch(self, name: str) -> None:
         for subject in self._gates.pop(name, ()):

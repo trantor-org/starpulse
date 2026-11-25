@@ -173,6 +173,7 @@ machine_events = Table(
     Column("event", String, nullable=False),
     Column("actor", String),
     Column("occurred_at", Float, nullable=False),
+    Column("sha", String),
     Index("ix_starpulse_machine_events_task", "task", "machine", "occurred_at"),
     Index("ix_starpulse_machine_events_run", "run", "machine", "occurred_at"),
 )

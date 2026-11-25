@@ -1540,13 +1540,65 @@ export interface HarnessTier {
   [k: string]: unknown;
 }
 /**
- * `POST /api/jobs`: every runs workflow as the snapshot lists it, and the error a runs instance reported, with the
- * stream position the list was read at: a `jobChanges` subscription from it carries every change after.
+ * `POST /api/jobs`: every runs workflow as the snapshot lists it, with the domains, cues, pools and the error a runs
+ * instance reported, and the stream position the list was read at: a `jobChanges` subscription from it carries every
+ * change after.
  */
 export interface Jobs {
+  /**
+   * The DAGs cued by a Board event.
+   */
+  cues: Cue[];
+  /**
+   * The DAG domains the config declares.
+   */
+  domains: Domain[];
   error: string | null;
   items: DagBody[];
+  /**
+   * The concurrency pools the DAGs run on, each named `<instance>/<pool>`.
+   */
+  pools: Pool[];
   position: number;
+  [k: string]: unknown;
+}
+/**
+ * A DAG that runs on the same trigger as a Board event's writer but writes no lane itself.
+ */
+export interface Cue {
+  dag: string;
+  event: string;
+  /**
+   * Seconds after the event a run of the DAG may take to start before the Ledger draws the merge overdue.
+   */
+  grace?: number;
+  on: string;
+  /**
+   * How a failed run of the DAG clears: `forced` only on a green forced rerun, `next` on the DAG's next green run.
+   */
+  resolves?: ("forced" | "next") | null;
+  state: string;
+  [k: string]: unknown;
+}
+/**
+ * A domain's DAGs; `processes` package them when configured.
+ */
+export interface Domain {
+  dags: DomainDag[];
+  name: string;
+  processes?: DomainProcess[];
+  [k: string]: unknown;
+}
+export interface DomainDag {
+  name: string;
+  [k: string]: unknown;
+}
+/**
+ * A named package of a domain's DAGs.
+ */
+export interface DomainProcess {
+  dags: DomainDag[];
+  name: string;
   [k: string]: unknown;
 }
 /**
@@ -2298,45 +2350,6 @@ export interface Capabilities {
 export interface Claim {
   at: number;
   reason: string;
-  [k: string]: unknown;
-}
-/**
- * A DAG that runs on the same trigger as a Board event's writer but writes no lane itself.
- */
-export interface Cue {
-  dag: string;
-  event: string;
-  /**
-   * Seconds after the event a run of the DAG may take to start before the Ledger draws the merge overdue.
-   */
-  grace?: number;
-  on: string;
-  /**
-   * How a failed run of the DAG clears: `forced` only on a green forced rerun, `next` on the DAG's next green run.
-   */
-  resolves?: ("forced" | "next") | null;
-  state: string;
-  [k: string]: unknown;
-}
-/**
- * A domain's DAGs; `processes` package them when configured.
- */
-export interface Domain {
-  dags: DomainDag[];
-  name: string;
-  processes?: DomainProcess[];
-  [k: string]: unknown;
-}
-export interface DomainDag {
-  name: string;
-  [k: string]: unknown;
-}
-/**
- * A named package of a domain's DAGs.
- */
-export interface DomainProcess {
-  dags: DomainDag[];
-  name: string;
   [k: string]: unknown;
 }
 export interface FlowSnapshot {

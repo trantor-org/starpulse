@@ -200,6 +200,7 @@ class HistoryStore:
             "event": fields["event"],
             "actor": fields.get("actor"),
             "occurred_at": float(fields["time"]),
+            "sha": (fields.get("data") or {}).get("sha"),
         }
         with self.engine.begin() as db:
             insert = self._insert(_machine_events).values(row).on_conflict_do_nothing()

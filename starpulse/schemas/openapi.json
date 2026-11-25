@@ -4972,7 +4972,7 @@
         "type": "object"
       },
       "Jobs": {
-        "description": "`POST /api/jobs`: every runs workflow as the snapshot lists it, and the error a runs instance reported, with the\nstream position the list was read at: a `jobChanges` subscription from it carries every change after.",
+        "description": "`POST /api/jobs`: every runs workflow as the snapshot lists it, with the domains, cues, pools and the error a runs\ninstance reported, and the stream position the list was read at: a `jobChanges` subscription from it carries every\nchange after.",
         "properties": {
           "position": {
             "type": "integer"
@@ -4992,12 +4992,36 @@
                 "type": "null"
               }
             ]
+          },
+          "domains": {
+            "description": "The DAG domains the config declares.",
+            "items": {
+              "$ref": "#/components/schemas/Domain"
+            },
+            "type": "array"
+          },
+          "cues": {
+            "description": "The DAGs cued by a Board event.",
+            "items": {
+              "$ref": "#/components/schemas/Cue"
+            },
+            "type": "array"
+          },
+          "pools": {
+            "description": "The concurrency pools the DAGs run on, each named `<instance>/<pool>`.",
+            "items": {
+              "$ref": "#/components/schemas/Pool"
+            },
+            "type": "array"
           }
         },
         "required": [
           "position",
           "items",
-          "error"
+          "error",
+          "domains",
+          "cues",
+          "pools"
         ],
         "title": "Jobs",
         "type": "object"

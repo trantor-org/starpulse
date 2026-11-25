@@ -2949,8 +2949,22 @@
       "type": "object"
     },
     "Jobs": {
-      "description": "`POST /api/jobs`: every runs workflow as the snapshot lists it, and the error a runs instance reported, with the\nstream position the list was read at: a `jobChanges` subscription from it carries every change after.",
+      "description": "`POST /api/jobs`: every runs workflow as the snapshot lists it, with the domains, cues, pools and the error a runs\ninstance reported, and the stream position the list was read at: a `jobChanges` subscription from it carries every\nchange after.",
       "properties": {
+        "cues": {
+          "description": "The DAGs cued by a Board event.",
+          "items": {
+            "$ref": "#/$defs/Cue"
+          },
+          "type": "array"
+        },
+        "domains": {
+          "description": "The DAG domains the config declares.",
+          "items": {
+            "$ref": "#/$defs/Domain"
+          },
+          "type": "array"
+        },
         "error": {
           "anyOf": [
             {
@@ -2967,6 +2981,13 @@
           },
           "type": "array"
         },
+        "pools": {
+          "description": "The concurrency pools the DAGs run on, each named `<instance>/<pool>`.",
+          "items": {
+            "$ref": "#/$defs/Pool"
+          },
+          "type": "array"
+        },
         "position": {
           "type": "integer"
         }
@@ -2974,7 +2995,10 @@
       "required": [
         "position",
         "items",
-        "error"
+        "error",
+        "domains",
+        "cues",
+        "pools"
       ],
       "title": "Jobs",
       "type": "object"

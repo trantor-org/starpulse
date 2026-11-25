@@ -46,9 +46,19 @@ class ViewMethods:
         return rows[:end], len(rows) > end
 
     def run_list(self) -> dict[str, Any]:
-        """`POST /api/jobs` and `GET /api/jobs/{name}`: the snapshot's `dags` and `error`, with no board read."""
+        """`POST /api/jobs` and `GET /api/jobs/{name}`: the snapshot's `dags`, `domains`, `cues`, `pools` and `error`, with no board read."""
         with self._lock:
-            return {"dags": self._workflows(), "error": self._error()}
+            return {
+                "dags": self._workflows(),
+                **declared(self._domains, self._cues, self._processes),
+                "pools": self._drawn_pools(),
+                "error": self._error(),
+            }
+
+    def declared_jobs(self) -> dict[str, Any]:
+        """The config's `domains` and `cues`, which a `jobChanges` frame carries beside the event's own fields."""
+        with self._lock:
+            return declared(self._domains, self._cues, self._processes)
 
     def contract_inputs(self) -> dict[str, Any]:
         """The `dags` and `cues` of the snapshot, the only two fields the doctor's contract checks read, with no board read."""

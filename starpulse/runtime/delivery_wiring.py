@@ -10,7 +10,7 @@ from starpulse.board.adapters.until_events import follow_until_events
 from starpulse.board.model.seam import (
     Board,
 )
-from starpulse.bridge.last_event import last_event_is
+from starpulse.bridge.last_event import last_event_is, last_event_sha
 from starpulse.bridge.subjects import subject_for
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
@@ -115,6 +115,7 @@ def start_delivery(
             pins,
             config.board_repo,
             latest=lambda subject: last_event_is(log.engine, subject),
+            latest_sha=lambda subject: last_event_sha(log.engine, subject),
             holds=board.holds,
             read=board.read,
             unfinished=board.unfinished,
