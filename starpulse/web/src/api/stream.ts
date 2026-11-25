@@ -3,6 +3,7 @@
 import type { SchedulerStatus, Delta, LedgerRow, Settled, Snapshot } from ".";
 import { browserCache, type SnapshotCache } from "./savedSnapshot";
 import { apiFetch } from "./apiFetch";
+import { openHealth, type Health, type Watch } from "./health";
 import { keep, same } from "./same";
 import { decodeMove, decodeSnapshot, intern } from "./trails";
 import type { Snapshot as WireSnapshot } from "./types.gen";
@@ -115,12 +116,15 @@ export interface StreamHandlers {
   link?(state: Link): void;
   /** The server named a page build other than the one the page holds, once per such build, once that server has read its board. */
   build?(id: string): void;
+  /** How many seconds the server's clock is ahead of the page's, from the server's time on each health event. */
+  clock?(skew: number): void;
   /** Scheduler capacity and next pick: not part of the snapshot; the Kanban strip applies each body. */
   scheduler?(status: SchedulerStatus): void;
 }
 
 /**
- * One EventSource on /api/events. The server opens
+ * One EventSource on /api/events, and beside it one health subscription (`watch`) that says whether the server announced a restart,
+ * whether it is still reading its board, which page build it serves and what time it is. The server opens
  * each connection with a fresh snapshot, so a reconnect resyncs. The snapshot the page holds is kept in `kept` (browser storage), and a
  * page that loads while the server is down draws that one, marked `stale`, until the server's own arrives; null keeps and restores nothing. A browser waits seconds before it retries a source of its own, so the
  * page closes a dropped connection and opens a new one at once, then after 250 ms, 500 ms and so on up to RETRY_CAP_MS.
@@ -130,6 +134,7 @@ export function openStream(
   open: (url: string) => EventSource = (url) => new EventSource(url),
   early: EarlyStream | null = takeEarly(),
   kept: SnapshotCache | null = browserCache(),
+  watch: Watch = openHealth,
 ): { close(): void } {
   let source: EventSource | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -142,20 +147,29 @@ export function openStream(
   /** Set while the Board the page shows predates the connection: the one kept from the last load, or the one held through a drop, until the server's whole one is handed over. */
   let old = false;
   let keeping: ReturnType<typeof setTimeout> | undefined;
+  /** Set from a connect until its health says the server's board component is ready: the Board it sends may be partial. */
+  let reading = true;
+  /** Set when `hand` held a snapshot back for `reading`, so it is handed over once the server has read its board. */
+  let withheld = false;
   /** Writes the state as it stands KEEP_MS after the first change since the last write; a browser that refuses it (quota) leaves the page as it was. */
   const keepSoon = () => {
-    if (!kept || keeping || state!.reading) return;
+    if (!kept || keeping || reading || !state) return;
     keeping = setTimeout(() => {
       keeping = undefined;
       kept.write(state!).catch(() => {});
     }, KEEP_MS);
   };
   const hand = (kind?: Delta["kind"]) => {
-    if (folding || (shown && state!.reading)) return;
+    if (folding) return;
+    if (shown && reading) {
+      withheld = true;
+      return;
+    }
+    withheld = false;
     shown = true;
     handlers.snapshot(state!, kind);
     keepSoon();
-    if (!old || state!.reading) return;
+    if (!old || reading) return;
     old = false;
     if (showing === "stale") show("live");
   };
@@ -221,15 +235,47 @@ export function openStream(
   /** A build the page has not reported yet because its server was still reading its board: a page reloaded onto it then would draw the partial Board. */
   let pending: string | null = null;
   const tell = () => {
-    if (pending === null || state?.reading) return;
+    if (pending === null || reading) return;
     handlers.build?.((told = pending));
     pending = null;
   };
 
+  /** What the server's health says: a restart it announced, whether its board is read, the build it serves and its clock. */
+  const onHealth = (h: Health) => {
+    if (h.restarting && !announced) {
+      announced = true;
+      show("restarting");
+      goesLost();
+    }
+    reading = h.components.some((c) => c.name === "board" && !c.ready);
+    if (h.build !== null) {
+      if (own === null) own = h.build;
+      else if (h.build !== own && h.build !== told) pending = h.build;
+    }
+    handlers.clock?.(h.at - Date.now() / 1000);
+    if (reading) return;
+    if (withheld && !state?.reading) hand(); // a partial Board stays withheld: the snapshot the server publishes as it finishes reading follows
+    else if (!old) keepSoon();
+    tell();
+  };
+
+  let watching: { close(): void } | null = null;
   const connect = (adopt: EarlyStream | null = null) => {
     const src = adopt?.src ?? open(EVENTS);
     source = src;
     waiting = null;
+    reading = true;
+    let over = false;
+    /** Either stream ending ends the connection: the page reopens both, so what the health says is never older than the Board. */
+    const end = () => {
+      if (over) return;
+      over = true;
+      src.close(); // not the browser's own retry, which waits seconds
+      watching?.close();
+      drop();
+    };
+    watching?.close();
+    watching = watch({ health: onHealth, end });
     src.addEventListener("snapshot", (e) => {
       const data = (e as MessageEvent<string>).data;
       if (!data.startsWith("ref ")) return take(JSON.parse(data) as WireSnapshot);
@@ -254,8 +300,7 @@ export function openStream(
           () => {
             if (waiting !== mine) return;
             waiting = null;
-            src.close(); // the server holds no body by that name now: a fresh connection sends a fresh snapshot
-            drop();
+            end(); // the server holds no body by that name now: a fresh connection sends a fresh snapshot
           },
         );
     });
@@ -271,6 +316,8 @@ export function openStream(
     src.addEventListener("claim", later((e) =>
       fold({ kind: "claim", ...JSON.parse((e as MessageEvent<string>).data) }),
     ));
+    // the page's own build is the one the connection index.html opened named, which health, opened after the page loaded, may not
+    src.addEventListener("build", (e) => void (own ??= (JSON.parse((e as MessageEvent<string>).data) as { id: string }).id));
     src.addEventListener("scheduler", later((e) => {
       handlers.scheduler?.(JSON.parse((e as MessageEvent<string>).data) as SchedulerStatus);
     }));
@@ -278,27 +325,8 @@ export function openStream(
       old = true; // no Board writer folds: the page's Board stays as drawn, marked, until the next change hands over a fresh one
       show("stale");
     }));
-    src.addEventListener("restarting", () => {
-      announced = true;
-      show("restarting");
-      goesLost();
-    });
-    src.addEventListener(
-      "build",
-      later((e) => {
-        const id = (JSON.parse((e as MessageEvent<string>).data) as { id: string }).id;
-        if (own === null) own = id;
-        else if (id !== own && id !== told) {
-          pending = id;
-          tell();
-        }
-      }),
-    );
     src.onopen = up;
-    src.onerror = () => {
-      src.close(); // not the browser's own retry, which waits seconds
-      drop();
-    };
+    src.onerror = end;
     if (!adopt) return;
     // what the connection did before the page listened: the events in order through the listeners just added, then its open or its end
     adopt.adopted = true;
@@ -326,6 +354,7 @@ export function openStream(
       clearTimeout(lost);
       clearTimeout(keeping);
       source?.close();
+      watching?.close();
     },
   };
 }

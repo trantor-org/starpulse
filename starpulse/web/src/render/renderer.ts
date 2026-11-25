@@ -117,6 +117,8 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   let drag: { fixed: boolean; x: number; y: number; vx: number; vy: number; moved: boolean } | null = null;
   // ZS: zoom beyond the fit size; K: absolute zoom. Text, pulses and dashes divide by these so they never balloon.
   const grown = sizes(), bends = new Map<string, Pt>(); // each bent Board path's last bend, so it keeps its route while that clears
+  /** The server's clock less the page's, from its health: null until it has said. */
+  let skew: number | null = null;
   let T = Date.now() / 1000, clock = 0, liveTasks = new Set<string>(), hotEdge = new Set<string>(), ZS = 1, K = 1;
   let away = false, fanTimer = 0, stopped = false, saveT = 0, tick = 0;
   /** The snapshot after a resync is still to come; then the next Board frame places the phase branches and dots as they stand, not from where they last drew. */
@@ -467,6 +469,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     live: onLive,
     link: onLink,
     build: onBuild,
+    clock: (offset: number) => void (skew = offset),
     scheduler: pushSchedulerStatus,
   };
   function apply(next: Snapshot) {
@@ -475,7 +478,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     T = Date.now() / 1000;
     S = { ...merge(next), ledgers: ledgerRows };
     for (const d of S.dags) fans[d.name] = track(fans[d.name] ?? emptyFan(), d, T);
-    moves.observe(S, T);
+    moves.observe(S, T, skew);
     if (resynced) [resynced, replace] = [false, true];
     if (first) runEvents.resync(); // the runs already in flight when the page opens are not announced as new
     runEvents.observe(S.dags, T);

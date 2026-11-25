@@ -2,6 +2,7 @@
 
 import contextlib
 import functools
+import json
 import logging
 import queue
 import threading
@@ -129,10 +130,14 @@ class Streams:
         feed: BoardFeed,
         snapshots: Snapshots,
         build: Callable[[], str | None] = lambda: None,
+        ready: Callable[[], dict[str, Any]] | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._feed = feed
         self._snapshots = snapshots
         self._build = build
+        self._ready = ready
+        self._clock = clock
         self._event_text = EventText()
         self._unmodelled: set[str] = {"tick"}  # the held snapshot's clock tick is stored for it, and is no page event
         self._column_views = ColumnViews()
@@ -161,6 +166,56 @@ class Streams:
     def job_changes(self, request: Request, position: int, render: Callable[[dict], str]) -> Response:
         """`task_changes` for the jobs: a `next` event of `render`'s text for each change of the workflows."""
         return self._changes(request, position, "the jobs", lambda name, data: self._job_change(render, name, data))
+
+    def health(self, request: Request, render: Callable[[dict], str]) -> Response:
+        """The server's health as a `next` event of `render`'s text when it connects, then another each time the components,
+        the build or the restart change. The stream attaches at the log's head, so an announcement made after the connect
+        reaches it before the worker exits."""
+
+        def open_stream() -> Stream:
+            _, changes = _attach(lambda: self._snapshots.watch_from(self._snapshots.position()))
+            return Stream(self._health_frames(render, changes), lambda: self._snapshots.unsubscribe(changes))
+
+        return self._admitted(request, open_stream)
+
+    def _health_frames(self, render: Callable[[dict], str], changes: queue.Queue) -> Generator[bytes]:
+        """The components are read on connect, at least every `_PING_S` however busy the stream is, and on each delta while
+        one is not ready or once the server announced it restarts: a ready server's deltas cost it no read in between."""
+        sent, restarting, unready, unmarked = None, False, False, False
+        while True:
+            state = self._health(restarting)
+            unready = not all(component["ready"] for component in state["components"])
+            if state != sent:
+                sent = state
+                yield _frame("next", render({**state, "at": self._clock()}))
+            if unmarked:
+                changes.task_done()  # `Snapshots.announce` waits for the mark of what it queued: after the frame is sent
+                unmarked = False
+            due = time.monotonic() + _PING_S
+            while True:
+                try:
+                    change = changes.get(timeout=max(0.0, due - time.monotonic()))
+                except queue.Empty:
+                    yield _PING
+                    break
+                if change is None:  # the log was renumbered: the page reconnects
+                    changes.task_done()
+                    return
+                unmarked = True
+                restarting = restarting or change[0] == "restarting"
+                if unready or restarting or time.monotonic() >= due:
+                    break
+                changes.task_done()
+                unmarked = False
+
+    def _health(self, restarting: bool) -> dict[str, Any]:
+        report = self._ready() if self._ready else {"components": {}}
+        build = self._build()
+        return {
+            "components": [{"name": name, **component} for name, component in report["components"].items()],
+            "build": json.loads(build)["id"] if build else None,
+            "restarting": restarting,
+        }
 
     def _changes(
         self, request: Request, position: int, what: str, frames: Callable[[str, dict], Iterator[bytes]]

@@ -634,4 +634,26 @@ type Subscription {
   the server no longer holds is answered with HTTP 410 and the error code `REREAD`: read the list again.
   """
   jobChanges(from: Int!): JobChange!
+  """
+  The server's health, sent when the subscription connects and again each time its components, build or restarting change.
+  """
+  health: Health!
+}
+
+"""What a page reads of the server: whether it can serve the board, which build it runs, whether it announced a restart."""
+type Health {
+  """Each readiness component, as `GET /api/health` reports it."""
+  components: [HealthComponent!]!
+  """The build id the server runs, or null when it names none."""
+  build: String
+  """True once the server announced it is restarting: the stream ends soon after."""
+  restarting: Boolean!
+  """The server's clock, in epoch seconds, when this event was made."""
+  at: Float!
+}
+
+type HealthComponent {
+  name: String!
+  ready: Boolean!
+  detail: String!
 }

@@ -288,10 +288,11 @@ export class Moves {
     this.events = this.events.filter((e) => e.machine !== "board" && e.at <= now);
   }
 
-  observe(S: Sky, t: number) {
+  /** `skew` is the server's clock less the page's, from its health; with none yet, the snapshot's own `now` stands in for the server's clock. */
+  observe(S: Sky, t: number, skew: number | null = null) {
     if (this.prev?.reading) this.resync(t); // the Board the server finished reading is placed as a page load, not moved onto from a partial one
     if (S.now !== this.clock.now) this.clock = { now: S.now, off: t - S.now };
-    const off = this.clock.off, prev = this.prev, add = (m: Move, key: string) => {
+    const off = skew === null ? this.clock.off : -skew, prev = this.prev, add = (m: Move, key: string) => {
       if (m.at >= t - HOUR) this.events.push(m);
       this.last[key] = Math.max(this.last[key] ?? -Infinity, m.at);
     };

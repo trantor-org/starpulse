@@ -67,7 +67,7 @@ class Api:
 
     @cached_property
     def streams(self) -> Streams:
-        return Streams(self.feed, self.snapshots, self.build)
+        return Streams(self.feed, self.snapshots, self.build, self.services.ready, self.clock)
 
 
 def api_routes(api: Api) -> list[ApiRoute]:

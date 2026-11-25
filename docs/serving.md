@@ -277,11 +277,11 @@ clock time of the last data the page drew.
 | State | Dot | Note | When |
 | --- | --- | --- | --- |
 | Live | green | `live · HH:MM MST` | The stream is open. |
-| Restarting | amber, pulsing | `restarting · HH:MM MST` | The server sent `restarting` before it exited. |
+| Restarting | amber, pulsing | `restarting · HH:MM MST` | The `health` subscription sent `restarting` before the server exited. |
 | Stale | amber, pulsing | `stale · HH:MM MST` | The page drew the Board it kept from an earlier load and the server has not yet sent its own, or the server sent `stale`: no Board writer is folding. |
 | Retrying | amber, pulsing | `retrying · HH:MM MST` | The stream dropped with no announcement. |
 | Offline | red | `offline · HH:MM MST` | The stream has been down for 20 s, from the drop or the announcement. It keeps retrying. |
-| New build | green | `updating when idle` | The server runs a page build other than the one loaded. |
+| New build | green | `updating when idle` | The `health` subscription's `build` is a page build other than the one loaded. |
 
 The dot does not pulse under `prefers-reduced-motion`.
 
@@ -361,6 +361,7 @@ GET /api/snapshot  the document /api/events sends on connect, as one response: w
                    that needs a task's description or criteria reads `/api/task/<id>`
 POST /api/jobs     {position, items, domains, cues, pools, error}: every runs workflow as a job with its latest run and its runner's `startUrl` (empty when the instance sets none), the config's domains and cues, the concurrency pools (`<instance>/<pool>`), and what a runs instance reported; `starpulse runs list` reads it
 GET /api/jobs/<name>  one job as the list holds it; 404 for a name no instance serves
+POST /graphql      `subscription { health { components { name ready detail } build restarting at } }` sends the readiness components (the `GET /api/health` read, which stays for probes), the page build id, whether the server announced a restart, and the server's clock `at`, on connect and again whenever the components, the build or the restart change; the page's link state, idle reload and clock offset read it, and it reads the components again at least every 15 s, however busy the stream, and on each delta while one is unready, never per delta in between while all are ready
 POST /graphql      `subscription { jobChanges(from: <position>) { jobs error domains cues pools } }` streams the full job list on each change after `position`; a `from` the server no longer holds answers 410, and the page reads the list again
 GET /metrics       Prometheus text: `starpulse_page_build_info{build}`, 1 for the page build id the `build` event
                    names (none without a build); `starpulse_docs{type}`, the open board docs of each type; `starpulse_open_pulls{repo}`, the open pull requests the PR store holds in each repository; `starpulse_snapshot_build_seconds_count` and `_sum`, the snapshots the API built and the
