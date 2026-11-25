@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from starpulse.runs.model.config import RunsInstance
+    from starpulse.runs.model.config import Producer, RunsInstance
 
 
 class RunsConfig(Protocol):
@@ -15,6 +15,7 @@ class RunsConfig(Protocol):
     board_type: str
     board: Mapping[str, object]
     runs: tuple[RunsInstance, ...]
+    producers: tuple[Producer, ...]
     event_log_retention_days: int
 
 
