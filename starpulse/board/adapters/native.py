@@ -114,6 +114,8 @@ _SETTINGS = {
     "interval",  # retired: a config that still sets it loads, the setting does nothing
     "machine",
     "criteria",  # retired: a config that still sets it loads, the setting does nothing
+    "claim_ttl",  # retired: a config that still sets it loads, the setting does nothing
+    "verifying",  # retired: a config that still sets it loads, the setting does nothing
     "holds",
     "holds_labels",
     "unfinished",

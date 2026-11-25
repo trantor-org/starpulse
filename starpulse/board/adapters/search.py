@@ -606,7 +606,12 @@ class SearchIndex:
                 self._filling.add(query)
         if wait:
             return self._embed_query(query)
-        threading.Thread(target=self._fill, args=(query,), daemon=True).start()
+        try:
+            threading.Thread(target=self._fill, args=(query,), daemon=True).start()
+        except RuntimeError:
+            with self._queries_lock:
+                self._filling.discard(query)
+            logger.warning("StarPulse: cannot start a thread to embed a search query")
         return None
 
     def _fill(self, query: str) -> None:

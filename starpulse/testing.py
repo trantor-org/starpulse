@@ -15,6 +15,8 @@ POLL_S = 0.005
 def until(condition: Callable[[], object], within: float = HANG_GUARD_S) -> bool:
     """Whether `condition` came true within `within` seconds, checked every `POLL_S` seconds."""
     deadline = time.monotonic() + within
-    while not condition() and time.monotonic() < deadline:
+    while not condition():
+        if time.monotonic() >= deadline:
+            return False
         time.sleep(POLL_S)
-    return bool(condition())
+    return True
