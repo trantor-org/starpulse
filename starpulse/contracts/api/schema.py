@@ -27,7 +27,6 @@ from starpulse.contracts.api.dto.requests import (
     AdminRequest,
     CompleteRequest,
     CreateRequest,
-    DispatchRequest,
     DocCreateRequest,
     DocListRequest,
     DocPutRequest,
@@ -130,7 +129,6 @@ class ApiContract(_Api):
         | MissRequest
         | RetireRequest
         | CompleteRequest
-        | DispatchRequest
         | CreateRequest
         | TaskPutRequest
         | MilestoneCreateRequest

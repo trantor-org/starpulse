@@ -361,10 +361,11 @@ def _kept(output: dict[str, Any], keys: Sequence[str]) -> dict[str, Any]:
 def task_dispatch(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Dispatch the session to the task: the task actor pins it and moves a Ready or Needs attention task to In Progress.
     A refusal is `ok: false` with its reason, a task another session holds or a session holding another task."""
-    base = agent_wire.server_url(args.server, environ)
-    body = {"task": args.task, **({"replaces": args.replaces} if args.replaces else {}), **writer(args, environ)}
-    status, reply = agent_wire.post(base, "/api/dispatch", body)
-    message = reply.get("error") or f"{base} answered {status} for /api/dispatch"
+    base, path = agent_wire.server_url(args.server, environ), f"/api/tasks/{args.task}"
+    who = writer(args, environ)
+    body = {"base": {"assignee": args.replaces or ""}, "changes": {"assignee": who.get("session", "")}, **who}
+    status, reply = agent_wire.put(base, path, body)
+    message = reply.get("error") or f"{base} answered {status} for {path}"
     if status == 202:
         return {"ok": True, "task": args.task, "session": reply.get("session", ""), "reason": "", "skill": ""}
     if status == 409:

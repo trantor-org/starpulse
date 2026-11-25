@@ -26,7 +26,6 @@ from starpulse.contracts.api.dto.requests import (
     AdminRequest,
     CompleteRequest,
     CreateRequest,
-    DispatchRequest,
     DocCreateRequest,
     DocListRequest,
     DocPutRequest,
@@ -134,7 +133,6 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/miss": MissRequest,
     "/api/retire": RetireRequest,
     "/api/complete": CompleteRequest,
-    "/api/dispatch": DispatchRequest,
     "/api/tasks": CreateRequest,
     "/api/machines": MachineCreateRequest,
     "/api/machines/{name}": MachinePutRequest,
@@ -184,9 +182,8 @@ BODIES: dict[str, Any] = {
     "retire": Retired | SkillRefusal | ApiError,
     "retired": RetiredTasks | ApiError,
     "complete": Completed | SkillRefusal | ApiError,
-    "dispatch": Dispatched | ApiError,
     "create": Created | CreatedEach | SkillRefusal | ApiError,
-    "task_put": Edited | StaleEdit | Restored | Reopened | TakenOver | Parked | SkillRefusal | ApiError,
+    "task_put": Edited | StaleEdit | Restored | Reopened | TakenOver | Parked | Dispatched | SkillRefusal | ApiError,
     "task_delete": Archived | SkillRefusal | ApiError,
     "milestones": Milestones | ApiError,
     "milestone": MilestoneShown | ApiError,
@@ -267,11 +264,14 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("POST", "/api/start"): _write("Start a session on a task", "start", StartRequest),
     ("POST", "/api/miss"): _write("Record a miss", "verdict", MissRequest),
     ("POST", "/api/retire"): _write("Retire a task", "retire", RetireRequest),
-    ("POST", "/api/dispatch"): _write("Dispatch a session to a task", "dispatch", DispatchRequest, "202"),
     ("POST", "/api/complete"): _write("Complete a task", "complete", CompleteRequest),
     ("PUT", "/api/tasks"): _write("Create tasks", "create", CreateRequest, "201", "200"),
     ("PUT", "/api/tasks/{id}"): _write(
-        "Write a task over the base named, or reopen, restore, take it over or park it", "task_put", TaskPutRequest
+        "Write a task over the base named, or reopen, restore, take over, park or dispatch a session to it",
+        "task_put",
+        TaskPutRequest,
+        "200",
+        "202",
     ),
     ("DELETE", "/api/tasks/{id}"): _write(
         "Archive a task, recording the `reason` its optional body names", "task_delete"

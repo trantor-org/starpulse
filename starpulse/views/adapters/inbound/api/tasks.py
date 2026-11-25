@@ -6,8 +6,9 @@
   `next` for the page that follows; or those of a `task` or `milestone`, or as `{task, dependencies}` for
   `fields=dependencies`, unpaged.
 - `PUT /api/tasks` creates; `PUT /api/tasks/{id}` writes over the `base` it names, or reopens (`reopen`), restores
-  (`archived: false`), takes over (`interactive: true`) or parks (`park`); `DELETE /api/tasks/{id}` archives: the task writes.
-- `POST /api/move`, `start`, `verdict`, `miss`, `retire`, `dispatch` and
+  (`archived: false`), takes over (`interactive: true`), parks (`park`) or dispatches a session (`assignee`);
+  `DELETE /api/tasks/{id}` archives: the task writes.
+- `POST /api/move`, `start`, `verdict`, `miss`, `retire` and
   `complete`: a task's writes by verb, each over the seams it needs.
 """
 
@@ -28,7 +29,6 @@ from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole, whole_body
 from starpulse.views.application.commands.moves import (
-    dispatch_task,
     move_task,
     start_requested,
     start_task,
@@ -151,7 +151,6 @@ def routes(api: Api) -> list[ApiRoute]:
         ),
         "/miss": (lambda client, raw: record_miss(client, raw, feed, read, edit, archive, create), "verdict"),
         "/retire": (lambda client, raw: retire_task(client, raw, board), "retire"),
-        "/dispatch": (lambda client, raw: dispatch_task(client, raw, feed, services.dispatch), "dispatch"),
         "/complete": (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),
     }
     return [
@@ -176,6 +175,7 @@ def routes(api: Api) -> list[ApiRoute]:
                     services.take_over,
                     landed,
                     started=started,
+                    dispatch=services.dispatch,
                 ),
             ),
         ),

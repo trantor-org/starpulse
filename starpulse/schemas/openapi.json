@@ -1235,47 +1235,6 @@
         }
       }
     },
-    "/api/dispatch": {
-      "post": {
-        "summary": "Dispatch a session to a task",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_dispatch",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DispatchRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Dispatched"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/complete": {
       "post": {
         "summary": "Complete a task",
@@ -1398,7 +1357,7 @@
     },
     "/api/tasks/{id}": {
       "put": {
-        "summary": "Write a task over the base named, or reopen, restore, take it over or park it",
+        "summary": "Write a task over the base named, or reopen, restore, take over, park or dispatch a session to it",
         "tags": [
           "tasks"
         ],
@@ -1444,6 +1403,38 @@
                     },
                     {
                       "$ref": "#/components/schemas/Parked"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Dispatched"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Edited"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Restored"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Reopened"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TakenOver"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Parked"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Dispatched"
                     }
                   ]
                 }
@@ -3974,64 +3965,6 @@
           "error"
         ],
         "title": "DagsDelta",
-        "type": "object"
-      },
-      "DispatchRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/dispatch`: a dispatch of the `session` it names (an opaque string) to `task`, which the task actor\nanswers by pinning the session and moving a Ready or Needs attention task to In Progress. `replaces` names the\nholder the caller found dead, whose lease the dispatch ends first. A task another session holds is refused.",
-        "properties": {
-          "actor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "session": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "harness": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "task": {
-            "type": "string"
-          },
-          "replaces": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "required": [
-          "task"
-        ],
-        "title": "DispatchRequest",
         "type": "object"
       },
       "Dispatched": {
@@ -9215,7 +9148,7 @@
       },
       "TaskPutRequest": {
         "additionalProperties": false,
-        "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over or park it.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`\n(the archived task returns to the board), `interactive: true` (the unattended task is taken over) and `park`\n(the held task pauses for the one reason it names, with the `comment` beside it).",
+        "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over, park it or\ndispatch a session to it.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that\nname only an `assignee` dispatch that session to the task, which the task actor pins; the `base` assignee is the\nholder, found dead, whose lease the dispatch ends first. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`\n(the archived task returns to the board), `interactive: true` (the unattended task is taken over) and `park`\n(the held task pauses for the one reason it names, with the `comment` beside it).",
         "properties": {
           "actor": {
             "anyOf": [

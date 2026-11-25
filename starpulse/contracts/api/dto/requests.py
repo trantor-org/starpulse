@@ -119,9 +119,12 @@ class Park(_Request):
 
 
 class TaskPutRequest(_Writer):
-    """`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over or park it.
+    """`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over, park it or
+    dispatch a session to it.
 
-    An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. Otherwise the
+    An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that
+    name only an `assignee` dispatch that session to the task, which the task actor pins; the `base` assignee is the
+    holder, found dead, whose lease the dispatch ends first. Otherwise the
     body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`
     (the archived task returns to the board), `interactive: true` (the unattended task is taken over) and `park`
     (the held task pauses for the one reason it names, with the `comment` beside it).
@@ -161,15 +164,6 @@ class CompleteRequest(_Request):
     """`POST /api/complete`: move the Done task `task` into the board's completed tasks."""
 
     task: str
-
-
-class DispatchRequest(_Writer):
-    """`POST /api/dispatch`: a dispatch of the `session` it names (an opaque string) to `task`, which the task actor
-    answers by pinning the session and moving a Ready or Needs attention task to In Progress. `replaces` names the
-    holder the caller found dead, whose lease the dispatch ends first. A task another session holds is refused."""
-
-    task: str
-    replaces: NonBlank | None = None
 
 
 class CreateSpec(_Request):

@@ -47,7 +47,7 @@ from starpulse.views.application.commands.guard import (
     with_request,
 )
 from starpulse.views.application.commands.lifecycle import park_task
-from starpulse.views.application.commands.moves import move_refusal, started_refusal
+from starpulse.views.application.commands.moves import Dispatcher, dispatch_task, move_refusal, started_refusal
 from starpulse.views.application.commands.replays import Replays
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
@@ -267,6 +267,17 @@ def _restored(task: str, who: Who, feed: BoardFeed, restore: TaskRestorer) -> tu
     return 200, {"task": task}
 
 
+def _dispatched(
+    task: str, request: TaskPutRequest, feed: BoardFeed, dispatch: Dispatcher | None
+) -> tuple[int, dict[str, Any]]:
+    """The dispatch an `assignee` change names: it stands alone, and names the session to pin."""
+    session = request.changes["assignee"]
+    if set(request.changes) != {"assignee"} or not isinstance(session, str) or not session.strip():
+        return 400, {"error": "a dispatch changes only `assignee`, to the session to pin"}
+    replaces = request.base.get("assignee")
+    return dispatch_task(task, session, replaces if isinstance(replaces, str) else "", feed, dispatch)
+
+
 def _reopened(
     task: str, reason: str, who: Who, feed: BoardFeed, reopen: TaskReopener, landed: Callable[[str], bool]
 ) -> tuple[int, dict[str, Any]]:
@@ -419,11 +430,13 @@ def put_task(
     landed: Callable[[str], bool],
     *,
     started: Callable[[str], bool],
+    dispatch: Dispatcher | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Write `task` as `PUT /api/tasks/{id}` says: the HTTP status and JSON body of the verb the body names.
 
     `reopen` reopens the Done task, `archived: false` restores it, `interactive: true` takes it over and `park` parks
-    it; any other body is an edit over its `base`.
+    it; a change that names only an `assignee` dispatches that session to the task, its `base` assignee the holder it
+    replaces; any other body is an edit over its `base`.
     """
     who = who_of(request)
     if request.park is not None:
@@ -434,6 +447,8 @@ def put_task(
         return _restored(task, who, feed, board.restore)
     if request.interactive is not None:
         return _taken_over(task, take_over, feed)
+    if "assignee" in request.changes:
+        return _dispatched(task, request, feed, dispatch)
     edit = EditRequest(
         task=task,
         base=request.base,
