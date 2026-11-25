@@ -64,6 +64,7 @@ def start(
         logger.warning("runs: dropped the kept workflows of %s: the config no longer names it", instance)
     # The learned step graphs persist only in StarPulse's own store.
     pushed = PushRuns(publisher.runs(PUSHED_INSTANCE, feed.runs(PUSHED_INSTANCE)), store, config.event_log_retention_days * 86400)
+    pushed.drop_unconfigured({*(p.name for p in config.producers), *(i.name for i in config.runs)})
     publisher.on_listing(pushed.prune)
     for instance, adapter in adapters:
         adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)

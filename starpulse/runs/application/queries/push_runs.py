@@ -141,6 +141,7 @@ class PushRuns:
         self._store = store
         self._dags = {name: _dag(name, steps) for name, steps in (store.learned_graphs() if store else {}).items()}
         self._replay_end: int | None = None
+        self._configured: Collection[str] | None = None
         self._lock = threading.Lock()
         self._publishing = threading.Lock()  # one publish at a time, each reading the workflows as they stand then
         self._pruned = 0  # prunes so far, which a save in flight compares to see its copy is no longer current
@@ -159,8 +160,23 @@ class PushRuns:
         floor = iso_utc(self._clock() - self._retention)
         with self._lock:
             old = [name for name, dag in self._dags.items() if (dag["finishedAt"] or dag["startedAt"] or floor) < floor]
-            if not old:
-                return
+        self._drop(old)
+
+    def drop_unconfigured(self, instances: Collection[str]) -> None:
+        """Drop the workflows named `<instance>/<workflow>` whose instance is not in `instances`, with their learned
+        steps: a retired producer never pushes again. A bare name is no instance's to drop. `resume` drops again, as
+        the saved workflows it restores may name a retired one."""
+        self._configured = instances
+        with self._lock:
+            old = [name for name in self._dags if "/" in name and name.split("/", 1)[0] not in instances]
+        self._drop(old)
+        if old:
+            self._publish()
+
+    def _drop(self, old: list[str]) -> None:
+        if not old:
+            return
+        with self._lock:
             for name in old:
                 del self._dags[name]
             self._pruned += 1
@@ -218,6 +234,8 @@ class PushRuns:
             # a workflow saved before `rerun` joined the `Dag` contract lacks it, and the page refuses the whole instance
             self._dags |= {name: {"rerun": None, **dag} for name, dag in snapshot.dags.items()}
             self._seen = self._saved = position
+        if self._configured is not None:
+            self.drop_unconfigured(self._configured)
         self._publish()
         logger.warning("StarPulse: resuming %s after %s", stream, position)
         return position
