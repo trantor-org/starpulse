@@ -288,6 +288,11 @@ class HistoryStore:
             else:
                 db.execute(insert.on_conflict_do_update(index_elements=keys, set_={"depends": insert.excluded.depends}))
 
+    def forget_workflow(self, workflow: str) -> None:
+        """Drop the steps learned for a pushed workflow."""
+        with self.engine.begin() as db:
+            db.execute(_learned_steps.delete().where(_learned_steps.c.workflow == workflow))
+
     def learned_graphs(self) -> dict[str, dict[str, list[str]]]:
         """Each pushed workflow's steps, in the order they were first reported, with the steps each waits on."""
         steps = _learned_steps.c

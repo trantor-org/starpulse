@@ -112,6 +112,7 @@ class Projected:
         self._refused: set[str] = set()
         self._applying = threading.Lock()
         self._down_seen: dict[str, str | None] | None = None
+        self._drawn: set[str] = set()
 
     def apply(self) -> None:
         """Take the kept reports; none kept yet, or one unreadable, leaves the feed as it was. Applies run one at a
@@ -145,6 +146,10 @@ class Projected:
                 )
         for instance in self._watched.keys() - reports.keys():
             self._feed.set_dags(instance, [], self._down(instance), None)
+        # an instance whose report was dropped from the log draws nothing
+        for instance in self._drawn - reports.keys() - self._watched.keys():
+            self._feed.set_dags(instance, [], None, None)
+        self._drawn = {instance for instance, report in reports.items() if isinstance(report, dict)}
 
     def _current(self, instance: str, dags: list) -> list:
         """The kept workflows, or none when they predate the contract: a body the page's model refuses is a 500 on

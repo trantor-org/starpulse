@@ -15,6 +15,7 @@ class RunsConfig(Protocol):
     board_type: str
     board: Mapping[str, object]
     runs: tuple[RunsInstance, ...]
+    event_log_retention_days: int
 
 
 def runs_built_blocks(config: RunsConfig) -> tuple:

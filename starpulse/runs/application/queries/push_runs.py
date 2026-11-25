@@ -11,6 +11,7 @@ reads the entries after it rather than the whole retention.
 
 import logging
 import threading
+import time
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Any, Protocol, get_args
@@ -34,6 +35,8 @@ class GraphStore(Protocol):
     def record_step(self, workflow: str, step: str, depends: list[str] | None) -> None: ...
 
     def learned_graphs(self) -> dict[str, dict[str, list[str]]]: ...
+
+    def forget_workflow(self, workflow: str) -> None: ...
 
 
 class PushedRunsSnapshot(BaseModel):
@@ -125,7 +128,15 @@ def _dag(name: str, steps: dict[str, list[str]]) -> dict[str, Any]:
 class PushRuns:
     """The pushed workflows as the page draws them, moved by `runs:events` entries."""
 
-    def __init__(self, runs: InstanceRuns, store: GraphStore | None) -> None:
+    def __init__(
+        self,
+        runs: InstanceRuns,
+        store: GraphStore | None,
+        retention: float | None = None,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        self._retention = retention
+        self._clock = clock
         self._runs = runs
         self._store = store
         self._dags = {name: _dag(name, steps) for name, steps in (store.learned_graphs() if store else {}).items()}
@@ -140,7 +151,30 @@ class PushRuns:
         self._store_at: tuple[BoardStore, str] | None = None
         self._publish()
 
+    def _expire(self) -> None:
+        """Drop the workflows whose last run started or ended longer ago than the retention: the log no longer holds
+        their entries, so nothing can move them again. A workflow with no run keeps its learned steps."""
+        if self._retention is None:
+            return
+        floor = iso_utc(self._clock() - self._retention)
+        with self._lock:
+            old = [name for name, dag in self._dags.items() if (dag["finishedAt"] or dag["startedAt"] or floor) < floor]
+            if not old:
+                return
+            for name in old:
+                del self._dags[name]
+            self._pruned += 1
+            self._saved = -1
+        self._unsaved.set()
+        for name in old:
+            if self._store:  # else a restart draws it again from its learned steps
+                try:
+                    self._store.forget_workflow(name)
+                except Exception as exc:  # the store is down; the workflow is dropped from the page all the same
+                    logger.warning("StarPulse: cannot forget the learned steps of %s: %s", name, exc)
+
     def _publish(self) -> None:
+        self._expire()
         with self._publishing:
             self._runs.set_dags(list(self._dags.values()), None)
 

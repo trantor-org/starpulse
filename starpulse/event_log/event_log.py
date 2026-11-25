@@ -29,13 +29,13 @@ import time
 import uuid
 import weakref
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from itertools import batched
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from sqlalchemy import ColumnElement, Engine, String, bindparam, create_engine, delete, event, func, literal, select, type_coerce
+from sqlalchemy import ColumnElement, Engine, String, bindparam, create_engine, delete, event, func, literal, select, type_coerce, update
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.exc import SQLAlchemyError
@@ -328,6 +328,22 @@ class EventLog:
         statement so workers in separate processes never drop each other's entries. Raises on a database error."""
         merged = func.json_set(worker_state.c.state, f'$."{entry}"', func.json(json.dumps(value)))
         self._upsert_state(name, {entry: value}, merged)
+
+    def drop_state_entries(self, name: str, keep: Collection[str]) -> list[str]:
+        """Drop the entries of the object kept under `name` that `keep` does not name, and return the ones dropped. Raises
+        on a database error."""
+        _, body = self.state(name)
+        gone = [entry for entry in body if entry not in keep] if isinstance(body, dict) else []
+        if gone:
+            removed = func.json_remove(worker_state.c.state, *(f'$."{entry}"' for entry in gone))
+            with self.engine.begin() as db:
+                db.execute(
+                    update(worker_state)
+                    .where(worker_state.c.name == name)
+                    .values(state=removed, version=worker_state.c.version + 1, updated_at=time.time())
+                )
+            self._wake()
+        return gone
 
     def _upsert_state(self, name: str, first: Any, replacement: Any) -> None:
         now = time.time()
