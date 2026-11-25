@@ -13,7 +13,7 @@ const sentType = (fetcher: ReturnType<typeof stubbedFetch>) => new Headers(fetch
 
 test.each(["POST", "PUT", "DELETE"])("a %s with no body still says it is JSON, which the server requires of every write", async (method) => {
   const fetcher = stubbedFetch();
-  await apiFetch("/api/move", { method });
+  await apiFetch("/api/start", { method });
   expect(sentType(fetcher)).toBe("application/json");
 });
 

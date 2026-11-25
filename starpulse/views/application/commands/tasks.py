@@ -155,7 +155,12 @@ def _edited(
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     changed = ("notes" if field == _APPEND_NOTES else field for field in todo if field != _PLAN_REASON)
-    return 200, {"task": task, "changed": list(dict.fromkeys(changed))}
+    return 200, {
+        "task": task,
+        "changed": list(dict.fromkeys(changed)),
+        **({"advice": written.advice} if written.advice else {}),
+        **({"warnings": list(written.warnings)} if written.warnings else {}),
+    }
 
 
 def _archive_one(

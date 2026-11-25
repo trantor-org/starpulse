@@ -211,7 +211,7 @@ score passes. Each board task also carries the rules' standing verdict as `reada
 `task show` record: empty when its description reads well (or the task is settled), else the first broken rule with
 its line, so a page can badge a description written before the rules without refusing it until its next edit.
 
-A write names its actor, which `unless_actor` matches. `POST /api/move`, `PUT /api/tasks` and `PUT /api/tasks/{id}` and `DELETE /api/tasks/{id}`
+A write names its actor, which `unless_actor` matches. `PUT /api/tasks` and `PUT /api/tasks/{id}` and `DELETE /api/tasks/{id}`
 take an optional `actor`, `session` and `harness`, each non-empty text (anything else is a 400). Every write parses its body through the request model of its route, so a body that is not a JSON object, names a key the route does not take or holds a field of the wrong type is a 400 `invalid request: <field>: <reason>` for its first fault, a key the route does not take before any other. The page names
 `operator`; `starpulse` verbs name `agent`, their session and their harness. A write naming no actor is `agent` when it
 names a session and `anonymous` when it names none, never `operator`, so an unnamed write is not judged as the

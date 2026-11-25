@@ -2307,7 +2307,12 @@
       "type": "object"
     },
     "Edited": {
+      "description": "An edit's answer: `advice` is what the board tells the mover about the task now it is edited, when it has any;\n`warnings` are the lane rules an operator's move broke and landed.",
       "properties": {
+        "advice": {
+          "default": "",
+          "type": "string"
+        },
         "changed": {
           "items": {
             "type": "string"
@@ -2316,6 +2321,20 @@
         },
         "task": {
           "type": "string"
+        },
+        "warnings": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -4158,187 +4177,6 @@
         "agent"
       ],
       "title": "MoveDelta",
-      "type": "object"
-    },
-    "MoveRequest": {
-      "additionalProperties": false,
-      "description": "`POST /api/move`: move `task`, or each of `tasks` in one call, to the column `to`.",
-      "properties": {
-        "actor": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "harness": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "session": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "tasks": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "minItems": 1,
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "to": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "to"
-      ],
-      "title": "MoveRequest",
-      "type": "object"
-    },
-    "Moved": {
-      "description": "A move's answer. The operator's move of an unheld task into the working state also starts its session: `url`\nopens it, or `startError` says why none started.",
-      "properties": {
-        "advice": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "ok": {
-          "default": true,
-          "type": "boolean"
-        },
-        "startError": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "task": {
-          "type": "string"
-        },
-        "to": {
-          "type": "string"
-        },
-        "url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "warnings": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        }
-      },
-      "required": [
-        "task",
-        "to"
-      ],
-      "title": "Moved",
-      "type": "object"
-    },
-    "MovedEach": {
-      "description": "A batch move's answer: the tasks it moved, and each refused task with why.",
-      "properties": {
-        "moved": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "refused": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "warnings": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        }
-      },
-      "required": [
-        "moved",
-        "refused"
-      ],
-      "title": "MovedEach",
       "type": "object"
     },
     "Norm": {
@@ -8073,12 +7911,6 @@
       "items": {
         "anyOf": [
           {
-            "$ref": "#/$defs/Moved"
-          },
-          {
-            "$ref": "#/$defs/MovedEach"
-          },
-          {
             "$ref": "#/$defs/Edited"
           },
           {
@@ -8233,9 +8065,6 @@
     "requests": {
       "items": {
         "anyOf": [
-          {
-            "$ref": "#/$defs/MoveRequest"
-          },
           {
             "$ref": "#/$defs/StartRequest"
           },
