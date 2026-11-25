@@ -5,6 +5,8 @@ import logging
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy.exc import OperationalError
+
 from starpulse.board.adapters.native_scan import dependencies
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.markdown import ARCHIVE_REQUEST, FREEZE_REQUEST, MOVE_REQUEST, REQUESTED_BY, UNFREEZE_REQUEST
@@ -337,9 +339,14 @@ def _create(
         details["dependencies"] = dependencies
     # the id is the writer's to choose, so the lane is recorded under the id the write returns
     extra = {"cohort": True} if cohort else {}
-    written = record_written(
-        feed, None, who, lambda: create(title, {**details, "created_by": who.created_by}, actor=who.actor, **extra)
-    )
+    try:
+        written = record_written(
+            feed, None, who, lambda: create(title, {**details, "created_by": who.created_by}, actor=who.actor, **extra)
+        )
+    except OperationalError as error:
+        if "database is locked" not in str(error):
+            raise
+        return 503, {"error": "the database is locked; send the create again"}
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 201, {"task": written.output}
