@@ -60,7 +60,7 @@ _FINISHED = frozenset({"done", COMPLETED, ARCHIVED})
 SELF = "self"
 _SEEN_MAX = 256
 #: Suffixes of a holder's wake that mean nothing once its task left In Progress.
-_HOLDER_WAKES = ("holder_resume", "review_refused")
+_HOLDER_WAKES = ("holder_resume", "review_refused", "uncited_checks")
 #: The bundled skill each subject suffix wakes its session into.
 _SKILLS = {".checks.failing": "starpulse:fix-checks"}
 
