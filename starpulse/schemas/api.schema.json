@@ -1783,6 +1783,54 @@
       "title": "Decile",
       "type": "object"
     },
+    "DeliveredElsewhere": {
+      "description": "A `delivers` link of a pull request that already delivers another task, named by UUID and current handle.",
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "handle": {
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ref": {
+          "type": "string"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error",
+        "ref",
+        "task",
+        "handle"
+      ],
+      "title": "DeliveredElsewhere",
+      "type": "object"
+    },
     "Dispatched": {
       "properties": {
         "session": {
@@ -3355,6 +3403,60 @@
       "title": "LevelLoop",
       "type": "object"
     },
+    "Link": {
+      "description": "One stored link of a task, keyed by the task's UUID: `handle` is the task's current key, `url` the owning\nadapter's display form of `ref` (None: it renders none), `requested_by` the session that asked, `at` when the\ntask actor wrote it and `event` the id of its `link-written` or `link-removed` event.",
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "event": {
+          "type": "string"
+        },
+        "handle": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "requestedBy": {
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "delivers",
+            "cites",
+            "holds"
+          ],
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "task",
+        "handle",
+        "role",
+        "ref",
+        "requestedBy",
+        "at",
+        "event"
+      ],
+      "title": "Link",
+      "type": "object"
+    },
     "Machine": {
       "properties": {
         "dagActors": {
@@ -4349,6 +4451,57 @@
         "count"
       ],
       "title": "Norm",
+      "type": "object"
+    },
+    "NotHolder": {
+      "description": "A link request from a session that does not hold the task: the session, and the session that does (None: none).",
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "holder": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error",
+        "session"
+      ],
+      "title": "NotHolder",
       "type": "object"
     },
     "Outlier": {
@@ -7920,6 +8073,53 @@
       "title": "Transition",
       "type": "object"
     },
+    "UnrecognisedUrl": {
+      "description": "A URL no configured forge adapter recognises: the URL and the adapter instances that were asked.",
+      "properties": {
+        "adapters": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "error": {
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error",
+        "url",
+        "adapters"
+      ],
+      "title": "UnrecognisedUrl",
+      "type": "object"
+    },
     "Variant": {
       "properties": {
         "count": {
@@ -8205,6 +8405,18 @@
           },
           {
             "$ref": "#/$defs/WindowTooLong"
+          },
+          {
+            "$ref": "#/$defs/Link"
+          },
+          {
+            "$ref": "#/$defs/NotHolder"
+          },
+          {
+            "$ref": "#/$defs/DeliveredElsewhere"
+          },
+          {
+            "$ref": "#/$defs/UnrecognisedUrl"
           }
         ]
       },

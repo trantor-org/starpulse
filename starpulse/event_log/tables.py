@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    text,
 )
 
 metadata = MetaData()
@@ -191,6 +192,22 @@ task_verdicts = Table(
     Column("reason", String, nullable=False),
     Column("occurred_at", Float, nullable=False),
     Index("ix_starpulse_task_verdicts_task", "task", "occurred_at"),
+)
+
+#: Each pull request a task delivers or cites, keyed by the task's UUID so a renamed task keeps its links. A row is
+#: written with its `link-written` event on the `task-link` stream of that UUID, in one transaction.
+task_links = Table(
+    "starpulse_task_links",
+    metadata,
+    Column("task", String, nullable=False),
+    Column("role", String, nullable=False),
+    Column("ref", String, nullable=False),
+    Column("requested_by", String, nullable=False),
+    Column("at", Float, nullable=False),
+    Column("event_id", String, nullable=False),
+    PrimaryKeyConstraint("task", "role", "ref"),
+    Index("ix_starpulse_task_links_ref", "ref", "role"),
+    Index("ux_starpulse_task_links_delivers", "ref", unique=True, sqlite_where=text("role = 'delivers'")),
 )
 
 #: One view's fold of one harness session, as plain JSON: the persisted result the analytics views combine, and no

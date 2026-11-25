@@ -33,3 +33,25 @@ class WindowTooLong(ApiError):
     """A level or telemetry window longer than its history, with the history's length."""
 
     history_s: float
+
+
+class NotHolder(ApiError):
+    """A link request from a session that does not hold the task: the session, and the session that does (None: none)."""
+
+    session: str
+    holder: str | None = None
+
+
+class DeliveredElsewhere(ApiError):
+    """A `delivers` link of a pull request that already delivers another task, named by UUID and current handle."""
+
+    ref: str
+    task: str
+    handle: str
+
+
+class UnrecognisedUrl(ApiError):
+    """A URL no configured forge adapter recognises: the URL and the adapter instances that were asked."""
+
+    url: str
+    adapters: list[str]

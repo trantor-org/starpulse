@@ -8,7 +8,15 @@ from pydantic import BaseModel
 
 from starpulse.contracts.api.dto.admin import AdminState
 from starpulse.contracts.api.dto.dag import DagBody, Jobs
-from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
+from starpulse.contracts.api.dto.errors import (
+    ApiError,
+    DeliveredElsewhere,
+    NotHolder,
+    SkillRefusal,
+    StaleEdit,
+    UnrecognisedUrl,
+    WindowTooLong,
+)
 from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse, ViewShown
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.milestones import (
@@ -20,6 +28,7 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecord,
     TaskRecords,
 )
+from starpulse.contracts.api.dto.links import Link
 from starpulse.contracts.api.dto.pages import DonePage, MachineDetail, Machines
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
@@ -29,6 +38,8 @@ from starpulse.contracts.api.dto.requests import (
     DocListRequest,
     DocPutRequest,
     JobListRequest,
+    LinkDeleteRequest,
+    LinkPutRequest,
     MachineCreateRequest,
     MachineListRequest,
     MachinePutRequest,
@@ -170,6 +181,8 @@ BODIES: dict[str, Any] = {
     "start": Started | SkillRefusal | ApiError,
     "retired": RetiredTasks | ApiError,
     "create": Created | CreatedEach | SkillRefusal | ApiError,
+    "task_link_put": Link | NotHolder | DeliveredElsewhere | UnrecognisedUrl | ApiError,
+    "task_link_delete": Link | NotHolder | ApiError,
     "task_put": Edited | StaleEdit | Restored | Retired | Reopened | Completed | TakenOver | Parked | Dispatched | SkillRefusal | ApiError,
     "task_delete": Archived | SkillRefusal | ApiError,
     "milestones": Milestones | ApiError,
@@ -256,6 +269,18 @@ ROUTES: dict[tuple[str, str], Op] = {
         TaskPutRequest,
         "200",
         "202",
+    ),
+    ("PUT", "/api/tasks/{id}/links"): _write(
+        "Ask the task actor to link the task to a pull request, which only the session holding the task may",
+        "task_link_put",
+        LinkPutRequest,
+        "200",
+        "201",
+    ),
+    ("DELETE", "/api/tasks/{id}/links"): _write(
+        "Ask the task actor to remove one of the task's links, which only the session holding the task may",
+        "task_link_delete",
+        LinkDeleteRequest,
     ),
     ("DELETE", "/api/tasks/{id}"): _write(
         "Archive a task, recording the `reason` its optional body names", "task_delete"
