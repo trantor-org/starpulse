@@ -1295,6 +1295,12 @@ failed board write of it is logged and counted in `starpulse_task_actor_refusals
   actor has tried or been refused a move for them; compare with the moves landed, the `starpulse_task_actor_latency_seconds_count`
   rate. The actor reads its lock-held series (this one and `pin_held`) with a 2 s timed acquire and
   omits them when it cannot, so a stuck turn never blocks the scrape; the recovery gauge needs no lock.
+- `starpulse_task_actor_idle_holders`, `starpulse_task_actor_idle_holder_seconds` and `starpulse_task_actor_ready_tasks`:
+  the In Progress tasks whose session reads settled (the harness machine not `active`) with no event to wait on (no open
+  pull request with pending checks, no awaited machine placement), the seconds the oldest has been settled (0 when none),
+  and the Ready tasks. They are read from the board at each scrape, so a resume that wakes the session clears them. The
+  `starpulse-idle-holders-block-ready` rule notifies when the oldest has idled over an hour, they are half or more of
+  `starpulse_board_in_progress_tasks`, and Ready work waits; it never moves a task.
 
 A hold or flag comment lists the first three reasons and a count of the rest, and is clipped to 4000 characters
 (`COMMENT_CAP`), so a failed probe of hundreds of references does not write a 26 KB comment.

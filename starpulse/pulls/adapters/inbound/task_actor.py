@@ -112,6 +112,9 @@ RECOVERY_FINISHED_METRIC = "starpulse_task_actor_recovery_finished"
 MERGED_WAITING_METRIC = "starpulse_task_actor_merged_review_waiting"
 DERIVE_METRIC = "starpulse_task_actor_derive_seconds"
 TOUCH_METRIC = "starpulse_task_actor_touches_total"
+IDLE_HOLDERS_METRIC = "starpulse_task_actor_idle_holders"
+IDLE_SECONDS_METRIC = "starpulse_task_actor_idle_holder_seconds"
+READY_METRIC = "starpulse_task_actor_ready_tasks"
 HOLDER_RESUME = "HOLDER_RESUME"
 #: The deliver states after its pull request opened.
 _DELIVERED = frozenset({"pr_opened", "ci_green", "pr_ready"})
@@ -545,7 +548,7 @@ class TaskActor:
             ]
         )
 
-    def _held_counts(self) -> tuple[int, int] | None:
+    def _held_counts(self) -> tuple[int, int, tuple[int, float, int]] | None:
         """The series that read the actor's state under its lock (the tasks held for a pin) and the merged Review tasks,
         read after it is released. None when another thread holds the lock past `_LOCK_WAIT_S`: a scrape must answer
         then, since a held lock is what the recovery gauge reports."""
@@ -555,7 +558,20 @@ class TaskActor:
             pin_held = len(self._pin_held)
         finally:
             self._lock.release()
-        return pin_held, self._merged_waiting()  # the feed reads hold no lock
+        return pin_held, self._merged_waiting(), self._idle_holders()  # the feed reads hold no lock
+
+    def _idle_holders(self) -> tuple[int, float, int]:
+        """The In Progress tasks whose session reads settled with no event awaited (a settle the actor left to a resume
+        that did not wake it), the seconds the oldest has been so, and the Ready tasks waiting."""
+        since, ready = [], 0
+        for agent in self._feed.open_tasks():
+            if agent["state"] == self._feed.roles.ready:
+                ready += 1
+            elif agent["state"] == self._feed.roles.working:
+                placed = self._feed.machine_task(HARNESS_MACHINE, agent["id"])
+                if placed and placed["state"] != "active" and not self._awaits(agent):
+                    since.append(placed["active"])
+        return len(since), max(time.time() - min(since), 0.0) if since else 0.0, ready
 
     def _merged_waiting(self) -> int:
         counted_at, waiting = self._waiting
@@ -576,10 +592,10 @@ class TaskActor:
         return any(record and record["state"] == "MERGED" for record in records)
 
     @staticmethod
-    def _held_lines(held: tuple[int, int] | None) -> list[str]:
+    def _held_lines(held: tuple[int, int, tuple[int, float, int]] | None) -> list[str]:
         if held is None:
             return []
-        pin_held, waiting = held
+        pin_held, waiting, (idle, idle_s, ready) = held
         return [
             f"# HELP {PIN_HELD_METRIC} Waiting tasks whose dependencies are done but wait for a pin bump to merge.",
             f"# TYPE {PIN_HELD_METRIC} gauge",
@@ -587,6 +603,15 @@ class TaskActor:
             f"# HELP {MERGED_WAITING_METRIC} Review tasks with a merged pull request that have not reached Done, including one whose move was refused.",
             f"# TYPE {MERGED_WAITING_METRIC} gauge",
             f"{MERGED_WAITING_METRIC} {waiting}",
+            f"# HELP {IDLE_HOLDERS_METRIC} In Progress tasks whose session is settled with no CI check or awaited machine to wait on.",
+            f"# TYPE {IDLE_HOLDERS_METRIC} gauge",
+            f"{IDLE_HOLDERS_METRIC} {idle}",
+            f"# HELP {IDLE_SECONDS_METRIC} Seconds the longest such session has been settled; 0 when none.",
+            f"# TYPE {IDLE_SECONDS_METRIC} gauge",
+            f"{IDLE_SECONDS_METRIC} {idle_s:.0f}",
+            f"# HELP {READY_METRIC} Tasks in the Ready lane.",
+            f"# TYPE {READY_METRIC} gauge",
+            f"{READY_METRIC} {ready}",
         ]
 
     def start(self, stop: StopEvent) -> threading.Thread:
