@@ -52,7 +52,6 @@ export interface ApiContract {
   requests: (
     | StartRequest
     | StepsRequest
-    | RetireRequest
     | CreateRequest
     | TaskPutRequest
     | MilestoneCreateRequest
@@ -1912,12 +1911,6 @@ export interface StepsRequest {
   };
 }
 /**
- * `POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks.
- */
-export interface RetireRequest {
-  task: string;
-}
-/**
  * `PUT /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
  * `created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.
  */
@@ -1995,7 +1988,7 @@ export interface CreateSpec {
   urgency?: string | null;
 }
 /**
- * `PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, take it over, park it
+ * `PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, retire, take it over, park it
  * or dispatch a session to it.
  *
  * An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that
@@ -2003,7 +1996,8 @@ export interface CreateSpec {
  * holder, found dead, whose lease the dispatch ends first. Otherwise the
  * body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `completed: true`
  * (the Done task moves into the board's completed tasks), `archived: false` (the archived task returns to the
- * board), `interactive: true` (the unattended task is taken over) and `park` (the held task pauses for the one
+ * board), `retired: true` (the finished task goes off the board into the history store's retired tasks),
+ * `interactive: true` (the unattended task is taken over) and `park` (the held task pauses for the one
  * reason it names, with the `comment` beside it).
  */
 export interface TaskPutRequest {
@@ -2021,6 +2015,7 @@ export interface TaskPutRequest {
   park?: Park | null;
   reopen?: string | null;
   request_key?: string | null;
+  retired?: true | null;
   session?: string | null;
 }
 /**

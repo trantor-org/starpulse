@@ -93,7 +93,7 @@ TAGS = {
 _SEGMENT_TAG = {
     **dict.fromkeys(
         "task task-diff task-cost-to-go tasks task-records move start edit archive verdict rating "
-        "miss restore take-over retire retired dispatch review complete reopen done search".split(),
+        "miss restore take-over retired dispatch review complete reopen done search".split(),
         "tasks",
     ),
     **dict.fromkeys("snapshot flows machines harnesses history history-window".split(), "board"),

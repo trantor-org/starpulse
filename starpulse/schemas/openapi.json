@@ -1125,54 +1125,6 @@
         }
       }
     },
-    "/api/retire": {
-      "post": {
-        "summary": "Retire a task",
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "post_api_retire",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RetireRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Retired"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SkillRefusal"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ApiError"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/tasks": {
       "put": {
         "summary": "Create tasks",
@@ -1247,7 +1199,7 @@
     },
     "/api/tasks/{id}": {
       "put": {
-        "summary": "Write a task over the base named, or reopen, complete, restore, take over, park or dispatch a session to it",
+        "summary": "Write a task over the base named, or reopen, complete, restore, retire, take over, park or dispatch a session to it",
         "tags": [
           "tasks"
         ],
@@ -1286,6 +1238,9 @@
                       "$ref": "#/components/schemas/Restored"
                     },
                     {
+                      "$ref": "#/components/schemas/Retired"
+                    },
+                    {
                       "$ref": "#/components/schemas/Reopened"
                     },
                     {
@@ -1316,6 +1271,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/Restored"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Retired"
                     },
                     {
                       "$ref": "#/components/schemas/Reopened"
@@ -7300,20 +7258,6 @@
         "title": "Restored",
         "type": "object"
       },
-      "RetireRequest": {
-        "additionalProperties": false,
-        "description": "`POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks.",
-        "properties": {
-          "task": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "task"
-        ],
-        "title": "RetireRequest",
-        "type": "object"
-      },
       "Retired": {
         "properties": {
           "task": {
@@ -9071,7 +9015,7 @@
       },
       "TaskPutRequest": {
         "additionalProperties": false,
-        "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, take it over, park it\nor dispatch a session to it.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that\nname only an `assignee` dispatch that session to the task, which the task actor pins; the `base` assignee is the\nholder, found dead, whose lease the dispatch ends first. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `completed: true`\n(the Done task moves into the board's completed tasks), `archived: false` (the archived task returns to the\nboard), `interactive: true` (the unattended task is taken over) and `park` (the held task pauses for the one\nreason it names, with the `comment` beside it).",
+        "description": "`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, retire, take it over, park it\nor dispatch a session to it.\n\nAn edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that\nname only an `assignee` dispatch that session to the task, which the task actor pins; the `base` assignee is the\nholder, found dead, whose lease the dispatch ends first. Otherwise the\nbody names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `completed: true`\n(the Done task moves into the board's completed tasks), `archived: false` (the archived task returns to the\nboard), `retired: true` (the finished task goes off the board into the history store's retired tasks),\n`interactive: true` (the unattended task is taken over) and `park` (the held task pauses for the one\nreason it names, with the `comment` beside it).",
         "properties": {
           "actor": {
             "anyOf": [
@@ -9168,6 +9112,18 @@
             "anyOf": [
               {
                 "const": false,
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "retired": {
+            "anyOf": [
+              {
+                "const": true,
                 "type": "boolean"
               },
               {
