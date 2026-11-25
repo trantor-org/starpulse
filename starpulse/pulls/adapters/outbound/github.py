@@ -4,10 +4,12 @@ Events arrive through the App webhook, which hands the recorded pull request and
 The adapter depends on nothing of a host project's: not its hooks, its `AGENTS.md` or its branch names.
 """
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from starpulse.contracts.adapters import TaskKeys
+from starpulse.contracts.adapters import ChangeRef, TaskKeys
 from starpulse.contracts.stamps import epoch_of
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
@@ -22,6 +24,10 @@ GITHUB_MACHINES = {m.name: describe(m.machine) for m in (PULL_REQUEST, CI_JOB, P
 
 #: The conclusions of a completed check run that leave the rollup passing.
 _PASSING = frozenset({"success", "neutral", "skipped"})
+#: A pull request's page path: `owner/name/pull/7`, with any tab after the number.
+_PULL_PATH = re.compile(r"/([\w.-]+/[\w.-]+)/pull/(\d+)(?:/.*)?", re.ASCII)
+#: A change reference's id as `change_ref` writes it: `owner/name:7`.
+_CHANGE_ID = re.compile(r"([\w.-]+/[\w.-]+):(\d+)", re.ASCII)
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,26 @@ class GitHubAdapter:
     """
 
     keys: TaskKeys
+    instance: str = "github"
+
+    def change_ref(self, url: str) -> ChangeRef:
+        """The reference of the pull request at `url`; ValueError names why a URL is not one this adapter owns."""
+        parts = urlsplit(url)
+        if parts.scheme != "https" or parts.hostname != "github.com":
+            raise ValueError(
+                f"{url!r} is on {parts.hostname or 'no host'} over {parts.scheme or 'no scheme'}, and only https://github.com is a configured forge"
+            )
+        if not (pull := _PULL_PATH.fullmatch(parts.path)):
+            raise ValueError(f"{url!r} is not a pull request URL (https://github.com/<owner>/<repo>/pull/<number>)")
+        return ChangeRef(adapter=self.instance, id=f"{pull[1]}:{pull[2]}")
+
+    def change_url(self, ref: ChangeRef) -> str:
+        """The page of the pull request `ref` names; ValueError when another adapter instance owns it."""
+        if ref.adapter != self.instance:
+            raise ValueError(f"{ref.adapter!r} owns this pull request, not the {self.instance!r} adapter")
+        if not (pull := _CHANGE_ID.fullmatch(ref.id)):
+            raise ValueError(f"{ref.id!r} is a malformed pull request id (owner/name:number)")
+        return f"https://github.com/{pull[1]}/pull/{pull[2]}"
 
     def events(self, repo: str, bundle: dict) -> list[dict]:
         """The events `bundle` (`pull` and `check_runs`, as GitHub answers them) moves the machines by, oldest first."""
