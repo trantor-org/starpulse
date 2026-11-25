@@ -675,8 +675,8 @@ def task_reopen(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
 
 
 def task_retire(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
-    base, path = agent_wire.server_url(args.server, environ), "/api/retire"
-    status, reply = agent_wire.post(base, path, {"task": args.task})
+    base, path = agent_wire.server_url(args.server, environ), f"/api/tasks/{args.task}"
+    status, reply = agent_wire.put(base, path, {"retired": True})
     return {"task": record_call(base, path, status, reply, missing=_TASK_MISSING)["task"]}
 
 

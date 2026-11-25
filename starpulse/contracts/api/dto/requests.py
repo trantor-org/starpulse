@@ -122,7 +122,7 @@ class Park(_Request):
 
 
 class TaskPutRequest(_Writer):
-    """`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, take it over, park it
+    """`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, retire, take it over, park it
     or dispatch a session to it.
 
     An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that
@@ -130,7 +130,8 @@ class TaskPutRequest(_Writer):
     holder, found dead, whose lease the dispatch ends first. Otherwise the
     body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `completed: true`
     (the Done task moves into the board's completed tasks), `archived: false` (the archived task returns to the
-    board), `interactive: true` (the unattended task is taken over) and `park` (the held task pauses for the one
+    board), `retired: true` (the finished task goes off the board into the history store's retired tasks),
+    `interactive: true` (the unattended task is taken over) and `park` (the held task pauses for the one
     reason it names, with the `comment` beside it).
     """
 
@@ -142,16 +143,17 @@ class TaskPutRequest(_Writer):
     reopen: NonBlank | None = None
     completed: Literal[True] | None = None
     archived: Literal[False] | None = None
+    retired: Literal[True] | None = None
     interactive: Literal[True] | None = None
     park: Park | None = None
 
     @model_validator(mode="after")
     def _one_write(self) -> TaskPutRequest:
         named = [
-            name for name in ("reopen", "completed", "archived", "interactive", "park") if getattr(self, name) is not None
+            name for name in ("reopen", "completed", "archived", "retired", "interactive", "park") if getattr(self, name) is not None
         ]
         if len(named) > 1 or (named and (self.changes or (self.comment and named != ["park"]))):
-            raise ValueError("name changes, or exactly one of reopen, completed, archived, interactive and park")
+            raise ValueError("name changes, or exactly one of reopen, completed, archived, retired, interactive and park")
         return self
 
 
@@ -159,12 +161,6 @@ class TaskDeleteRequest(_Writer):
     """`DELETE /api/tasks/{id}`: archive the task, recording `reason` when it is not blank; the body is optional."""
 
     reason: str | None = None
-
-
-class RetireRequest(_Request):
-    """`POST /api/retire`: take the finished task `task` off the board into the history store's retired tasks."""
-
-    task: str
 
 
 

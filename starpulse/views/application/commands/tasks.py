@@ -20,6 +20,7 @@ from starpulse.board.model.seam import (
     TaskReader,
     TaskReopener,
     TaskRestorer,
+    TaskRetirer,
 )
 from starpulse.contracts.api.dto.requests import (
     CREATE_LISTS,
@@ -27,7 +28,6 @@ from starpulse.contracts.api.dto.requests import (
     CreateRequest,
     CreateSpec,
     EditRequest,
-    RetireRequest,
     TaskDeleteRequest,
     TaskPutRequest,
 )
@@ -250,16 +250,8 @@ def _taken_over(task: str, take_over: Callable[[str], bool] | None, feed: BoardF
     return 200, {"task": task}
 
 
-@with_request(RetireRequest, "Retiring a task")
-def retire_task(request: RetireRequest, board: Board) -> tuple[int, dict[str, Any]]:
-    """Take the finished task `request` names off the board into its history store through the board's `retire`: the
-    HTTP status and JSON body.
-
-    The writer owns every other refusal (an open or unknown task, the number kept with other text, a board not started),
-    which answers 409 with its reason.
-    """
-    task = request.task
-    written = board.retire(task)
+def _retired(task: str, retire: TaskRetirer) -> tuple[int, dict[str, Any]]:
+    written = retire(task)
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill}
     return 200, {"task": task}
@@ -388,9 +380,10 @@ def put_task(
     """Write `task` as `PUT /api/tasks/{id}` says: the HTTP status and JSON body of the verb the body names.
 
     `reopen` reopens the Done task, into Ready when an `opened` pull request cites it, else In Progress;
-    `completed: true` completes it, `archived: false` restores it, `interactive: true` takes it over and `park` parks
-    it; a change that names only an `assignee` dispatches that session to the task, its `base` assignee the holder it
-    replaces; any other body is an edit over its `base`.
+    `completed: true` completes it, `archived: false` restores it, `retired: true` retires the finished task, which
+    the board's writer refuses (409, with its reason) while it is open, `interactive: true` takes it over and `park`
+    parks it; a change that names only an `assignee` dispatches that session to the task, its `base` assignee the
+    holder it replaces; any other body is an edit over its `base`.
     """
     who = who_of(request)
     if request.park is not None:
@@ -401,6 +394,8 @@ def put_task(
         return _completed(task, feed, board.complete)
     if request.archived is not None:
         return _restored(task, who, feed, board.restore)
+    if request.retired is not None:
+        return _retired(task, board.retire)
     if request.interactive is not None:
         return _taken_over(task, take_over, feed)
     if "assignee" in request.changes:

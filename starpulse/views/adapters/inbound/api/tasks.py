@@ -6,9 +6,9 @@
   `next` for the page that follows; or those of a `task` or `milestone`, or as `{task, dependencies}` for
   `fields=dependencies`, unpaged.
 - `PUT /api/tasks` creates; `PUT /api/tasks/{id}` writes over the `base` it names, or reopens (`reopen`), completes
-  (`completed: true`), restores (`archived: false`), takes over (`interactive: true`), parks (`park`) or dispatches a
+  (`completed: true`), restores (`archived: false`), retires (`retired: true`), takes over (`interactive: true`), parks (`park`) or dispatches a
   session (`assignee`); `DELETE /api/tasks/{id}` archives: the task writes.
-- `POST /api/start`, `verdict` and `retire`: a task's writes by verb, each over the seams it needs.
+- `POST /api/start` and `verdict`: a task's writes by verb, each over the seams it needs.
 """
 
 import asyncio
@@ -32,7 +32,6 @@ from starpulse.views.application.commands.moves import (
 from starpulse.views.application.commands.tasks import (
     create_task,
     delete_task,
-    retire_task,
     retired_list,
     retired_page,
     put_task,
@@ -141,7 +140,6 @@ def routes(api: Api) -> list[ApiRoute]:
             lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harnesses),
             "start",
         ),
-        "/retire": (lambda client, raw: retire_task(client, raw, board), "retire"),
     }
     return [
         ReadRoute("/task/{id:path}", task, timed),
