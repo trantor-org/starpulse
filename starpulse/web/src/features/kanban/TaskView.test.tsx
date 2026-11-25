@@ -11,6 +11,7 @@ import type { KanbanTask } from "./kanbanModel";
 import type { Pull } from "../../api";
 import { TaskView } from "./TaskView";
 import { sessionNickname } from "./nickname";
+import { forgetSpend } from "./spend";
 import { board, card, props, record, task } from "../../tests/taskViewFixtures";
 import { closesOnKey, copyText, copyToClipboard, menuKey, onScrim, type StartCriterion } from "./taskViewModel";
 
@@ -668,5 +669,27 @@ describe("the task view's Pull requests rail", () => {
 
   it("scrolls the list inside a box so the rail keeps every row visible", () => {
     expect(section(draw({ task: { ...task, prs: [pull(8)] } }))).toContain('class="box"');
+  });
+
+  it("draws Reading spend for a task opened over another instead of the first task's rows", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    forgetSpend();
+    const rows = [{ task: task.id, phase: "implement", steps: 3, wte: 1000, models: [], compactions: 0, task_wte: 1000, norm_wte: null, above_norm: false }];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: { body: string }) => JSON.parse(init.body).variables.id === task.id
+      ? ({ ok: true, json: async () => ({ data: { task: { spend: rows } } }) })
+      : new Promise(() => {})));
+    const host = document.body.appendChild(document.createElement("div")), root = createRoot(host);
+    try {
+      await act(async () => root.render(<TaskView {...props()} />));
+      expect(host.querySelector(".tvrail")!.textContent).toContain("Implement");
+      await act(async () => root.render(<TaskView {...props({ task: { ...task, id: "TASK-404" } })} />));
+      expect(host.querySelector(".tvrail")!.textContent).toContain("Reading spend…");
+      expect(host.querySelector(".tvrail")!.textContent).not.toContain("Implement");
+    } finally {
+      act(() => root.unmount());
+      host.remove();
+      vi.unstubAllGlobals();
+      forgetSpend();
+    }
   });
 });
