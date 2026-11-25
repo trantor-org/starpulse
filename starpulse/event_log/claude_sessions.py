@@ -24,6 +24,7 @@ lazy import psutil
 __all__ = [
     "DEFAULT_SESSIONS",
     "DEFAULT_TRANSCRIPTS",
+    "entrypoint_of",
     "holder_activity",
     "session_activity_of",
     "last_turn",
@@ -288,6 +289,12 @@ def _record_of(sessions: Path, session: str) -> dict[str, Any] | None:
 def live_session(sessions: Path, session: str) -> bool:
     """Whether the process registered under `sessions` for `session` (its session id, bridge id or Remote Control URL) is still running."""
     return _record_of(sessions, session) is not None
+
+
+def entrypoint_of(sessions: Path) -> Callable[[str], str]:
+    """The `entrypoint` of the running process of a session (any id `live_session` takes): `cli` for a herdr pane,
+    `sdk-cli` for a Remote Control child, empty when none runs."""
+    return lambda session: str((_record_of(sessions, session) or {}).get("entrypoint") or "")
 
 
 def live_process(sessions: Path) -> Callable[[str], tuple[str, int] | None]:

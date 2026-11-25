@@ -28,6 +28,8 @@ class Services:
     """Starts a task's session in the harness the page picked."""
     dispatch: Callable[[str, str, str], bool] | None = None
     """Publishes the dispatch of a session to a task, with the holder it replaces: `(task, session, replaces)`."""
+    entrypoint: Callable[[str], str] | None = None
+    """The `claude_code.entrypoint` of a session's running process, empty when none runs: a project thread's is `sdk-cli`."""
     events: CloudEventsIngest | None = None
     webhook: Callable[[str | None, bytes], tuple[int, dict]] | None = None
     """Answers one `POST /intake/grafana`: `(authorization, body)` to `(status, JSON body)`."""

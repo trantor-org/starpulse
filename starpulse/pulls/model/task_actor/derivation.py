@@ -335,14 +335,17 @@ def deploy_reopened(facts: TaskFacts, agent: Agent) -> bool:
 
 def criteria_checked(facts: TaskFacts, agent: Agent) -> tuple[int, str] | None:
     """The criteria count when every criterion is checked or struck and the task ships no pull request: its phase
-    sequence has no `deliver`, or it cites none, none names it and its final summary is recorded. A task with no criteria (an
-    audit signal) always needs that final summary and no pull request. A task citing none whose board reports work
-    unfinished (`unfinished`: a built branch not on main) is held from Done under `DONE_HELD`."""
+    sequence has no `deliver`, or it cites none and its final summary is recorded. An open pull request naming the task
+    holds it either way. A task with no criteria (an audit signal) always needs that final summary and no pull request.
+    A task citing none whose board reports work unfinished (`unfinished`: a built branch not on main) is held from Done
+    under `DONE_HELD`."""
     ticks = [resolved(criterion) for criterion in agent.get("criteria", ())]
     if not all(ticks):
         return None
+    if facts.unlinked(agent):
+        return None  # an open pull request naming the task is its delivery, whatever its phase sequence says
     if ("deliver" in facts.sequence(agent) or not ticks) and (
-        facts.own_prs(agent) or facts.unlinked(agent) or not (agent.get("final_summary") or "").strip()
+        facts.own_prs(agent) or not (agent.get("final_summary") or "").strip()
     ):
         return None
     if not facts.own_prs(agent) and (left := facts.unfinished(agent["id"])):
