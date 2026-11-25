@@ -193,32 +193,53 @@ def within(found: list[dict], now: float, span: float) -> list[dict]:
     return [e for e in found if now - span <= e["at"] <= now]
 
 
-def all_entries(flows: Sequence[Mapping[str, Any]], derived: Mapping[str, Mapping[str, Any]]) -> list[dict]:
+def all_entries(
+    flows: Sequence[Mapping[str, Any]], derived: Mapping[str, Mapping[str, Any]], known: dict | None = None
+) -> list[dict]:
     """Every machine entry, oldest first: a session starting in a machine other than the
     In Progress one, as `{at, machine, row, from, dag}`.
 
     `row` is the machine on the In Progress level it lands on, so an entry into a nested machine counts on the row
     above it. A task's session names `from` as `{machine, state}` (None when no earlier session of the task is
     known); a session with no task is a DAG launch and names the `dag` that launches its machine.
+
+    `known` is the caller's, kept between calls: it holds each task's entries by the sessions they were drawn from, so
+    a task none of whose sessions changed is not walked again, and it is replaced by the tasks of this call.
     """
     machines = {f["name"]: f for f in flows if f["name"] in derived}
     ip = next((n for n, d in derived.items() if d["depth"] == 0), None)
+    rows = {name: (derived[name]["chain"] or [name])[0] for name in machines}
     sessions = _sessions(machines)
-    found = []
-    for name, f in machines.items():
-        if name == ip:
+    drawn: dict[str, tuple[tuple, list[dict | None]]] = {}
+    for task, found in sessions.items():
+        key = (tuple(found), ip, tuple(rows[m] for m, _ in found))
+        if known is not None and (held := known.get(task)) is not None and held[0] == key:
+            drawn[task] = held
             continue
+        entries: list[dict | None] = []
+        for name, agent in found:
+            origin = None if name == ip else _entered_from(agent, name, found, ip)
+            entries.append(
+                None
+                if name == ip
+                else _entry(_start(agent), name, rows[name], None if origin is None else {"machine": origin[0], "state": origin[1]}, None)
+            )
+        drawn[task] = key, entries
+    found, at = [], dict.fromkeys(sessions, 0)
+    for name, f in machines.items():
         dag = _launching_dag(derived[name])
         for agent in f["agents"]:
-            at = _start(agent)
-            origin = _entered_from(agent, name, sessions[agent["task"]], ip) if agent.get("task") else None
-            found.append(
-                {
-                    "at": at,
-                    "machine": name,
-                    "row": (derived[name]["chain"] or [name])[0],
-                    "from": None if origin is None else {"machine": origin[0], "state": origin[1]},
-                    "dag": None if agent.get("task") else dag,
-                }
-            )
+            if task := agent.get("task"):
+                entry, at[task] = drawn[task][1][at[task]], at[task] + 1  # the sessions are listed in this order
+            else:
+                entry = None if name == ip else _entry(_start(agent), name, rows[name], None, dag)
+            if entry is not None:
+                found.append(entry)
+    if known is not None:
+        known.clear()
+        known.update(drawn)
     return sorted(found, key=lambda e: (e["at"], e["machine"]))
+
+
+def _entry(at: float, machine: str, row: str, origin: dict | None, dag: str | None) -> dict:
+    return {"at": at, "machine": machine, "row": row, "from": origin, "dag": dag}

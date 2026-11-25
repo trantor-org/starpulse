@@ -1,10 +1,10 @@
-"""Claude Code's notify capability: one line per event in the session's inbox socket, else a resume of the session.
+"""Claude Code's notify capability: one line per subject, the newest, in the session's inbox socket, else a resume of the session.
 
-A live session takes each event as a message on its inbox socket (the path and token are its registration; a process
+A live session takes each line as a message on its inbox socket (the path and token are its registration; a process
 the sessions directory shows alive is posted at the socket it holds now). The text is wrapped in the envelope that
 attests a sender in `bypassPermissions`, as Claude Code holds a peer message that attests none for approval. A session
-whose process has exited is resumed under the same session id with the newest event of each subject as its next turn,
-so ten events on one pull request while it was away read as one line. A session resumed a moment ago and not yet
+whose process has exited is resumed under the same session id with those lines as its next turn, so ten events on
+one pull request while it was away read as one line. A session resumed a moment ago and not yet
 visible in the sessions directory is not resumed again, which would fork it: its events wait for the next delivery.
 """
 
@@ -106,7 +106,9 @@ class ClaudeCodeNotifier:
         self._resumed: dict[str, float] = {}
 
     def notify(self, registration: Registration, lines: Sequence[Line]) -> bool:
-        """Whether the events reached the session; an event that did not is delivered again."""
+        """Whether the events reached the session; an event that did not is delivered again. Only the newest event of
+        each subject is sent: an older one is superseded."""
+        lines = list({line.subject: line for line in lines}.values())
         live = self._alive(registration.session)
         posted: list[Line] = []
         try:
@@ -126,9 +128,8 @@ class ClaudeCodeNotifier:
         last = self._resumed.get(registration.session)
         if last is not None and now - last < RESUME_GRACE_S:
             return False
-        newest = list({line.subject: line for line in lines}.values())
-        if not self._resume(registration, "\n".join(line.text for line in newest)):
+        if not self._resume(registration, "\n".join(line.text for line in lines)):
             return False
         self._resumed[registration.session] = now
-        self._delivered(registration.session, newest)
+        self._delivered(registration.session, lines)
         return True

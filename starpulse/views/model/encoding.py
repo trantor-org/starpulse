@@ -5,7 +5,8 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from hashlib import blake2b
 from itertools import batched
-from typing import Any
+from operator import is_
+from typing import Any, NamedTuple
 
 from pydantic import TypeAdapter
 
@@ -118,11 +119,16 @@ def recent_settled(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def milestone_done(data: dict[str, Any]) -> dict[str, int]:
-    """Each milestone's completed count: its settled Tasks plus the Done ones a read-model feed counted off the board."""
+def settled_counts(data: dict[str, Any]) -> Counter:
+    """How many of the settled tasks each milestone has completed."""
     done = done_lanes(data["roles"]["done"])
-    settled = Counter(e["milestone"] for e in data["settled"].values() if e["milestone"] and e["state"] in done)
-    return dict(settled + Counter(data.get("milestone_done", {})))
+    return Counter(e["milestone"] for e in data["settled"].values() if e["milestone"] and e["state"] in done)
+
+
+def milestone_done(data: dict[str, Any], counted: Counter | None = None) -> dict[str, int]:
+    """Each milestone's completed count: its settled Tasks (`counted`, when the caller holds them) plus the Done ones a
+    read-model feed counted off the board."""
+    return dict((settled_counts(data) if counted is None else counted) + Counter(data.get("milestone_done", {})))
 
 
 def _trail_points(agent: dict[str, Any], names: dict[str, int]) -> dict[str, Any]:
@@ -153,14 +159,23 @@ def _dump_machine_flow(flow: dict[str, Any], held: _Held, kept: _Held) -> tuple[
     adapter = _adapter(RawTask)
     names: dict[str, int] = (held.get(("names", flow["name"])) or ({},))[0]
     kept[("names", flow["name"])] = (names,)
+    agents = flow["agents"]
+    last = held.get(("flow", flow["name"]))
+    if last is not None and last[0] == agents and last[1] is names:  # the same agents, which the list compare finds by identity
+        kept.update(last[3])
+        kept[("flow", flow["name"])] = last
+        return list(names), last[2]
     dumps = []
-    for agent in flow["agents"]:
+    own: _Held = {}
+    for agent in agents:
         entry = held.get(("machine", id(agent)))
         if entry is None or entry[0] is not agent or entry[1] is not names:
             dump = adapter.dump_json(adapter.validate_python(_trail_points(agent, names)), by_alias=True, exclude_unset=True)
             entry = (agent, names, dump)
-        kept[("machine", id(agent))] = entry
+        own[("machine", id(agent))] = entry
         dumps.append(entry[2])
+    kept.update(own)
+    kept[("flow", flow["name"])] = list(agents), names, dumps, own
     return list(names), dumps
 
 
@@ -197,16 +212,84 @@ def slim_snapshot(data: Any) -> Any:
     return drawn
 
 
+#: The snapshot fields `encode_snapshot` keeps the JSON of between builds, each with the emptiest value its model
+#: accepts, which stands in until the JSON is spliced in.
+_PARTS: dict[str, Any] = {"dags": [], "machineStrip": {"entries": []}}
+
+
+class _Day(NamedTuple):
+    """The settled tasks of the last 24 hours as `encode_snapshot` last drew them, and what they were drawn from."""
+
+    settled: dict[str, Any]  # the feed's settled tasks, copied
+    done: Any  # the lanes that count as done
+    since: float  # the clock it was drawn at
+    until: float  # the clock after which a task leaves the day
+    pairs: dict[str, tuple[Any, bytes]]  # each task's entry and its `"id":entry` JSON
+    counted: Counter  # the completed count of each milestone over every settled task
+    dumped: bytes  # `pairs` joined
+
+
+def _same(held: dict[str, Any], settled: dict[str, Any]) -> bool:
+    """Whether `settled` holds the very entries `held` does, under the same ids in the same order: the feed replaces an
+    entry it changes, so this is a walk of identities where `==` would compare each entry's fields."""
+    return len(held) == len(settled) and list(held) == list(settled) and all(map(is_, held.values(), settled.values()))
+
+
+def _settled_day(data: dict[str, Any], held: _Held) -> _Day:
+    """The settled day of `data`: the one `held` has while the feed's settled tasks, the done lanes and the 24 hours are
+    as they were, else drawn now, with each task's JSON kept while the feed holds the same entry object."""
+    settled, now, done = data["settled"], data["now"], done_lanes(data["roles"]["done"])
+    day: _Day | None = held.get(("day",))  # type: ignore[assignment]
+    if day and day.since <= now <= day.until and day.done == done and _same(day.settled, settled):
+        return day
+    adapter, old = _adapter(Settled), day.pairs if day else {}
+    recent = recent_settled(data)
+    pairs = {}
+    for task_id, entry in recent.items():
+        pair = old.get(task_id)
+        if pair is None or pair[0] is not entry:
+            dump = adapter.dump_json(adapter.validate_python(entry), by_alias=True, exclude_unset=True)
+            pair = (entry, json.dumps(task_id, ensure_ascii=False).encode() + b":" + dump)
+        pairs[task_id] = pair
+    until = min((max(e["created"] or 0, e["at"] or 0) for e in recent.values()), default=float("inf")) + LIVE_WINDOW_S
+    return _Day(dict(settled), done, now, until, pairs, settled_counts(data), b",".join(pair[1] for pair in pairs.values()))
+
+
+def _dump_parts(drawn: dict[str, Any], held: _Held, kept: _Held) -> dict[str, bytes]:
+    """The JSON of each `_PARTS` field `drawn` holds, the one `held` has while it is equal to the last, and `drawn` with
+    the stand-in for it."""
+    fields, found = BODIES["snapshot"].model_fields, {}
+    for name, empty in _PARTS.items():
+        value = drawn.get(name)
+        if not value or value == empty:
+            continue
+        memo = held.get(("part", name))
+        if memo is None or not (memo[0] is value or memo[0] == value):
+            adapter = _adapter(fields[name].annotation)
+            memo = (value, adapter.dump_json(adapter.validate_python(value), by_alias=True, exclude_unset=True))
+        kept[("part", name)] = memo
+        found[name], drawn[name] = memo[1], empty
+    return found
+
+
+class SegmentedBody(bytes):
+    """A body with the pieces it was joined from, which the snapshot store compresses one by one: a piece the body has
+    again is not compressed again."""
+
+    segments: list[bytes]
+
+
 def encode_snapshot(data: Any, held: _Held) -> bytes:
     """`encode("snapshot", slim_snapshot(data))`, the one body the API serves, with the JSON of each board task and
-    machine agent, and each task's move-set name, kept in `held` between calls.
+    machine agent, each task's move-set name, the settled day, and the dags and the machine strip, kept in `held`
+    between calls.
 
     `held` maps `id(object)` to the object and its JSON (an agent under `("machine", id)`, a move-set name under
-    `("moves", id)`, a flow's trail names under
-    `("names", flow)`): the feed replaces a task, agent or settled entry it changes rather than editing it, so one met
-    again encodes the same, and one no longer listed is forgotten. Those are most of the snapshot (the settled day's
-    entries alone 3.8 of its 4.9 MB), so a build after one change validates and dumps only what changed and the rest of
-    the document.
+    `("moves", id)`, a flow's trail names under `("names", flow)`, a `_PARTS` field under `("part", name)`, and the
+    settled day under `("day",)`): the feed replaces a task, agent or settled entry it changes rather than editing it,
+    so one met again encodes the same, and one no longer listed is forgotten. Those are most of the snapshot (the
+    settled day's entries alone 3.8 of its 4.9 MB), so a build after one change validates and dumps only what changed
+    and the rest of the document; the settled tasks are walked only when one changed, and met by identity otherwise.
     """
     flows = data["flows"]
     if not flows or flows[0]["name"] != "board":
@@ -218,53 +301,48 @@ def encode_snapshot(data: Any, held: _Held) -> bytes:
         {**flow, "agents": [], **({"names": names} if names else {})}
         for flow, (names, _) in zip(flows[1:], machines, strict=True)
     ]
+    day = kept[("day",)] = _settled_day(data, held)
     drawn = {
-        **slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *bare]}),
+        **slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *bare], "settled": {}}),
+        "milestone_done": milestone_done(data, day.counted),
         "move_sets": _move_sets(flows[0]["agents"], held, kept),
     }
-    recent, drawn["settled"] = drawn["settled"], {}
-    settled = _dump_settled(recent, held, kept)
+    parts = _dump_parts(drawn, held, kept)
     held.clear()
     held.update(kept)
     body = encode("snapshot", drawn)
     try:
-        body = _splice_flows(body, [tasks, *(dumps for _, dumps in machines)], [flow["name"] for flow in flows])
-        return _splice_settled(body, settled)
+        pieces = _splice(body, [tasks, *(dumps for _, dumps in machines)], [flow["name"] for flow in flows], parts, day.dumped)
     except ValueError:  # the document is not drawn as it was: encode it whole
         return encode("snapshot", slim_snapshot(data))
+    encoded = SegmentedBody(b"".join(pieces))
+    encoded.segments = pieces
+    return encoded
 
 
-def _splice_flows(body: bytes, agents: list[list[bytes]], names: list[str]) -> bytes:
-    """`body` with each flow's empty `"agents":[]` replaced by its drawn agents, the flows taken in order; ValueError when
-    one is absent."""
-    parts, cursor, search = [], 0, body.index(b'"flows":[')
+def _splice(
+    body: bytes, agents: list[list[bytes]], names: list[str], parts: dict[str, bytes], settled: bytes
+) -> list[bytes]:
+    """`body` in pieces with each flow's empty `"agents":[]` replaced by its drawn agents, the flows taken in order, each
+    `parts` stand-in by its JSON, and the empty `"settled":{}` by `settled`: a drawn piece stands alone, between the
+    pieces of the rest of the body. ValueError when a stand-in is absent or not alone."""
+    holes, search = [], body.index(b'"flows":[')
     for drawn, name in zip(agents, names, strict=True):
         at = body.index(b'"agents":[]', body.index(b'{"name":%s' % json.dumps(name, ensure_ascii=False).encode(), search))
-        parts += [body[cursor:at], b'"agents":[%s]' % b",".join(drawn)]
-        cursor = search = at + len(b'"agents":[]')
-    return b"".join(parts) + body[cursor:]
-
-
-def _dump_settled(recent: dict[str, dict[str, Any]], held: _Held, kept: _Held) -> bytes:
-    """The `"id":entry` pairs of the `recent` settled tasks, each kept in `held` under `("settled", id)` while the feed
-    holds the same entry object: it replaces an entry it changes."""
-    adapter = _adapter(Settled)
-    pairs = []
-    for task_id, entry in recent.items():
-        pair = held.get(("settled", task_id))
-        if pair is None or pair[0] is not entry:
-            dump = adapter.dump_json(adapter.validate_python(entry), by_alias=True, exclude_unset=True)
-            pair = (entry, json.dumps(task_id, ensure_ascii=False).encode() + b":" + dump)
-        kept[("settled", task_id)] = pair
-        pairs.append(pair[1])
-    return b",".join(pairs)
-
-
-def _splice_settled(body: bytes, pairs: bytes) -> bytes:
-    """`body` with its empty `"settled":{}` replaced by `pairs`; ValueError unless there is exactly one to replace."""
-    if body.count(b'"settled":{}') != 1:
-        raise ValueError("settled")
-    return body.replace(b'"settled":{}', b'"settled":{%s}' % pairs)
+        holes.append((at, len(b'"agents":[]'), b'"agents":[', b",".join(drawn), b"]"))
+        search = at + len(b'"agents":[]')
+    stand_ins = {b'"settled":{}': (b'"settled":{', settled, b"}")}
+    for name, dump in parts.items():
+        stand_ins[json.dumps({name: _PARTS[name]}, separators=(",", ":"))[1:-1].encode()] = (b'"%s":' % name.encode(), dump, b"")
+    for marker, (prefix, drawn, suffix) in stand_ins.items():
+        if body.count(marker) != 1:
+            raise ValueError(marker.decode())
+        holes.append((body.index(marker), len(marker), prefix, drawn, suffix))
+    pieces, cursor, after = [], 0, b""
+    for at, size, prefix, drawn, suffix in sorted(holes):
+        pieces += [after + body[cursor:at] + prefix, drawn]
+        cursor, after = at + size, suffix
+    return [*pieces, after + body[cursor:]]
 
 
 def event(name: str, data: Any) -> str:

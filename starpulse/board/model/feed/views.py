@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class ViewMethods:
-    _entries: tuple[tuple, list[dict]] | None = None  # the machine entries of the inputs `machine_fields` last read
+    _entries: tuple[tuple, list[dict], dict] | None = None  # the machine entries of the inputs `machine_fields` last read, and the tasks they were drawn for
 
     def cold_page(self, before: float | None, limit: int, milestone: str | None = None) -> tuple[list[dict], bool]:
         """`GET /api/done`: the next `limit` cold done stubs entered before `before` (None: the newest), and whether
@@ -145,7 +145,8 @@ class ViewMethods:
         inputs = entry_inputs(flows, derived)
         memo = self._entries
         if memo is None or memo[0] != inputs:
-            self._entries = memo = inputs, all_entries(flows, derived)  # a local, as a build on another thread may store
+            known = {} if memo is None else memo[2]
+            self._entries = memo = inputs, all_entries(flows, derived, known), known  # a local, as a build on another thread may store
         return {"machineStrip": {"entries": within(memo[1], now, LEDGER_WINDOW)}}
 
     def build_ledgers_on(self, worker: Executor) -> None:

@@ -1599,13 +1599,34 @@ def _uncompleted(root: Path, keep: object, rehydrate: Callable[[str], object]) -
 _FILE_IDS: dict[str, tuple[tuple[int, int], tuple[str, ...]]] = {}
 
 
+_PLAIN_ID = re.compile(r"---\n(?:id: ([\w.-]+)\n)(?=\S)")
+_HEAD_CHUNK = 2048
+
+
+def _head(path: str) -> str:
+    """The file's text through the end of its front matter, read a chunk at a time, not the whole of it."""
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        head = os.read(fd, _HEAD_CHUNK)
+        while b"\n---" not in head[4:] and (more := os.read(fd, _HEAD_CHUNK)):
+            head += more
+    finally:
+        os.close(fd)
+    return head.decode(errors="replace")
+
+
 def _held_ids(path: str, stat: os.stat_result) -> tuple[str, ...]:
     stamp = (stat.st_mtime_ns, stat.st_size)
     held = _FILE_IDS.get(path)
     if held is not None and held[0] == stamp:
         return held[1]
-    frontmatter, _ = _split(Path(path).read_text())
-    ids = (str(frontmatter.get("id") or "").strip(), *_aliases(frontmatter)) if isinstance(frontmatter, dict) else ()
+    head = _head(path)
+    plain = _PLAIN_ID.match(head)
+    if plain and "aliases" not in head:  # the id on the first line, no alias: the common file parses no YAML
+        ids: tuple[str, ...] = (plain[1],)
+    else:
+        frontmatter, _ = _split(head)
+        ids = (str(frontmatter.get("id") or "").strip(), *_aliases(frontmatter)) if isinstance(frontmatter, dict) else ()
     if stamp[0] < time.time_ns() - _SETTLED_NS:
         _FILE_IDS[path] = (stamp, ids)
     return ids

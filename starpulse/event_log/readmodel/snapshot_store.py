@@ -2,6 +2,8 @@
 the API serves bytes it never builds."""
 
 import gzip
+import struct
+import zlib
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -24,13 +26,34 @@ GZIP_LEVEL = 1
 STANDALONE = -1
 
 
-def _gzipped(body: bytes) -> bytes | None:
-    return gzip.compress(body, compresslevel=GZIP_LEVEL, mtime=0) if len(body) > GZIP_MIN_BYTES else None
+def _gzipped(body: bytes, deflated: dict[bytes, bytes] | None = None) -> bytes | None:
+    """The gzip of `body` when it is over `GZIP_MIN_BYTES`. A body that names the `segments` it was joined from is
+    deflated piece by piece, each ended on a byte boundary so the pieces concatenate into one stream: `deflated` holds
+    the pieces of the last body, so a piece the body has again is not compressed again. Both give the same gzip member."""
+    if len(body) <= GZIP_MIN_BYTES:
+        return None
+    pieces = getattr(body, "segments", None)
+    if pieces is None or deflated is None:
+        return gzip.compress(body, compresslevel=GZIP_LEVEL, mtime=0)
+    parts = [(piece, deflated.get(piece) or _deflate(piece)) for piece in pieces if piece]
+    deflated.clear()
+    deflated.update(parts)
+    return b"".join([_HEADER, *(deflate for _, deflate in parts), _END, struct.pack("<II", zlib.crc32(body), len(body) & 0xFFFFFFFF)])
 
 
-def _store(db: Connection, view: str, seq: int, body: bytes, at: float) -> bool:
+def _deflate(piece: bytes) -> bytes:
+    deflater = zlib.compressobj(GZIP_LEVEL, zlib.DEFLATED, -zlib.MAX_WBITS)
+    return deflater.compress(piece) + deflater.flush(zlib.Z_FULL_FLUSH)
+
+
+#: A gzip member's header as `gzip.compress` writes it, and the final empty block that ends its pieces' stream.
+_HEADER = gzip.compress(b"", compresslevel=GZIP_LEVEL, mtime=0)[:10]
+_END = b"\x03\x00"
+
+
+def _store(db: Connection, view: str, seq: int, body: bytes, at: float, deflated: dict[bytes, bytes] | None = None) -> bool:
     """Store `body` as `view`; True when that inserted the view's row."""
-    values = {"seq": seq, "body": body, "gzipped": _gzipped(body), "stored_at": at}
+    values = {"seq": seq, "body": body, "gzipped": _gzipped(body, deflated), "stored_at": at}
     if db.execute(update(snapshots).where(snapshots.c.view == view).values(**values)).rowcount:
         return False
     db.execute(insert(snapshots).values(view=view, **values))
@@ -54,6 +77,7 @@ class SnapshotStore:
     def __init__(self, engine: Engine, encode: Callable[[Any, dict], bytes], keep: int = KEEP) -> None:
         self._engine, self._encode, self.keep = engine, encode, keep
         self._held: dict = {}
+        self._deflated: dict[bytes, bytes] = {}
         self._writer = unpooled_engine(engine)
 
     def save(self, changes: Sequence[tuple[str, dict]], snapshot: Any | None, at: float, current: bool = True) -> int:
@@ -72,7 +96,7 @@ class SnapshotStore:
             if body is None and current:
                 db.execute(update(snapshots).where(snapshots.c.seq != STANDALONE).values(seq=head))
             if body is not None:
-                if _store(db, LIVE, head, body, at):  # the first save: clear what the three-body store left
+                if _store(db, LIVE, head, body, at, self._deflated):  # the first save: clear what the three-body store left
                     db.execute(delete(snapshots).where(snapshots.c.view != LIVE, snapshots.c.seq != STANDALONE))
             db.execute(delete(snapshot_deltas).where(snapshot_deltas.c.seq <= head - self.keep))
         return head
