@@ -762,10 +762,12 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     for (const e of sc.hops) lines.push({ h: { kind: "link", o: e }, d: curveDist(e, x, y) });
     return nearestWithin(lines, (l) => l.d, px(14))?.h ?? null;
   }
-  let tipSize = { width: 0, height: 0 };
+  let tipSize = { width: 0, height: 0 }, tipLive = false;
+  const isLive = (h: Hover) => h.kind === "task" && liveTasks.has(h.o.id);
   /** Rewrites the tip's text and measures it, so placement uses the size of what is shown. */
   function retip(h: Hover) {
     tip.innerHTML = tipHtml(h);
+    tipLive = isLive(h);
     tipSize = tip.getBoundingClientRect();
   }
   function setHover(h: Hover | null, mx = 0, my = 0) {
@@ -776,7 +778,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       return;
     }
     // measured only when the text changes: reading it every frame after moving the tip forces a layout per frame
-    if (!same) retip(h);
+    if (!same || isLive(h) !== tipLive) retip(h);
     const r = tipSize;
     let tx = mx + 16, ty = my + 14;
     if (tx + r.width > innerWidth - railW() - 8) tx = mx - r.width - 16;
