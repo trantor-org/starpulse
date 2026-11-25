@@ -6,7 +6,6 @@ and every effect (a hold comment, the unsettled flag, the pin and held sets) a `
 adapter alone touches the world (ADR Every Task State Re-Derives on One Trigger Set Through the Task Actor).
 """
 
-import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -44,7 +43,6 @@ FAULT_NEXT = "Fix the cause, then move the task back to In Progress; the actor d
 PUSHBACK = "Operator pushback:"
 #: The pull request states that end a pull request.
 TERMINAL = ("MERGED", "CLOSED")
-DEPLOY_FAILED = re.compile(r"^Reopened from Done: Deploy of \S+ to .+? failed", re.M)
 #: A Waiting task's service level expectation: seconds from entering Waiting, or past its latest `expect_by`.
 DAY_S = 86_400.0
 SLE_DAYS, GRACE_DAYS = 7, 2
@@ -255,7 +253,6 @@ def pr_terminal(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
         agent["state"] == facts.roles.working
         and merged is not None
         and merged < work_floor(facts, agent)
-        and not deploy_reopened(facts, agent)
     ):
         return None  # the merge predates the work floor: a reopened task's earlier delivery proves nothing
     # the board's guard wants the evidence to name every cited pull request: a reference is named as one, not proof
@@ -345,16 +342,6 @@ def pr_merged_unfinished(facts: TaskFacts, agent: Agent) -> tuple[str, str] | No
     )
 
 
-def deploy_reopened(facts: TaskFacts, agent: Agent) -> bool:
-    """Whether the task's latest reopen from Done was a failed deploy of its merge. A read that fails leaves the pass
-    unsettled, so the next one asks again."""
-    if (texts := facts.comments(agent)) is None:
-        facts.unsettled()
-        return False
-    reopens = [text for text in texts if text.startswith("Reopened from Done: ")]
-    return bool(reopens) and DEPLOY_FAILED.search(reopens[-1]) is not None
-
-
 def criteria_checked(facts: TaskFacts, agent: Agent) -> tuple[int, str] | None:
     """The criteria count when every criterion is checked or struck and the task ships no pull request: its phase
     sequence has no `deliver`, or it cites none and its final summary is recorded. An open pull request naming the task
@@ -403,8 +390,6 @@ def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     held = sent_back or {}
     # In the working lane a PR merged before the work floor is shipped work (a post-merge send back).
     floor = work_floor(facts, agent) if agent["state"] == facts.roles.working else 0.0
-    if floor and sent_back is None and deploy_reopened(facts, agent):
-        floor = 0.0  # a failed deploy sent shipped work back: the merge closes it through Review, never an operator's send-back from Review
     for url in facts.own_prs(agent):
         record = facts.record(url)
         if record is None:
@@ -513,6 +498,8 @@ def pr_unfinished_dead(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None
 def phase_resumed(facts: TaskFacts, agent: Agent) -> Held:
     """The time and comment of the newest step of a phase in `[sequences]` the task's session took after the task
     entered its lane: the session going back to work is the event that sends the task back."""
+    if review_unchanged(facts, agent):
+        return None
     since = entered(facts, agent)
     steps = [
         (at, phase)
@@ -523,6 +510,21 @@ def phase_resumed(facts: TaskFacts, agent: Agent) -> Held:
         return None
     at, phase = max(steps)
     return at, f"Its session resumed the {phase} phase. Sent back to In Progress."
+
+
+def review_unchanged(facts: TaskFacts, agent: Agent) -> bool:
+    """Whether every own pull request is open, ready and at the head the task entered Review with: a session resuming
+    a phase on it changes nothing a reviewer sees, so it stays in Review until a push gives it a new head."""
+    seen = facts.memory(agent["id"]).get("reviewed") or {}
+    urls = facts.own_prs(agent)
+    return (
+        bool(urls)
+        and unready(facts, agent) is None
+        and all(
+            (record := facts.record(url)) and record["state"] == "OPEN" and seen.get(url) == record["headRefOid"]
+            for url in urls
+        )
+    )
 
 
 def resumed_at(phase: str, placed: dict[str, Any], entered: float) -> float | None:
