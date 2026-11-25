@@ -32,7 +32,7 @@ from sqlalchemy import and_, delete, func, insert, or_, select
 from sqlalchemy.engine import Engine
 
 from starpulse.board.adapters import native_docs, native_milestones, qa_verdicts
-from starpulse.board.adapters.holder_idle import UNREACHABLE_EXIT, HolderUnreachable
+from starpulse.board.adapters.holder_idle import GRACE_EXIT, UNREACHABLE_EXIT, HolderInGrace, HolderUnreachable
 from starpulse.board.adapters.native_lookup import _SETTLED_NS, _aliases, _find, _stamp
 from starpulse.board.adapters.native_scan import (
     _CRITERIA,
@@ -1871,7 +1871,11 @@ def _notice(command: object, base: Path, unreachable: bool = False) -> Callable[
         done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=HOOK_TIMEOUT, check=False)
         if done.returncode:
             said = done.stderr.strip() or done.stdout.strip() or "printed nothing"
-            error = HolderUnreachable if unreachable and done.returncode == UNREACHABLE_EXIT else ValueError
+            error = ValueError
+            if unreachable and done.returncode == UNREACHABLE_EXIT:
+                error = HolderUnreachable
+            elif unreachable and done.returncode == GRACE_EXIT:
+                error = HolderInGrace
             raise error(f"{shlex.join(argv)}: exit {done.returncode}: {said}")
 
     return notice

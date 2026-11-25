@@ -200,17 +200,25 @@ def _send(method: str, base: str, path: str, body: dict[str, Any] | None) -> tup
 
 
 def put_keyed(base: str, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    """`put` of a create `body` under a fresh `request_key`, sent again with that key while the server is unavailable.
+    """`put` of a create or edit `body` under a fresh `request_key`, sent again with that key while the server is unavailable.
 
     A send that timed out may have applied, so only a repeat under its key is safe: the server answers it with the
-    first send's answer. The last send's `CliError` is raised after `KEYED_SENDS` sends.
+    first send's answer. The last send's `CliError` is raised after `KEYED_SENDS` sends; one that does not show the write
+    never arrived (a busy refusal, a refused connection) carries `outcome: unknown`, because the write may have landed.
     """
     keyed = {**body, "request_key": uuid.uuid4().hex}
     for send in range(1, KEYED_SENDS + 1):
         try:
             return put(base, path, keyed)
         except CliError as unavailable:
-            if unavailable.code != "unavailable" or send == KEYED_SENDS:
+            if unavailable.code != "unavailable":
+                raise
+            if send == KEYED_SENDS:
+                cause = unavailable.__cause__
+                refused = isinstance(getattr(cause, "reason", cause), ConnectionRefusedError)
+                if "retry_after" not in unavailable.extra and not refused:
+                    unavailable.extra["outcome"] = "unknown"
+                    unavailable.args = (f"{unavailable}; the write may have landed, so read the task before sending it again",)
                 raise
             pause = min(unavailable.extra.get("retry_after", KEYED_PAUSE_S), BUSY_PAUSE_MAX_S)
         # adr-exempt: retry

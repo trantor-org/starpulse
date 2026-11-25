@@ -25,10 +25,16 @@ STOPPED = "SESSION_STOPPED"  # a turn's end, which trails a settle and says noth
 WORKING = "in_progress"
 PARKED = frozenset({"needs_attention", "waiting", "done"})  # lanes whose holder ended its turn before the move
 UNREACHABLE_EXIT = 3  # the `[board] idle` resume found no session subscribed to the task's resume topic
+GRACE_EXIT = 4  # the `[board] idle` confirm found the holder busy only because it launched a `deliver` a moment ago
 
 
 class HolderUnreachable(ValueError):
     """The idle hook's resume reached no session: a retry on the next settle wakes no one, and none may come."""
+
+
+class HolderInGrace(ValueError):
+    """The idle hook's confirm found the holder busy only inside the grace after it launched a `deliver`: the grace ends
+    on a clock, so no event follows it."""
 
 
 def _task_of(entry: Entry, event: str) -> str | None:

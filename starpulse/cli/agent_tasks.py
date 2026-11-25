@@ -503,7 +503,7 @@ def _task_edit_call(
     who = {"actor": OPERATOR, "breakGlass": True} if break_glass else writer(args, environ)
     body = {"base": base_record, "changes": changes, "comment": comment, **who}
     path = f"/api/tasks/{args.task}"
-    status, reply = agent_wire.put(base, path, body)
+    status, reply = agent_wire.put_keyed(base, path, body)
     return record_call(base, path, status, reply, missing=_TASK_MISSING)["changed"]
 
 
