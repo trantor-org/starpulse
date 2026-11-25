@@ -89,13 +89,27 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // the Board's working state is the page's drill-in of its first task, never a level; a drill asked for before the page registers waits for it
   let drillTo: ((task: string) => void) | null = null, heldDrill: string | null = null;
   /** Whether a path ends on the Board's working state: the page is asked to drill into the lane's first task, and with none the level stays shut. */
-  function drilled(p: Path): boolean {
+  function drilled(p: Path, zoomAt?: Pt): boolean {
     const last = p[p.length - 1], lane = S?.roles.working;
     if (!lane || last?.kind !== "state" || last.id !== lane) return false;
     const first = S!.board.agents.find((a) => a.state === lane)?.id;
-    if (first && drillTo) drillTo(first);
+    if (first && drillTo && zoomAt && scene && !trans && !away) zoomInto(zoomAt, () => drillTo?.(first));
+    else if (first && drillTo) drillTo(first);
     else if (first) heldDrill = first;
     return true;
+  }
+  function snapshot() {
+    const shot = document.createElement("canvas");
+    shot.width = cv.width;
+    shot.height = cv.height;
+    shot.getContext("2d")!.drawImage(cv, 0, 0);
+    return shot;
+  }
+  /** A click on the working state's sun zooms the level through the point, then opens the drill-in; the new level never draws, and the map stays undrawn once the drill-in hides it. */
+  function zoomInto(f: Pt, open: () => void) {
+    setHover(null);
+    trans = { snap: snapshot(), inward: true, f, t0: performance.now(), open };
+    loop.wake();
   }
   let path: Path = BOARD, W = 0, H = 0, view: View = { k: 1, x: 0, y: 0 }, fit: View = view;
   // the task whose path a click pinned, kept by id so each frame finds it again in the rebuilt scene
@@ -113,7 +127,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   // what a navigator search result under the pointer stands for, lit while the pointer is off the canvas
   let spotted: Target | null = null, spotNear = false;
   let hover: Hover | null = null, mouse: { ox: number; oy: number; cx: number; cy: number } | null = null;
-  let trans: { snap: HTMLCanvasElement; inward: boolean; f: Pt; t0: number } | null = null, anim: ((now: number) => void) | null = null;
+  let trans: { snap: HTMLCanvasElement; inward: boolean; f: Pt; t0: number; open?: () => void } | null = null, anim: ((now: number) => void) | null = null;
   let drag: { fixed: boolean; x: number; y: number; vx: number; vy: number; moved: boolean } | null = null;
   // ZS: zoom beyond the fit size; K: absolute zoom. Text, pulses and dashes divide by these so they never balloon.
   const grown = sizes(), bends = new Map<string, Pt>(); // each bent Board path's last bend, so it keeps its route while that clears
@@ -256,12 +270,11 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
 
   // go to another level: the old level zooms through the clicked point (in) or shrinks away (out)
-  function go(next: Path, fx = W / 2, fy = H / 2, then?: () => View) {
-    if (drilled(next)) return;
-    const shot = document.createElement("canvas");
-    shot.width = cv.width;
-    shot.height = cv.height;
-    shot.getContext("2d")!.drawImage(cv, 0, 0);
+  function go(next: Path, fx?: number, fy?: number, then?: () => View) {
+    if (drilled(next, fx === undefined || fy === undefined ? undefined : { x: fx, y: fy })) return;
+    fx ??= W / 2;
+    fy ??= H / 2;
+    const shot = snapshot();
     const inward = next.length >= path.length, came = next.length === path.length - 1 ? path[path.length - 1] : null;
     path = next;
     keep("fv.path", path);
@@ -1213,16 +1226,23 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     if (scene) {
       if (!trans) drawScene(view.k, view.x, view.y);
       else {
-        // in: the old level blows up through the clicked point and fades; the new one grows out of it. out: the reverse
+        // in: the old level blows up through the clicked point and fades; the new one grows out of it. out: the reverse.
+        // The working state's sun (trans.open) grows no new level: the drill-in opens at the end over a map that draws no more.
         const q = Math.min(1, (now - trans.t0) / 520), e = ease(q), f = trans.f;
         const sNew = trans.inward ? 0.3 + 0.7 * e : 2.6 - 1.6 * e, sOld = trans.inward ? 1 + 2.5 * e : 1 - 0.7 * e;
-        cx.globalAlpha = e;
-        drawScene(view.k * sNew, f.x + sNew * (view.x - f.x), f.y + sNew * (view.y - f.y));
+        if (!trans.open) {
+          cx.globalAlpha = e;
+          drawScene(view.k * sNew, f.x + sNew * (view.x - f.x), f.y + sNew * (view.y - f.y));
+        }
         cx.globalAlpha = 1 - e;
         cx.setTransform(dpr, 0, 0, dpr, 0, 0);
         cx.drawImage(trans.snap, f.x * (1 - sOld), f.y * (1 - sOld), W * sOld, H * sOld);
         cx.globalAlpha = 1;
-        if (q >= 1) trans = null;
+        if (q >= 1 && trans.open) {
+          const open = trans.open;
+          trans.open = () => {}; // held on the bare sky until the drill-in hides the canvas
+          open();
+        } else if (q >= 1) trans = null;
       }
     }
     if (scene && !trans && onDrawn && !shown1) {
@@ -1357,6 +1377,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     show(on) {
       const back = on && away;
       away = !on;
+      if (on && away) trans = null;
       relay.show(on);
       if (!back) return;
       // the Board drew no frame behind the other view: the next one shows the sky as it now stands, not the steps it missed

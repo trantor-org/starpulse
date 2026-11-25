@@ -50,6 +50,7 @@ from starpulse.pulls.adapters.inbound.delivery import (
     refresh_on_save,
 )
 from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
+from starpulse.runs.adapters.inbound.grafana_notice import notice_webhook
 from starpulse.runs.application.queries import projection as runs_projection
 from starpulse.runs.model import opt_in
 from starpulse.scheduler.adapters.exposition import autopilot_exposition
@@ -65,7 +66,6 @@ from starpulse.views.adapters.outbound.gc_pauses import PAUSES, bound_full_colle
 from starpulse.views.adapters.outbound.signal_folds import SignalFolds
 from starpulse.views.adapters.outbound.storage_metrics import SCRAPE_CACHE_S, cached, docs_exposition, storage_exposition
 from starpulse.views.adapters.outbound.take_over import command_take_over
-from starpulse.views.adapters.outbound.webhook_command import command_webhook
 from starpulse.views.bin.blocks import ApiConfig
 from starpulse.views.ports.services import Services
 lazy from starpulse.board.adapters.search import SearchIndex
@@ -210,8 +210,8 @@ def serve_page(
         search=search,
         analytics=config.analytics,
         take_over=command_take_over(config.take_over_command) if config.take_over_command else None,
-        webhook=command_webhook(config.webhook_command, os.environ[config.webhook_token_env or ""])
-        if config.webhook_command
+        webhook=notice_webhook(cloudevents, config.webhook_producer, os.environ[config.webhook_token_env or ""])
+        if config.webhook_producer and cloudevents
         else None,
         lanes=lambda: lane_surfaces(log.engine, config.board, base),
         slow_read_s=config.slow_read_seconds,

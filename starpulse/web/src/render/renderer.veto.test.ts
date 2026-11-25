@@ -39,6 +39,9 @@ const snap = (...states: string[]): Snapshot => ({
   now: 1_700_000_000,
 }) as Snapshot;
 
+/** Each frame paints the sky's wash with one fillRect, so this counts the frames drawn. */
+const frames = { n: 0 };
+
 /** Canvas 2D that accepts every call the Board's layout and frames make. */
 function stubContext(cv: HTMLCanvasElement) {
   const store: Record<string, unknown> = {};
@@ -47,6 +50,7 @@ function stubContext(cv: HTMLCanvasElement) {
       if (p in store) return store[p];
       if (p === "canvas") return cv;
       if (p === "createRadialGradient" || p === "createLinearGradient") return () => ({ addColorStop() {} });
+      if (p === "fillRect") return () => void frames.n++;
       if (p === "measureText") return (s: string) => ({ width: String(s).length * 6 });
       return () => {};
     },
@@ -110,6 +114,24 @@ describe("the working state", () => {
     r.go(IN_PROGRESS);
     expect(drills).toEqual([]);
     expect(hud.get().path).toEqual(REVIEW);
+    r.stop();
+  });
+
+  it("zooms through a click on the working state's sun, then asks the page to drill", async () => {
+    const drills: string[] = [];
+    const { r, hud } = await open(snap("ready", "in_progress"), (x) => x.onDrill((id) => drills.push(id)));
+    r.go(IN_PROGRESS, 300, 200);
+    expect(drills).toEqual([]);
+    await vi.advanceTimersByTimeAsync(700);
+    expect(drills).toEqual(["TASK-2"]);
+    expect(hud.get().path).toEqual(BOARD);
+    r.show(false);
+    const before = frames.n;
+    await vi.advanceTimersByTimeAsync(300);
+    expect(frames.n).toBe(before);
+    r.show(true);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(frames.n).toBeGreaterThan(before);
     r.stop();
   });
 

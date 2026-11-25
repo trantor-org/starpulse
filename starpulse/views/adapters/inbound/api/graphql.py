@@ -19,6 +19,7 @@ import asyncio
 import json
 import math
 import time
+from functools import partial
 from inspect import isawaitable
 from typing import Any
 
@@ -135,9 +136,16 @@ async def _machine_tasks(_: dict, info: GraphQLResolveInfo) -> list[dict]:
     ]
 
 
+_HISTORY_ONLY = frozenset({"id", "lanePath", "machinePath", "planRevisions", "events", "__typename"})
+
+
 @query.field("task")
 async def _task(_: Any, info: GraphQLResolveInfo, id: str) -> dict | None:
-    return await _worker(info, info.context["feed"].held, id)
+    """A selection of history fields alone reads lean: the page's hover asks for nothing the board's rules decorate, and
+    their per-lane verdicts and file reads cost far more than the history query behind it."""
+    selections = info.field_nodes[0].selection_set.selections if info.field_nodes[0].selection_set else ()
+    lean = all(isinstance(node, FieldNode) and node.name.value in _HISTORY_ONLY for node in selections)
+    return await _worker(info, partial(info.context["feed"].held, lean=lean), id)
 
 
 @query.field("occurrences")

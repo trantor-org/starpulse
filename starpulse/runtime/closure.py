@@ -121,7 +121,7 @@ _SERVE_KEYS = (
     "mode",
     "github_token_env",
     "take_over_command",
-    "webhook_command",
+    "webhook_producer",
     "webhook_token_env",
     "slow_read_seconds",
     "worker_memory",

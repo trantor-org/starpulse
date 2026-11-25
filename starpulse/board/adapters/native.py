@@ -1541,16 +1541,20 @@ def _reactivated(root: Path, task: str, written: Written, actor: str) -> Written
 
 
 def _reopener(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: Guard = Guard()) -> TaskReopener:
-    """A board writer that returns a Done task to the working State in one write, `reason` as the comment the Board
-    machine's REOPEN requires, and a completed task's file to `tasks/`; a task that is not Done is refused untouched."""
+    """A board writer that returns a Done task to the working State, or to Ready when `ready`, in one write, `reason`
+    as the comment the Board machine's REOPEN requires, and a completed task's file to `tasks/`; a task that is not
+    Done is refused untouched."""
     working = next((status for status in statuses if lane_id(status) == roles.working), "")
+    ready_lane = next((status for status in statuses if lane_id(status) == roles.ready), "")
 
-    def reopen(task: str, reason: str, /, actor: str = TASK_ACTOR) -> Written:
+    def reopen(task: str, reason: str, /, actor: str = TASK_ACTOR, ready: bool = False) -> Written:
+        landing = ready_lane if ready else working
+
         def edit(frontmatter: dict, body: str) -> str:
             held = str(frontmatter.get("status") or "")
             if lane_id(held) != roles.done:
                 raise _Unheld(f"{task} is {held or 'without a status'}, not Done")
-            frontmatter["status"] = working
+            frontmatter["status"] = landing
             return _comment(body, f"Reopened from Done: {reason.strip()}", actor)
 
         found = _find(root, task)
@@ -1561,7 +1565,7 @@ def _reopener(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: G
             written = _update(root, task, edit, guard, actor)
         except _Unheld as unheld:
             return Written(False, str(unheld))
-        return _moved(_reactivated(root, task, written, actor), working)
+        return _moved(_reactivated(root, task, written, actor), landing)
 
     return reopen
 

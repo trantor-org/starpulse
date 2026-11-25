@@ -75,7 +75,7 @@ def prepare(parser: argparse.ArgumentParser, args: argparse.Namespace, config: C
         producer_tokens = ingest_tokens(config.producers, os.environ)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")
-    if config.webhook_command and not os.environ.get(config.webhook_token_env or ""):
+    if config.webhook_producer and not os.environ.get(config.webhook_token_env or ""):
         parser.exit(1, f"webhook_token_env: {config.webhook_token_env} is not set\n")
     if not (STATIC / "index.html").is_file():
         parser.exit(1, f"{STATIC} has no build; run `pnpm --filter @starpulse/web build` first\n")

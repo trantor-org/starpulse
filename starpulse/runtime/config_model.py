@@ -523,13 +523,13 @@ class ConfigFile(_Table):
             "one store is kept."
         ),
     )
-    webhook_command: list[Text] | None = Field(
+    webhook_producer: Text | None = Field(
         default=None,
-        min_length=1,
         description=(
-            "The command `POST /intake/grafana` runs, as an argv, with the request body on stdin once the bearer token "
-            "`webhook_token_env` names matches. Exit 0: accepted (202). Any other exit or a timeout: 502 with the "
-            "command's stderr, so the sender retries. 404 when this is unset. Needs `webhook_token_env`."
+            "The `[[producers]]` name `POST /intake/grafana` saves each notice under, once the bearer token "
+            "`webhook_token_env` names matches: one `NOTICE_RECEIVED` event of the `alert-notice` machine, answered 202 "
+            "with no command run. 503 when the log took nothing, so the sender retries. 404 when this is unset. Needs "
+            "`webhook_token_env` and the producer's `alert-notice` machine."
         ),
     )
     webhook_token_env: EnvName | None = Field(
@@ -668,8 +668,10 @@ class ConfigFile(_Table):
 
     @model_validator(mode="after")
     def _tables_agree(self) -> "ConfigFile":
-        if self.webhook_command and not self.webhook_token_env:
-            raise ValueError("webhook_command needs webhook_token_env, the variable holding the bearer token")
+        if self.webhook_producer and not self.webhook_token_env:
+            raise ValueError("webhook_producer needs webhook_token_env, the variable holding the bearer token")
+        if self.webhook_producer and self.webhook_producer not in {p.name for p in self.producers}:
+            raise ValueError(f"webhook_producer {self.webhook_producer} is not a [[producers]] name")
         if dup := _repeated([run.name for run in self.runs]):
             raise ValueError(f"runs instance {dup} is configured twice")
         if dup := _repeated([repo.name for repo in self.repos]):
