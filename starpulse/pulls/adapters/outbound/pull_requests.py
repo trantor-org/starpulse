@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.rollup import checks_verdict
+from starpulse.contracts.task_keys import TaskKeys
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.application.commands.ci_trail import PullHistory, parse
 from starpulse.pulls.model.pins import Pins, Repo, link
@@ -28,7 +29,7 @@ if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
 logger = logging.getLogger(__name__)
 
 PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
-_TASK_ID = re.compile(r"task-\d+")
+_TASK_KEYS = TaskKeys(key=re.compile(r"task-\d+", re.I), branch=re.compile(r"task-(\d+)", re.I))
 DEFAULT_BASE = "main"
 
 
@@ -39,34 +40,36 @@ def pull_record(store: PullStore, url: str) -> dict[str, Any] | None:
     return records[0] if records else None
 
 
-def _named_tasks(record: dict[str, Any]) -> set[str]:
-    return set(_TASK_ID.findall(f"{record.get('headRefName', '')} {record.get('title', '')}".lower()))
+def _named_tasks(record: dict[str, Any], keys: TaskKeys) -> set[str]:
+    pattern = re.compile(keys.key.pattern, keys.key.flags | re.I)
+    return {m.group(0).lower() for m in pattern.finditer(f"{record.get('headRefName', '')} {record.get('title', '')}")}
 
 
-def delivers(store: PullStore, url: str, task_id: str) -> bool:
+def delivers(store: PullStore, url: str, task_id: str, keys: TaskKeys | None = None) -> bool:
     """Whether the pull request at `url` can be `task_id`'s delivery: one whose branch or title names tasks and not this
     one is another task's, a reference only."""
     found = pull_record(store, url)
-    named = _named_tasks(found) if found else set()
+    named = _named_tasks(found, keys or _TASK_KEYS) if found else set()
     return not named or task_id.lower() in named
 
 
-def own_prs(store: PullStore, agent: dict[str, Any]) -> list[str]:
+def own_prs(store: PullStore, agent: dict[str, Any], keys: TaskKeys | None = None) -> list[str]:
     """The cited pull requests that are not another task's delivery: one whose branch or title names tasks and not
     this one is a reference, never proof of this task's work."""
-    return [url for url in agent["prs"] if delivers(store, url, agent["id"])]
+    return [url for url in agent["prs"] if delivers(store, url, agent["id"], keys)]
 
 
-def uncited(store: PullStore, agent: dict[str, Any]) -> list[str]:
+def uncited(store: PullStore, agent: dict[str, Any], keys: TaskKeys | None = None) -> list[str]:
     """The open pull requests that name the task and that it does not cite: its id in the branch or title, or in the
     body of one whose branch and title name no task (a body that names a task is a link, not a delivery by itself)."""
+    keys = keys or _TASK_KEYS
     task_id = agent["id"].lower()
     mention = re.compile(rf"(?<![\w-]){re.escape(task_id)}(?!\d)")
-    named = [record for record in store.find(state="OPEN", bodies=False) if task_id in _named_tasks(record)]
+    named = [record for record in store.find(state="OPEN", bodies=False) if task_id in _named_tasks(record, keys)]
     linked = [
         record
         for record in store.find(state="OPEN", body_contains=task_id)
-        if not _named_tasks(record) and mention.search(record["body"].lower())
+        if not _named_tasks(record, keys) and mention.search(record["body"].lower())
     ]
     urls = (f"https://github.com/{record['repo']}/pull/{record['number']}" for record in [*named, *linked])
     return [url for url in urls if url not in agent["prs"]]

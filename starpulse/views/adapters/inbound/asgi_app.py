@@ -36,7 +36,7 @@ from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.adapters.inbound.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.adapters.inbound.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.adapters.inbound.api import graphql, intake, metrics
-from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, WORKERS
+from starpulse.views.adapters.inbound.api.answering import PLACE, RAN, SPANS, WORKERS
 from starpulse.views.adapters.inbound.api.openapi import swagger
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, StreamRoute, Watch, WriteRoute
@@ -300,6 +300,7 @@ class _Timed:
         )  # busy counts this one
         with self._watch(request, arrival) as timing:
             scope[RAN] = timing.ran
+            scope[SPANS] = timing.spans
 
             async def answering(message: MutableMapping[str, Any]) -> None:
                 if message["type"] == "http.response.start":

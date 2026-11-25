@@ -15,12 +15,14 @@ class SlowReads:
     """Logs each read of `route` that took `threshold_s` seconds or more from accept to the last byte written, with the
     seconds it waited for a handler thread, computed its answer and wrote it, the reads in flight when it began, and
     the request workers busy and streams open when it was accepted, so a stall of the whole process can be told apart by
-    the phase, and the occupant of the pool, that held the time."""
+    the phase, and the occupant of the pool, that held the time. The seconds a handler adds to `read.spans` are each
+    logged as `<name>=<seconds>`."""
 
     class _Read:
         def __init__(self) -> None:
             self.ran_at: float | None = None
             self.computed_at: float | None = None
+            self.spans: dict[str, float] = {}
 
         def ran(self) -> None:
             self.ran_at = time.monotonic()
@@ -52,7 +54,7 @@ class SlowReads:
             if queued_s + compute_s + write_s >= self._threshold_s:
                 logger.warning(
                     "slow_read route=%s query=%s queue_s=%.3f compute_s=%.3f write_s=%.3f in_flight=%d"
-                    " busy=%d streams=%d",
+                    " busy=%d streams=%d%s",
                     self._route,
                     query,
                     queued_s,
@@ -61,4 +63,5 @@ class SlowReads:
                     in_flight,
                     arrival.busy,
                     arrival.streams,
+                    "".join(f" {name}={seconds:.3f}" for name, seconds in read.spans.items()),
                 )

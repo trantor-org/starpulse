@@ -3,7 +3,7 @@
 The verdicts are pure policy; an adapter parses the file it is about to replace and writes the file only when
 `Guard.refusal` returns None."""
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -34,8 +34,8 @@ class Guard:
     ready: str = ""
     #: The ids of the open tasks whose field holds a value (a `unique` rule reads it), none when the board has no tasks.
     holders: Callable[[str, str], list[str]] = lambda _field, _value: []
-    #: Every task's `dependencies` by id (`rules.Record.graph`), none when the board has no tasks.
-    graph: Callable[[], Mapping[str, Sequence[str]]] = lambda: {}
+    #: The `dependencies` of the tasks named by ids of any case (`rules.Record.dependencies_of`), none when the board has no tasks.
+    dependencies_of: Callable[[Collection[str]], Mapping[str, Sequence[str]]] = lambda _ids: {}
     #: The board's `default_profiles` (`rules.Record.matrix`).
     matrix: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     #: The lenses whose verdict a task's latest qa round recorded (`rules.Record.qa_lenses`), none when the board has no store.
@@ -113,7 +113,7 @@ class Guard:
                 self.state_of,
                 pull_of=self.pull_of,
                 holders=self.holders,
-                graph=self.graph,
+                dependencies_of=self.dependencies_of,
                 matrix=self.matrix,
                 qa_lenses=self.qa_lenses,
             )

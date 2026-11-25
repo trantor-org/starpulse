@@ -445,12 +445,13 @@ class ConfigFile(_Table):
         default=SLOW_READ_S,
         gt=0,
         description=(
-            "The seconds a `GET /metrics` or `GET /api/task/<id>` read may take, from accept to the last byte "
+            "The seconds a `GET /metrics`, `GET /api/task/<id>`, `GET /api/search` or `GET /api/search/similar` read may take, from accept to the last byte "
             "written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the "
             "seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the reads of "
             "the same route running when it began, "
             "and `busy` and `streams`, the request workers in use (the read itself included) and the streams open "
-            "when it was accepted. No other route is timed."
+            "when it was accepted; a search adds `embed_s` and `sql_s`, the seconds spent getting the query's vector and "
+            "on the rest of the search. No other route is timed."
         ),
     )
     worker_memory: dict[Literal["api", "contexts"], MemoryFile] = Field(

@@ -60,9 +60,13 @@ class ReadModel:
         """Up to `limit` archived Tasks changed before `before` (None: any time), newest first, of `milestone` when given."""
         return self._summaries(queries.archived(before, limit, milestone))
 
-    def graph(self) -> dict[str, list[str]]:
-        """Every Task's dependencies by id, archived Tasks included."""
-        return {item["id"]: list(item["dependencies"] or []) for item in self._summaries(queries.graph())}
+    def dependencies_of(self, ids: Collection[str]) -> dict[str, list[str]]:
+        """The dependencies of each Task `ids` names, an id of any case (Task ids are upper case), archived Tasks included."""
+        wanted = {name for task in ids for name in (task, task.upper())}
+        return {
+            item["id"]: list(item["dependencies"] or [])
+            for item in self._summaries(queries.dependencies_of(wanted))
+        }
 
     def aliased(self) -> dict[str, str]:
         """The Task id behind each alias a Task lists in its meta, archived Tasks included."""

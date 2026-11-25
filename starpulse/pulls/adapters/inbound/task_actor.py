@@ -1357,12 +1357,12 @@ class TaskActor:
         self._hand_in(url, "mergeable read", settle)
 
     def _own_prs(self, agent: dict[str, Any]) -> list[str]:
-        return own_prs(self._store, agent)
+        return own_prs(self._store, agent, self._feed.keys)
 
     def _unlinked(self, agent: dict[str, Any]) -> list[str]:
         """The unlinked substate: open pull requests naming the task that it does not cite yet. The task stays in its lane
         while any exist, never parked; the write of its reference changes the task's record, which re-derives it."""
-        return uncited(self._store, agent)
+        return uncited(self._store, agent, self._feed.keys)
 
     def _pull_state(self, url: str) -> tuple[str, str | None, bool, str, str, str, str, int]:
         record = self._record(url)

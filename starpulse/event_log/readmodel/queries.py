@@ -178,9 +178,9 @@ def titled(ids: Collection[str] | None = None) -> Select[Any]:
     return query if ids is None else query.where(tasks.c.id.in_(ids))
 
 
-def graph() -> Select[Any]:
-    """Each Task's id and dependencies, archived ones included, for a lookup that walks the whole graph."""
-    return select(tasks.c.id, tasks.c.dependencies)
+def dependencies_of(ids: Collection[str]) -> Select[Any]:
+    """The id and dependencies of each Task `ids` names, archived ones included, each one a primary-key seek."""
+    return select(tasks.c.id, tasks.c.dependencies).where(tasks.c.id.in_(ids))
 
 
 def position() -> Select[Any]:

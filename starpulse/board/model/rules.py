@@ -17,7 +17,7 @@ of a lane move (`to`, `from`) an actor in `warned_actors` breaks are returned in
 
 import re
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from fnmatch import fnmatchcase
 from functools import lru_cache
@@ -45,8 +45,9 @@ class Record:
     pull_of: Callable[[str, int, str | None], Mapping[str, Any] | None] = lambda _repo, _number, _settle: None
     #: The ids of the open tasks whose front matter field (first argument) holds a value (second), none for a board with no tasks.
     holders: Callable[[str, str], list[str]] = lambda _field, _value: []
-    #: Every task's `dependencies` by id, read when asked; the `no_implied_dependency` primitive walks it.
-    graph: Callable[[], Mapping[str, Sequence[str]]] = lambda: {}
+    #: The `dependencies` of each task named by an id (any case) of the collection, by id, none for an id no task has;
+    #: the `no_implied_dependency` primitive walks the graph through it, so it reads the tasks it reaches and no more.
+    dependencies_of: Callable[[Collection[str]], Mapping[str, Sequence[str]]] = lambda _ids: {}
     #: The board's `default_profiles` (kind, then size, to a profile); the `matrix_profile` primitive reads it.
     matrix: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     #: The lenses whose verdict the task's latest qa round recorded; the `qa_verdict` primitive reads it.
@@ -442,10 +443,14 @@ def _node(value: str) -> str:
     return value.partition("#")[0].strip().casefold()
 
 
-def _reaches(graph: Mapping[str, list[str]], start: str, goal: str) -> bool:
-    seen, frontier = {start}, [start]
-    while frontier:
-        frontier = list({task for node in frontier for task in graph.get(node, ()) if task not in seen})
+def _reaches(record: "Record", starts: Collection[str], goal: str) -> bool:
+    """Whether `goal` is a dependency of any of `starts`, reading only the tasks the walk reaches, a level at a time."""
+    seen, frontier = set(starts), list(starts)
+    while frontier and goal not in seen:
+        found = record.dependencies_of(frontier)
+        frontier = list(
+            {_node(value) for values in found.values() for value in values if _node(value) not in seen}
+        )
         seen.update(frontier)
     return goal in seen
 
@@ -459,8 +464,7 @@ def _no_implied_dependency(spec: Mapping[str, Any], where: str) -> Primitive:
         added = [task for task in held if task not in kept]  # only an added edge is this write's to judge
         if not added:
             return True
-        graph = {_node(task): [_node(value) for value in values] for task, values in record.graph().items()}
-        return not any(_reaches(graph, via, target) for target in added for via in held if via != target)
+        return not any(_reaches(record, [via for via in held if via != target], target) for target in added)
 
     return holds
 

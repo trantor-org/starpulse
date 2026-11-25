@@ -3,6 +3,7 @@ dependency graph. Task files are a rendering of it (D2) and are never read as st
 
 import copy
 import threading
+from collections.abc import Collection
 
 from sqlalchemy import Engine
 
@@ -45,8 +46,8 @@ class TaskView:
             self._aliases = {alias.casefold(): task for task, aliases in found.items() for alias in aliases}
         return list(found.items())
 
-    def graph(self) -> dict[str, list[str]]:
-        return self._model.graph() if self._model is not None else {}
+    def dependencies_of(self, ids: Collection[str]) -> dict[str, list[str]]:
+        return self._model.dependencies_of(ids) if self._model is not None else {}
 
     def row(self, task: str) -> Row | None:
         """`task`'s row at its History's head, found by its id, then an alias, then its id in any case; None for a task with
