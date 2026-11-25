@@ -1635,12 +1635,140 @@ export interface Machines {
   [k: string]: unknown;
 }
 /**
- * A machine of `POST /api/machines`: its name, its `type` and the machines it is a submachine of.
+ * A machine of `POST /api/machines`: the machine as the snapshot draws it, with its name, its `type`, the
+ * machines it is a submachine of and the `roles` of its states.
  */
 export interface MachineListed {
+  /**
+   * Only the board machine: the writers that are runs workflows.
+   */
+  dagActors?: string[] | null;
+  /**
+   * Only the board machine: the skill machine each launching DAG starts.
+   */
+  launches?: {
+    [k: string]: Launch;
+  } | null;
+  /**
+   * Only the board machine: the state ids along its axis, in order (New to Done).
+   */
+  mainLine?: string[] | null;
   name: string;
+  /**
+   * The edge a finished skill hands to; null when the machine declares none.
+   */
+  next?: HeldNext | null;
   parents: string[];
+  roles: Roles;
+  /**
+   * The third party whose events move this machine ("GitHub"); absent for a machine StarPulse's own actors move.
+   */
+  source?: string | null;
+  states: MachineState[];
+  /**
+   * The machines that open under this machine's states; the board's first is its In Progress delivery machine.
+   */
+  submachines?: Submachine[] | null;
+  /**
+   * Only the board machine: the state ids the Star Map draws at each stage, left to right, a tier's states stacked in its cell; a state no tier names is drawn with the tier at the mean of the tiers its transitions join it to, stacked in it or in a tier of its own after it, else in a tier of its own after the last, and with none the Board draws its own columns.
+   */
+  tiers?: string[][] | null;
+  transitions: Transition[];
   type: string | null;
+  /**
+   * Its YAML-declared writers per event.
+   */
+  writers?: {
+    [k: string]: Writer[];
+  } | null;
+  [k: string]: unknown;
+}
+/**
+ * Which of the board's States play which part, as its machine declares them: a client reads these and never a
+ * State's name.
+ */
+export interface Roles {
+  /**
+   * Where a task waits on a person.
+   */
+  attention?: string | null;
+  /**
+   * Where the work is done: a resting State, else the final one.
+   */
+  done?: string | null;
+  /**
+   * Where a task is settled for good.
+   */
+  final?: string | null;
+  /**
+   * Where a task starts.
+   */
+  initial?: string | null;
+  /**
+   * The open lanes the kanban and the Star Map draw, in the machine's order: every State but the initial and final.
+   */
+  lanes?: string[];
+  /**
+   * Where a task waits to be picked up.
+   */
+  ready?: string | null;
+  /**
+   * Where a task waits on its pull request.
+   */
+  review?: string | null;
+  /**
+   * The States a session starts a task from.
+   */
+  startable?: string[];
+  /**
+   * Where a merged task rests while its post-merge QA runs.
+   */
+  verifying?: string | null;
+  /**
+   * Where a task waits on its Start Criteria or dependencies.
+   */
+  waiting?: string | null;
+  /**
+   * Where a session works a task.
+   */
+  working?: string | null;
+  [k: string]: unknown;
+}
+export interface MachineState {
+  final: boolean;
+  id: string;
+  initial: boolean;
+  name: string;
+  /**
+   * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none.
+   */
+  role?: string | null;
+  [k: string]: unknown;
+}
+export interface Transition {
+  /**
+   * The skill sentence that authorizes the transition; absent when its YAML cites none.
+   */
+  cite?: Cite | null;
+  event: string;
+  source: string;
+  target: string;
+  [k: string]: unknown;
+}
+/**
+ * The sentence of a skill that sends a session down a transition.
+ */
+export interface Cite {
+  quote: string;
+  skill: string;
+  [k: string]: unknown;
+}
+/**
+ * Who fires a Board event: a runs workflow (by `<instance>/<workflow>` name), `operator` or `agent`.
+ */
+export interface Writer {
+  actor: string;
+  trigger: string;
   [k: string]: unknown;
 }
 /**
@@ -2269,43 +2397,6 @@ export interface Machine {
   } | null;
   [k: string]: unknown;
 }
-export interface MachineState {
-  final: boolean;
-  id: string;
-  initial: boolean;
-  name: string;
-  /**
-   * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none.
-   */
-  role?: string | null;
-  [k: string]: unknown;
-}
-export interface Transition {
-  /**
-   * The skill sentence that authorizes the transition; absent when its YAML cites none.
-   */
-  cite?: Cite | null;
-  event: string;
-  source: string;
-  target: string;
-  [k: string]: unknown;
-}
-/**
- * The sentence of a skill that sends a session down a transition.
- */
-export interface Cite {
-  quote: string;
-  skill: string;
-  [k: string]: unknown;
-}
-/**
- * Who fires a Board event: a runs workflow (by `<instance>/<workflow>` name), `operator` or `agent`.
- */
-export interface Writer {
-  actor: string;
-  trigger: string;
-  [k: string]: unknown;
-}
 /**
  * The longest-stuck task of a machine and every machine nested below it: idle over two hours outside a final state.
  */
@@ -2352,57 +2443,6 @@ export interface MachineEntry {
 export interface MachineEntryFrom {
   machine: string;
   state: string;
-  [k: string]: unknown;
-}
-/**
- * Which of the board's States play which part, as its machine declares them: a client reads these and never a
- * State's name.
- */
-export interface Roles {
-  /**
-   * Where a task waits on a person.
-   */
-  attention?: string | null;
-  /**
-   * Where the work is done: a resting State, else the final one.
-   */
-  done?: string | null;
-  /**
-   * Where a task is settled for good.
-   */
-  final?: string | null;
-  /**
-   * Where a task starts.
-   */
-  initial?: string | null;
-  /**
-   * The open lanes the kanban and the Star Map draw, in the machine's order: every State but the initial and final.
-   */
-  lanes?: string[];
-  /**
-   * Where a task waits to be picked up.
-   */
-  ready?: string | null;
-  /**
-   * Where a task waits on its pull request.
-   */
-  review?: string | null;
-  /**
-   * The States a session starts a task from.
-   */
-  startable?: string[];
-  /**
-   * Where a merged task rests while its post-merge QA runs.
-   */
-  verifying?: string | null;
-  /**
-   * Where a task waits on its Start Criteria or dependencies.
-   */
-  waiting?: string | null;
-  /**
-   * Where a session works a task.
-   */
-  working?: string | null;
   [k: string]: unknown;
 }
 /**

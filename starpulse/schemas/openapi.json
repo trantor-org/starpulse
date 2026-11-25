@@ -5636,8 +5636,140 @@
         "type": "object"
       },
       "MachineListed": {
-        "description": "A machine of `POST /api/machines`: its name, its `type` and the machines it is a submachine of.",
+        "description": "A machine of `POST /api/machines`: the machine as the snapshot draws it, with its name, its `type`, the\nmachines it is a submachine of and the `roles` of its states.",
         "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The third party whose events move this machine (\"GitHub\"); absent for a machine StarPulse's own actors move."
+          },
+          "states": {
+            "items": {
+              "$ref": "#/components/schemas/MachineState"
+            },
+            "type": "array"
+          },
+          "transitions": {
+            "items": {
+              "$ref": "#/components/schemas/Transition"
+            },
+            "type": "array"
+          },
+          "submachines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Submachine"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The machines that open under this machine's states; the board's first is its In Progress delivery machine."
+          },
+          "launches": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/Launch"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only the board machine: the skill machine each launching DAG starts."
+          },
+          "writers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "$ref": "#/components/schemas/Writer"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its YAML-declared writers per event."
+          },
+          "next": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeldNext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The edge a finished skill hands to; null when the machine declares none."
+          },
+          "dagActors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only the board machine: the writers that are runs workflows."
+          },
+          "mainLine": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only the board machine: the state ids along its axis, in order (New to Done)."
+          },
+          "tiers": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only the board machine: the state ids the Star Map draws at each stage, left to right, a tier's states stacked in its cell; a state no tier names is drawn with the tier at the mean of the tiers its transitions join it to, stacked in it or in a tier of its own after it, else in a tier of its own after the last, and with none the Board draws its own columns."
+          },
           "name": {
             "type": "string"
           },
@@ -5656,12 +5788,18 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "roles": {
+            "$ref": "#/components/schemas/Roles"
           }
         },
         "required": [
+          "states",
+          "transitions",
           "name",
           "type",
-          "parents"
+          "parents",
+          "roles"
         ],
         "title": "MachineListed",
         "type": "object"
