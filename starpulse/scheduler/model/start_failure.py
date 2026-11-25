@@ -3,7 +3,7 @@
 import re
 
 _PERMANENT = re.compile(r"binary is missing|needs \S+ on PATH", re.I)
-_TRANSIENT = re.compile(r"did not answer", re.I)
+_TRANSIENT = re.compile(r"did not answer|is still starting", re.I)
 _SESSIONS_FULL = re.compile(r"(\d+) of (\d+) task sessions are live", re.I)
 
 
@@ -13,7 +13,7 @@ def permanent(text: str) -> bool:
 
 
 def transient(text: str) -> bool:
-    """Whether `text` names the board or the session-start service not answering: the next start may pass."""
+    """Whether `text` names the board or the session-start service not answering, or the task's first start still under way: the next start may pass."""
     return _TRANSIENT.search(text) is not None
 
 

@@ -1095,6 +1095,7 @@ class TaskActor:
                     kept["sent_back"] = (
                         None  # a task first seen outside the working lane keeps no hold from an earlier run
                     )
+                kept["reviewed"] = self._heads(agent) if "phase_resumed" in self._waits.get(now[0], {}) else None
                 self._memory.keep(name, **kept)
             if before is None or (before[0], before[3]) != (now[0], now[3]):
                 events += self._dependency_touched(self._dependents(name), name)
