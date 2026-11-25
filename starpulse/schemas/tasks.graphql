@@ -208,7 +208,7 @@ type TaskChange {
   machineTask: MachineTask
 }
 
-"""Any JSON value: a ledger row's `runs` and `fails` map workflow names to the page's own shapes."""
+"""Any JSON value: a ledger row's `runs` and `fails` map workflow names to the page's own shapes, and a run's `steps` and `params` map names to values."""
 scalar JSON
 
 """The pull request a merge came from."""
@@ -247,12 +247,102 @@ type OccurrenceChange {
   more: Boolean!
 }
 
-"""Any JSON value: a job is the `DagBody` of the OpenAPI document."""
-scalar Json
+"""A run, a step or a job's status: the engine's own state mapped onto these, kept in `raw` when it differs."""
+enum JobStatus {
+  not_started
+  queued
+  running
+  succeeded
+  failed
+  aborted
+  skipped
+}
+
+"""One step of a job in its latest run."""
+type JobStep {
+  name: String!
+  depends: [String!]!
+  status: JobStatus!
+  raw: String
+  kind: String
+  precondition: String
+  lock: String
+  """The step's outcomes in the runs that are over, newest first, at most five."""
+  last: [JobStatus!]!
+}
+
+"""A job's runs over the last seven days."""
+type JobStats {
+  runs: Int!
+  hours: Float!
+  medianSeconds: Float
+  p95Seconds: Float
+  failureShare: Float
+}
+
+"""What a job declares about a rerun of it: safe (all null), once per `key`, or repeating its effects."""
+type JobRerun {
+  key: String
+  repeats: String
+  step: String
+}
+
+"""One run of a job that is running or queued now; `steps` maps each step name to its JobStatus in this run."""
+type JobActiveRun {
+  runId: String!
+  url: String!
+  status: JobStatus!
+  raw: String
+  startedAt: String!
+  step: String!
+  stepStartedAt: String!
+  steps: JSON!
+  task: String
+  pr: Int
+  commit: String
+  attempt: Int
+  failure: String
+}
+
+"""One run of a job within the last day; `params` maps the parameters it started with to their values and `steps` each step name to its JobStatus."""
+type JobRecentRun {
+  runId: String!
+  task: String
+  url: String!
+  status: JobStatus!
+  raw: String
+  startedAt: String!
+  finishedAt: String!
+  params: JSON!
+  steps: JSON!
+  pr: Int
+  commit: String
+  attempt: Int
+  failure: String
+}
+
+"""A runs workflow as the jobs page draws it, the `DagBody` of `POST /api/jobs`: the latest run, the runs in flight and the pool it runs on."""
+type Job {
+  name: String!
+  status: JobStatus!
+  raw: String
+  runId: String!
+  startUrl: String!
+  startedAt: String!
+  finishedAt: String!
+  steps: [JobStep!]!
+  schedule: [String!]!
+  stats: JobStats
+  rerun: JobRerun
+  active: [JobActiveRun!]
+  failed: [JobRecentRun!]
+  closed: [JobRecentRun!]
+  pool: String
+}
 
 """The jobs after one change: every job now, each as `POST /api/jobs` lists it, and the error a runs instance reported."""
 type JobChange {
-  jobs: Json!
+  jobs: [Job!]!
   error: String
 }
 
