@@ -12,7 +12,7 @@ from typing import Any
 
 from starpulse.board.adapters import native_docs, native_milestones
 from starpulse.board.adapters.native_lookup import _find
-from starpulse.board.adapters.native_scan import _split
+from starpulse.board.adapters.native_scan import _split, _strings
 
 _LISTS = ("dependencies", "references", "documentation")
 _SCALARS = ("milestone", "follows")
@@ -23,12 +23,9 @@ _MILESTONE = re.compile(r"m-\d+")
 
 def _named(frontmatter: Mapping[str, Any]) -> list[str]:
     """The keys the front matter's reference fields name, in order, each once. A `documentation` entry is a file path
-    that names its doc by the id its file name starts with."""
-    entries = [str(entry).strip() for field in _LISTS for entry in frontmatter.get(field) or ()]
-    entries += [str(frontmatter.get(field) or "").strip() for field in _SCALARS]
-    named = [
-        found.group(0) if (found := _DOC.match(Path(entry).name)) else entry for entry in entries
-    ]
+    that names its doc by the id its file name starts with; a `TASK-5#2` dependency names `TASK-5`."""
+    entries = [entry.partition("#")[0].strip() for field in (*_LISTS, *_SCALARS) for entry in _strings(frontmatter.get(field))]
+    named = [found.group(0) if (found := _DOC.match(Path(entry).name)) else entry for entry in entries]
     return list(dict.fromkeys(key for key in named if _KEY.fullmatch(key)))
 
 

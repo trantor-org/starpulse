@@ -11,7 +11,7 @@ from starpulse.contracts.api.dto.requests import LinkDeleteRequest, LinkPutReque
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import StaleVersion
 from starpulse.pulls.adapters.outbound.github import GitHubAdapter
-from starpulse.views.application.commands.guard import RELEASED_ASSIGNEE, held_task, not_held, with_request
+from starpulse.views.application.commands.guard import EDIT_LOCK, RELEASED_ASSIGNEE, held_task, not_held, with_request
 
 lazy from starpulse.event_log.claude_sessions import same_holder
 
@@ -109,11 +109,12 @@ def put_link(request: LinkPutRequest, token: str, feed: BoardFeed, tasks: ReadMo
     uuid, handle = found
     if isinstance(target := _target(request, forges), tuple):
         return target
-    if refused := _holding(feed, handle, request.session, request.harness):
-        return refused
     ref, who = _text(target), f"session:{request.harness}:{request.session}"
     try:
-        link, written = links.put(uuid, request.role, ref, who)
+        with EDIT_LOCK:
+            if refused := _holding(feed, handle, request.session, request.harness):
+                return refused
+            link, written = links.put(uuid, request.role, ref, who)
     except DeliveredElsewhere as other:
         owner = tasks.task(other.task)
         return 409, {
@@ -133,10 +134,11 @@ def delete_link(request: LinkDeleteRequest, token: str, feed: BoardFeed, tasks: 
     if not isinstance(found := _task(tasks, token), _Named):
         return found
     uuid, handle = found
-    if refused := _holding(feed, handle, request.session, request.harness):
-        return refused
     try:
-        link = links.remove(uuid, request.role, request.ref, f"session:{request.harness}:{request.session}")
+        with EDIT_LOCK:
+            if refused := _holding(feed, handle, request.session, request.harness):
+                return refused
+            link = links.remove(uuid, request.role, request.ref, f"session:{request.harness}:{request.session}")
     except StaleVersion:
         return 409, {"error": f"{handle}'s links moved while this was removed: send it again"}
     if link is None:
