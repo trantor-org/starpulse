@@ -81,6 +81,9 @@ class ActorFacts:
         parent = actor._board_repo.rsplit("/", 1)[-1]
         return tuple(work_left(row.get("modifiedFiles") or (), records, actor._submodules(), parent))
 
+    def started(self, name: str) -> bool:
+        return self._actor._started(name)
+
     def alive(self, name: str) -> bool | None:
         try:
             return self._actor._alive(name)

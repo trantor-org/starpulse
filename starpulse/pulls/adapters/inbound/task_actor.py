@@ -358,6 +358,7 @@ class TaskActor:
         log: EventLog | None = None,
         main_green: Callable[[], str | None] | None = None,
         owner_source: str = "",
+        started: Callable[[str], bool] = lambda _task: False,
         mergeable: Callable[[str, int], str | None] = lambda _repo, _number: None,
         checks: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
@@ -377,6 +378,8 @@ class TaskActor:
         self._lock_tries: dict[str, int] = {}
         #: The session whose dispatch to a task is mid-write, so its retry runs only while that session still holds it.
         self._dispatching: dict[str, str] = {}
+        #: Whether a session was ever dispatched to a task, given its id, which the start event answers.
+        self._started = started
         self._owner_source = owner_source
         self._read = read
         self._idle = idle
@@ -436,7 +439,9 @@ class TaskActor:
         #: The lanes that wait on their tasks' dependencies, whose derivation flags a wait nothing ends.
         self._sweep_lanes = {lane for lane, facts in waits.items() if "deps_done" in facts}
         #: The lanes that wait on a task's Start Criteria.
-        self._gated_lanes = {lane for lane, facts in waits.items() if "criteria_met" in facts}
+        self._gated_lanes = {
+            lane for lane, facts in waits.items() if {"criteria_met", "criteria_met_started"} & facts.keys()
+        }
         #: The event subjects each gated task waits on, and for each subject the tasks waiting on it.
         self._gates: dict[str, tuple[str, ...]] = {}
         self._until: dict[str, set[str]] = {}
