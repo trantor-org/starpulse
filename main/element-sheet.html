@@ -507,8 +507,8 @@ body.drilling #crumb { visibility: hidden; }
 #kbm .tvrail .crit .st { font-size: calc(11px * var(--fs)); font-weight: 500; }
 #kbm .tvrail .crit .met .st { color: var(--ok); } #kbm .tvrail .crit .unmet .st { color: var(--run); } #kbm .tvrail .crit .error .st { color: var(--fail); }
 #kbm .tvrail .crit .kind { font: calc(10px * var(--fs)) "JetBrains Mono", ui-monospace, monospace; padding: 0 6px; border-radius: 4px; background: color-mix(in srgb, var(--slate) 12%, transparent); color: var(--ink-3); }
-#kbm .tvrail .crit .cid { font-size: calc(10.5px * var(--fs)); color: var(--slate); overflow-wrap: anywhere; }
-#kbm .tvrail .crit .expr { font-size: calc(10.5px * var(--fs)); color: var(--ink); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#kbm .tvrail .crit .cid { font-size: calc(10.5px * var(--fs)); color: var(--slate); min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#kbm .tvrail .crit .expr { font-size: calc(10.5px * var(--fs)); line-height: 1.5; color: var(--ink); overflow-wrap: break-word; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 #kbm .tvrail .crit .err { font-size: calc(11px * var(--fs)); color: var(--fail-text); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 #kbm .tv .md p.moved { color: var(--muted); font-style: italic; }
 #kbm .tvrail .tot { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-bottom: 4px; color: var(--ink-3); }
