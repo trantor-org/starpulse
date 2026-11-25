@@ -31,6 +31,10 @@ export interface ApiContract {
     | SkillRefusal
     | StaleEdit
     | WindowTooLong
+    | Link
+    | NotHolder
+    | DeliveredElsewhere
+    | UnrecognisedUrl
   )[];
   build: BuildEvent;
   contractReport: ContractReport;
@@ -505,6 +509,62 @@ export interface WindowTooLong {
   schema?: {
     [k: string]: unknown;
   } | null;
+  [k: string]: unknown;
+}
+/**
+ * One stored link of a task, keyed by the task's UUID: `handle` is the task's current key, `url` the owning
+ * adapter's display form of `ref` (None: it renders none), `requested_by` the session that asked, `at` when the
+ * task actor wrote it and `event` the id of its `link-written` or `link-removed` event.
+ */
+export interface Link {
+  at: string;
+  event: string;
+  handle: string;
+  ref: string;
+  requestedBy: string;
+  role: "delivers" | "cites" | "holds";
+  task: string;
+  url?: string | null;
+  [k: string]: unknown;
+}
+/**
+ * A link request from a session that does not hold the task: the session, and the session that does (None: none).
+ */
+export interface NotHolder {
+  error: string;
+  holder?: string | null;
+  model?: string | null;
+  schema?: {
+    [k: string]: unknown;
+  } | null;
+  session: string;
+  [k: string]: unknown;
+}
+/**
+ * A `delivers` link of a pull request that already delivers another task, named by UUID and current handle.
+ */
+export interface DeliveredElsewhere {
+  error: string;
+  handle: string;
+  model?: string | null;
+  ref: string;
+  schema?: {
+    [k: string]: unknown;
+  } | null;
+  task: string;
+  [k: string]: unknown;
+}
+/**
+ * A URL no configured forge adapter recognises: the URL and the adapter instances that were asked.
+ */
+export interface UnrecognisedUrl {
+  adapters: string[];
+  error: string;
+  model?: string | null;
+  schema?: {
+    [k: string]: unknown;
+  } | null;
+  url: string;
   [k: string]: unknown;
 }
 /**

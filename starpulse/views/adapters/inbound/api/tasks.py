@@ -8,6 +8,8 @@
 - `PUT /api/tasks` creates; `PUT /api/tasks/{id}` writes over the `base` it names, or reopens (`reopen`), completes
   (`completed: true`), restores (`archived: false`), retires (`retired: true`), takes over (`interactive: true`), parks (`park`) or dispatches a
   session (`assignee`); `DELETE /api/tasks/{id}` archives: the task writes.
+- `PUT` and `DELETE /api/tasks/{id}/links` store and remove a pull request link, keyed by the task's UUID, for the
+  session that holds the task.
 - `POST /api/start` and `verdict`: a task's writes by verb, each over the seams it needs.
 """
 
@@ -26,6 +28,11 @@ from starpulse.views.adapters.inbound.api.answering import answer, client, on_wo
 from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole, whole_body
+from starpulse.board.adapters.native_scan import native_keys
+from starpulse.board.adapters.task_links import TaskLinks
+from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.pulls.adapters.outbound.github import GitHubAdapter
+from starpulse.views.application.commands.links import delete_link, put_link
 from starpulse.views.application.commands.moves import (
     start_task,
 )
@@ -141,6 +148,8 @@ def routes(api: Api) -> list[ApiRoute]:
             "start",
         ),
     }
+    links, tasks = TaskLinks(api.history.engine), ReadModel(api.history.engine)
+    forges = {"github": GitHubAdapter(keys=board.keys or native_keys())}
     return [
         ReadRoute("/task/{id:path}", task, timed),
         ReadRoute("/task-records", task_records, params=frozenset({"ids"})),
@@ -148,6 +157,26 @@ def routes(api: Api) -> list[ApiRoute]:
         *(WriteRoute(path, ("POST",), guarded(kind, whole_body(handler))) for path, (handler, kind) in writes.items()),
         WriteRoute(
             "/tasks", ("PUT",), guarded("create", whole_body(lambda client, raw: create_task(client, raw, create, feed)))
+        ),
+        WriteRoute(
+            "/tasks/{id:path}/links",
+            ("PUT",),
+            guarded(
+                "task_link_put",
+                lambda request: put_link(
+                    client(request), whole(request), request.path_params["id"], feed, tasks, links, forges
+                ),
+            ),
+        ),
+        WriteRoute(
+            "/tasks/{id:path}/links",
+            ("DELETE",),
+            guarded(
+                "task_link_delete",
+                lambda request: delete_link(
+                    client(request), whole(request), request.path_params["id"], feed, tasks, links, forges
+                ),
+            ),
         ),
         WriteRoute(
             "/tasks/{id:path}",

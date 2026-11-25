@@ -392,3 +392,36 @@ class StepsRequest(_Request):
         Field(default_factory=dict, max_length=100)
     )
     reuse: Literal["hit", "miss"] | None = None
+
+
+#: `<kind>:<adapter instance>:<id>`: the core reads the kind and the instance, and only the owning adapter parses the id.
+RefText = Annotated[str, StringConstraints(pattern=r"^(change|commit|session|repository|check):[a-z][a-z0-9-]*:.+$")]
+#: The roles a session asks for; `holds` is written only by the task actor when it makes a session holder.
+LinkRole = Literal["delivers", "cites"]
+
+
+class LinkPutRequest(_Request):
+    """`PUT /api/tasks/{id}/links`: the session `session` of `harness` asks the task actor to link the task to the
+    pull request `ref` names, or `url` turns into through the configured forge. Give exactly one of `ref` and `url`."""
+
+    role: LinkRole
+    ref: RefText | None = None
+    url: str | None = None
+    session: NonBlank
+    harness: NonBlank
+
+    @model_validator(mode="after")
+    def _one_target(self) -> "LinkPutRequest":
+        if (self.ref is None) == (self.url is None):
+            raise ValueError("give exactly one of ref and url")
+        return self
+
+
+class LinkDeleteRequest(_Request):
+    """`DELETE /api/tasks/{id}/links`: the session `session` of `harness` asks the task actor to remove the `role` link
+    to `ref`."""
+
+    role: LinkRole
+    ref: RefText
+    session: NonBlank
+    harness: NonBlank

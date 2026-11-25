@@ -220,6 +220,14 @@ operator's. The write's `board:lanes` row carries all three, and a create stamps
 the task (`anonymous` when it names no session). `POST /api/start` takes an optional `actor` and calls a board writer's
 `assign` with it only when named.
 
+`PUT /api/tasks/{id}/links` and `DELETE /api/tasks/{id}/links` store and remove a task's pull request link, keyed by the task's UUID
+(`starpulse_task_links`, events `link-written` and `link-removed` on the `task-link` stream), so a renamed task keeps its links.
+The body names the `session` and `harness` asking, a `role` (`delivers` or `cites`) and exactly one of `ref` (`change:<adapter>:<id>`)
+and `url`, which the configured forge turns into a `ref`. Only the session that holds the task writes: any other is 403 `NotHolder`
+naming the holder. A `delivers` pull request another task already delivers is 409 `DeliveredElsewhere`, a `url` no forge recognises
+is 400 `UnrecognisedUrl`, and a link already stored is a 200 that writes nothing (201 when written). A `DELETE` of a link the task
+lacks is 404.
+
 ## Post-merge checks
 
 A task declares what must hold after its merge in a `## Post-merge Checks` section: a fenced `yaml` block whose

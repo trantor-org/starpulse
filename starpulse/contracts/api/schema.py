@@ -9,7 +9,15 @@ from pydantic.json_schema import GenerateJsonSchema
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.admin import AdminState
 from starpulse.contracts.api.dto.dag import DagBody, Jobs
-from starpulse.contracts.api.dto.errors import ApiError, SkillRefusal, StaleEdit, WindowTooLong
+from starpulse.contracts.api.dto.errors import (
+    ApiError,
+    DeliveredElsewhere,
+    NotHolder,
+    SkillRefusal,
+    StaleEdit,
+    UnrecognisedUrl,
+    WindowTooLong,
+)
 from starpulse.contracts.api.dto.graphql import GraphqlRequest, GraphqlResponse, ViewShown
 from starpulse.contracts.api.dto.harnesses import Harnesses, WindowState
 from starpulse.contracts.api.dto.milestones import (
@@ -21,6 +29,7 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecord,
     TaskRecords,
 )
+from starpulse.contracts.api.dto.links import Link
 from starpulse.contracts.api.dto.pages import DonePage, MachineDetail, Machines
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
@@ -162,6 +171,10 @@ class ApiContract(_Api):
         | SkillRefusal
         | StaleEdit
         | WindowTooLong
+        | Link
+        | NotHolder
+        | DeliveredElsewhere
+        | UnrecognisedUrl
     ]
 
 

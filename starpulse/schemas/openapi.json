@@ -1364,6 +1364,136 @@
         }
       }
     },
+    "/api/tasks/{id}/links": {
+      "put": {
+        "summary": "Ask the task actor to link the task to a pull request, which only the session holding the task may",
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "put_api_tasks_id_links",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Link"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Link"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/NotHolder"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DeliveredElsewhere"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UnrecognisedUrl"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Ask the task actor to remove one of the task's links, which only the session holding the task may",
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "delete_api_tasks_id_links",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkDeleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Link"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/NotHolder"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/milestones/{id}": {
       "get": {
         "summary": "One milestone, archived or open",
@@ -3857,6 +3987,54 @@
         "title": "DagsDelta",
         "type": "object"
       },
+      "DeliveredElsewhere": {
+        "description": "A `delivers` link of a pull request that already delivers another task, named by UUID and current handle.",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "ref": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "handle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "ref",
+          "task",
+          "handle"
+        ],
+        "title": "DeliveredElsewhere",
+        "type": "object"
+      },
       "Dispatched": {
         "properties": {
           "task": {
@@ -5265,6 +5443,140 @@
         "title": "LedgersDelta",
         "type": "object"
       },
+      "Link": {
+        "description": "One stored link of a task, keyed by the task's UUID: `handle` is the task's current key, `url` the owning\nadapter's display form of `ref` (None: it renders none), `requested_by` the session that asked, `at` when the\ntask actor wrote it and `event` the id of its `link-written` or `link-removed` event.",
+        "properties": {
+          "task": {
+            "type": "string"
+          },
+          "handle": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "delivers",
+              "cites",
+              "holds"
+            ],
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "event": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "handle",
+          "role",
+          "ref",
+          "requestedBy",
+          "at",
+          "event"
+        ],
+        "title": "Link",
+        "type": "object"
+      },
+      "LinkDeleteRequest": {
+        "additionalProperties": false,
+        "description": "`DELETE /api/tasks/{id}/links`: the session `session` of `harness` asks the task actor to remove the `role` link\nto `ref`.",
+        "properties": {
+          "role": {
+            "enum": [
+              "delivers",
+              "cites"
+            ],
+            "type": "string"
+          },
+          "ref": {
+            "pattern": "^(change|commit|session|repository|check):[a-z][a-z0-9-]*:.+$",
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "harness": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "ref",
+          "session",
+          "harness"
+        ],
+        "title": "LinkDeleteRequest",
+        "type": "object"
+      },
+      "LinkPutRequest": {
+        "additionalProperties": false,
+        "description": "`PUT /api/tasks/{id}/links`: the session `session` of `harness` asks the task actor to link the task to the\npull request `ref` names, or `url` turns into through the configured forge. Give exactly one of `ref` and `url`.",
+        "properties": {
+          "role": {
+            "enum": [
+              "delivers",
+              "cites"
+            ],
+            "type": "string"
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "pattern": "^(change|commit|session|repository|check):[a-z][a-z0-9-]*:.+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "session": {
+            "type": "string"
+          },
+          "harness": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "session",
+          "harness"
+        ],
+        "title": "LinkPutRequest",
+        "type": "object"
+      },
       "Machine": {
         "properties": {
           "source": {
@@ -6240,6 +6552,57 @@
           "agent"
         ],
         "title": "MoveDelta",
+        "type": "object"
+      },
+      "NotHolder": {
+        "description": "A link request from a session that does not hold the task: the session, and the session that does (None: none).",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "session": {
+            "type": "string"
+          },
+          "holder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "error",
+          "session"
+        ],
+        "title": "NotHolder",
         "type": "object"
       },
       "Park": {
@@ -9367,6 +9730,53 @@
           "event"
         ],
         "title": "Transition",
+        "type": "object"
+      },
+      "UnrecognisedUrl": {
+        "description": "A URL no configured forge adapter recognises: the URL and the adapter instances that were asked.",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "url": {
+            "type": "string"
+          },
+          "adapters": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "error",
+          "url",
+          "adapters"
+        ],
+        "title": "UnrecognisedUrl",
         "type": "object"
       },
       "Verdict": {
