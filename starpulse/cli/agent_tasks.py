@@ -742,11 +742,8 @@ def pull_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
     cited = _CITED_PULL.fullmatch(args.pull)
     if not cited:
         raise agent_wire.CliError("usage", f"{args.pull!r} is no pull request: write `owner/name#N` or its GitHub URL")
-    base, path = agent_wire.server_url(args.server, environ), "/graphql"
-    status, reply = agent_wire.post(
-        base, path, {"query": _PULL, "variables": {"repo": cited[1], "number": int(cited[2])}}
-    )
-    found = record_call(base, path, status, reply, noun="pull request")["data"]["pull"]
+    base = agent_wire.server_url(args.server, environ)
+    found = agent_wire.graphql(base, _PULL, {"repo": cited[1], "number": int(cited[2])})["pull"]
     if not found:
         raise agent_wire.CliError("not_found", f"the store holds no pull request {cited[1]}#{cited[2]}")
     return found

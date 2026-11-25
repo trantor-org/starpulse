@@ -151,7 +151,7 @@ def whole_snapshot(args: argparse.Namespace, environ: Mapping[str, str]) -> dict
 def graphql(base: str, query: str, variables: dict[str, Any]) -> dict[str, Any]:
     """The `data` of `query` run at `/graphql`; a refusal or a GraphQL error is a `CliError`."""
     status, reply = post(base, "/graphql", {"query": query, "variables": variables})
-    if status != 200 or "data" not in reply:
+    if status != 200 or not isinstance(reply.get("data"), dict):
         message = "; ".join(str(e.get("message")) for e in reply.get("errors", [])) or f"answered {status}"
         raise CliError("unavailable", f"{base} /graphql: {message}")
     return reply["data"]
