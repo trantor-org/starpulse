@@ -80,6 +80,7 @@ from starpulse.board.model.seam import (
     TaskRetirer,
     Written,
 )
+from starpulse.contracts.doc_links import doc_link
 from starpulse.contracts.tiers import TIERS, implied_tier
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.event_log.store import StaleVersion, lacks_history
@@ -873,7 +874,7 @@ def _unlinked(changes: Mapping[str, Any]) -> Mapping[str, Any]:
 
 def _doc_linker(root: Path, base: Path) -> _Linker:
     """`changes` with each doc id in its `documentation` list read as that open doc's file, keeping one link per file; an
-    id no open doc has raises ValueError.
+    id no open doc has, or an entry that is a JSON object or array (a command's reply), raises ValueError.
 
     The file is named from the repository the board sits in (the nearest folder above it holding `.git`), as a task's
     other links are, else from `base`.
@@ -891,7 +892,7 @@ def _doc_linker(root: Path, base: Path) -> _Linker:
             return changes  # `_set_front` refuses a value that is not a list of text
         paths = []
         for item in listed:
-            if _DOC_ID.fullmatch(doc := item.strip()):
+            if _DOC_ID.fullmatch(doc := doc_link(item)):
                 if (record := read(doc)) is None:
                     raise ValueError(f"{doc} is not an open doc")
                 item = (prefix() / "docs" / record["path"]).as_posix()

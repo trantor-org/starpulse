@@ -16,7 +16,6 @@ from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from starpulse.board.model.markdown import MarkdownRefusedError, imported, render
 from starpulse.board.model.plain_text import render as render_text
 from starpulse.board.model.seam import OPERATOR
 from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
@@ -30,6 +29,8 @@ from starpulse.event_log.claude_sessions import (
 )
 from starpulse.event_log.lane_events import ARCHIVED
 from starpulse.machine_engine.model.transitions import lane_id
+lazy from starpulse.board.model.markdown import MarkdownRefusedError, imported
+lazy from starpulse.board.model.markdown import render as render_markdown
 
 #: What a task route's 404 says when the board has no such task, as opposed to a board that cannot read or write tasks.
 _TASK_MISSING = ("is not on the board", "has no record to read")
@@ -160,7 +161,7 @@ def _carrier(base: str, task_id: str) -> str | None:
 
 def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     if getattr(args, "markdown", False):
-        return {"task": args.task, "markdown": render(_read_record(args, environ))}
+        return {"task": args.task, "markdown": render_markdown(_read_record(args, environ))}
     if getattr(args, "text", False):
         document = _read_document(args, environ)
         record = document["record"]
@@ -380,7 +381,10 @@ def task_dispatch(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
 def task_park(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Park the task on one reason: `--until-task` (`TASK` or `TASK#K`) and `--until` wait, `--operator` needs attention; the server picks the lane."""
     reasons = {"untilTask": args.until_task, "until": list(args.until), "operator": args.operator}
-    body = {"park": {key: value for key, value in reasons.items() if value}, **({"comment": args.comment} if args.comment else {})}
+    body = {
+        "park": {key: value for key, value in reasons.items() if value},
+        **({"comment": args.comment} if args.comment else {}),
+    }
     return _kept(_lifecycle(args, environ, f"/api/tasks/{args.task}", body, put=True), LIFECYCLE_KEYS)
 
 
@@ -404,7 +408,8 @@ def record_call(
         absent = (f"is not an open {noun}", f"is not a {noun}", *missing)
         raise agent_wire.CliError("not_found" if any(text in message for text in absent) else "unavailable", message)
     if status in (400, 403, 409):
-        raise agent_wire.CliError("refused", message)
+        # A 400 names the request model and the schema of the field it refused, so the caller sees a valid value.
+        raise agent_wire.CliError("refused", message, **{key: document[key] for key in ("model", "schema") if key in document})
     raise agent_wire.CliError("unavailable", f"{base}: {message}")
 
 
@@ -564,9 +569,10 @@ def _edited(text: str, environ: Mapping[str, str]) -> str:
 
 def _edit_in_editor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The break-glass edit (D5): open the task's rendering, import what the operator changed as Events by the operator."""
+
     record = _read_record(args, environ)
     try:
-        changes = imported(_edited(render(record), environ), record)
+        changes = imported(_edited(render_markdown(record), environ), record)
     except MarkdownRefusedError as exc:
         raise agent_wire.CliError("refused", f"{args.task}: {exc}") from exc
     if not changes:

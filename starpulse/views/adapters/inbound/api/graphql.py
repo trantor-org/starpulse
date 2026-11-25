@@ -156,6 +156,11 @@ def _lane(agent: dict, _: GraphQLResolveInfo) -> str:
     return agent["state"]
 
 
+@task.field("createdAt")
+def _created_at(agent: dict, _: GraphQLResolveInfo) -> float:
+    return agent["created"]
+
+
 @task.field("movedAt")
 def _moved_at(agent: dict, _: GraphQLResolveInfo) -> float:
     return agent["entered"]

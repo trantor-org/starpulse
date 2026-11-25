@@ -437,14 +437,23 @@ export interface CreatedEach {
  */
 export interface SkillRefusal {
   error: string;
+  model?: string | null;
+  schema?: {
+    [k: string]: unknown;
+  } | null;
   skill: string;
   [k: string]: unknown;
 }
 /**
- * Every refusal: what went wrong.
+ * Every refusal: what went wrong. A 400 for a body its request model refuses also names that `model` and the
+ * JSON `schema` a valid value of the refused field meets.
  */
 export interface ApiError {
   error: string;
+  model?: string | null;
+  schema?: {
+    [k: string]: unknown;
+  } | null;
   [k: string]: unknown;
 }
 /**
@@ -504,6 +513,10 @@ export interface StaleEdit {
     [k: string]: unknown;
   };
   error: string;
+  model?: string | null;
+  schema?: {
+    [k: string]: unknown;
+  } | null;
   stale: string[];
   [k: string]: unknown;
 }
@@ -513,6 +526,10 @@ export interface StaleEdit {
 export interface WindowTooLong {
   error: string;
   history_s: number;
+  model?: string | null;
+  schema?: {
+    [k: string]: unknown;
+  } | null;
   [k: string]: unknown;
 }
 /**
@@ -1835,9 +1852,7 @@ export interface TaskPutRequest {
     [k: string]: unknown;
   };
   breakGlass?: boolean;
-  changes?: {
-    [k: string]: unknown;
-  };
+  changes?: Changes;
   comment?: string | null;
   harness?: string | null;
   interactive?: true | null;
@@ -1845,6 +1860,13 @@ export interface TaskPutRequest {
   reopen?: string | null;
   request_key?: string | null;
   session?: string | null;
+}
+/**
+ * An edit's fields by name: any field the board takes, with each `documentation` entry a link.
+ */
+export interface Changes {
+  documentation?: string[] | null;
+  [k: string]: unknown;
 }
 /**
  * Pause the task on exactly one reason, which picks the lane: `untilTask` (tasks that must reach Done, or

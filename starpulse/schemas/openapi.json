@@ -2711,10 +2711,33 @@
         "type": "object"
       },
       "ApiError": {
-        "description": "Every refusal: what went wrong.",
+        "description": "Every refusal: what went wrong. A 400 for a body its request model refuses also names that `model` and the\nJSON `schema` a valid value of the refused field meets.",
         "properties": {
           "error": {
             "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -2779,6 +2802,29 @@
           "archive"
         ],
         "title": "Capabilities",
+        "type": "object"
+      },
+      "Changes": {
+        "additionalProperties": true,
+        "description": "An edit's fields by name: any field the board takes, with each `documentation` entry a link.",
+        "properties": {
+          "documentation": {
+            "anyOf": [
+              {
+                "items": {
+                  "description": "A doc id (doc-N) or a file path, never a JSON reply",
+                  "pattern": "^\\s*([^\\s\\[{]|$)",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "Changes",
         "type": "object"
       },
       "Cite": {
@@ -3235,6 +3281,8 @@
             "anyOf": [
               {
                 "items": {
+                  "description": "A doc id (doc-N) or a file path, never a JSON reply",
+                  "pattern": "^\\s*([^\\s\\[{]|$)",
                   "type": "string"
                 },
                 "type": "array"
@@ -3612,6 +3660,8 @@
             "anyOf": [
               {
                 "items": {
+                  "description": "A doc id (doc-N) or a file path, never a JSON reply",
+                  "pattern": "^\\s*([^\\s\\[{]|$)",
                   "type": "string"
                 },
                 "type": "array"
@@ -8269,6 +8319,29 @@
           "error": {
             "type": "string"
           },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "skill": {
             "type": "string"
           }
@@ -8590,6 +8663,29 @@
         "properties": {
           "error": {
             "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "stale": {
             "items": {
@@ -9032,8 +9128,7 @@
             "type": "object"
           },
           "changes": {
-            "additionalProperties": true,
-            "type": "object"
+            "$ref": "#/components/schemas/Changes"
           },
           "comment": {
             "anyOf": [

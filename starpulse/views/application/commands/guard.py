@@ -9,6 +9,7 @@ JSON, not an object, or holds an unnamed key, a field of the wrong type or a bla
 
 import functools
 import ipaddress
+import json
 import logging
 import os
 import threading
@@ -95,12 +96,39 @@ def lan_refusal(what: str) -> tuple[int, dict[str, str]]:
     return 403, {"error": f"{what} answers only loopback and private network (RFC 1918) browsers"}
 
 
-def _invalid(error: ValidationError) -> tuple[int, dict[str, str]]:
-    """The 400 for a body its request model refuses: its first fault, a key the route does not take before any other, with the field it is in."""
+def _invalid(error: ValidationError, model: type[BaseModel]) -> tuple[int, dict[str, Any]]:
+    """The 400 for a body its request model refuses: its first fault, a key the route does not take before any other,
+    with the field it is in, the model's name and the JSON schema a valid value of that field meets."""
     faults = error.errors()
     fault = next((f for f in faults if f["type"] == "extra_forbidden"), faults[0])
     where = ".".join(str(part) for part in fault["loc"])
-    return 400, {"error": f"invalid request: {where + ': ' if where else ''}{fault['msg']}"}
+    return 400, {
+        "error": f"invalid request: {where + ': ' if where else ''}{fault['msg']}",
+        "model": error.title,
+        "schema": _schema_at(model.model_json_schema(), fault["loc"]),
+    }
+
+
+def _schema_at(schema: dict[str, Any], loc: tuple[int | str, ...]) -> dict[str, Any]:
+    """The schema of the value at `loc`, or of the deepest field above it the schema names (the whole body for a key
+    it does not take); it carries the `$defs` its references need."""
+    defs = schema.get("$defs", {})
+
+    def resolved(node: dict[str, Any]) -> dict[str, Any]:
+        return defs.get(node.get("$ref", "").rpartition("/")[2], node)
+
+    def child(node: dict[str, Any], part: int | str) -> dict[str, Any] | None:
+        branches = [resolved(branch) for branch in node.get("anyOf", [node])]
+        found = (branch.get("items") if isinstance(part, int) else branch.get("properties", {}).get(part) for branch in branches)
+        return next((step for step in found if step is not None), None)
+
+    node = schema
+    for part in loc:
+        if (step := child(resolved(node), part)) is None:
+            break
+        node = step
+    node = resolved(node)
+    return {**node, "$defs": defs} if node is not schema and "$ref" in json.dumps(node) else node
 
 
 type _Answer = tuple[int, Any]
@@ -120,7 +148,7 @@ def with_request[R: BaseModel, **P](
             try:
                 request = model.model_validate_json(raw, strict=True)
             except ValidationError as error:
-                return _invalid(error)
+                return _invalid(error, model)
             return handler(request, *args, **kwargs)
 
         return parsed

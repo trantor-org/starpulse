@@ -1,14 +1,16 @@
 """The body each write route takes."""
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import (
     AfterValidator,
+    ConfigDict,
     Field,
     StrictFloat,
     StrictInt,
     StringConstraints,
     ValidationInfo,
+    WithJsonSchema,
     field_validator,
     model_validator,
 )
@@ -16,6 +18,7 @@ from pydantic import (
 from starpulse.contracts.api._base import _Request
 from starpulse.contracts.api.dto.admin import Clock, Density, OpensOn, Scale, Theme
 from starpulse.contracts.api.dto.scheduler import QuietHours
+from starpulse.contracts.doc_links import PATTERN, doc_link
 from starpulse.contracts.tiers import TIERS
 
 #: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
@@ -52,6 +55,20 @@ def _nonblank(value: str) -> str:
 
 #: Text a write names that must hold something: a blank name is an error, not an absent one.
 NonBlank = Annotated[str, AfterValidator(_nonblank)]
+
+#: One `documentation` entry: a doc id (doc-N) or a file path, never a command's JSON reply.
+DocLink = Annotated[
+    str,
+    AfterValidator(doc_link),
+    WithJsonSchema({"type": "string", "pattern": PATTERN, "description": "A doc id (doc-N) or a file path, never a JSON reply"}),
+]
+
+
+class Changes(TypedDict, total=False):
+    """An edit's fields by name: any field the board takes, with each `documentation` entry a link."""
+
+    __pydantic_config__ = ConfigDict(extra="allow")  # type: ignore[misc]  # pydantic reads it off a TypedDict
+    documentation: list[DocLink] | None
 
 
 class _Writer(_Request):
@@ -97,7 +114,7 @@ class EditRequest(_Writer):
 
     task: str
     base: dict[str, Any]
-    changes: dict[str, Any]
+    changes: Changes
     comment: str | None = None
     break_glass: bool = Field(False, alias="breakGlass")  # an editor import: its Events are marked break-glass (D5)
     request_key: str | None = Field(
@@ -131,7 +148,7 @@ class TaskPutRequest(_Writer):
     """
 
     base: dict[str, Any] = Field(default_factory=dict)
-    changes: dict[str, Any] = Field(default_factory=dict)
+    changes: Changes = Field(default_factory=Changes)
     comment: str | None = None
     break_glass: bool = Field(False, alias="breakGlass")
     request_key: str | None = Field(None, min_length=1, max_length=128)
@@ -199,7 +216,7 @@ class CreateSpec(_Request):
     dependencies: list[str] | None = None
     acceptanceCriteria: list[str] | None = None
     references: list[str] | None = None
-    documentation: list[str] | None = None
+    documentation: list[DocLink] | None = None
     definitionOfDone: list[str] | None = None
 
     @field_validator(*CREATE_TEXT)

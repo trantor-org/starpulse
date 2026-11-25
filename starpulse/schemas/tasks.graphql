@@ -59,6 +59,8 @@ type Task {
   type: String!
   dependencies: [String!]!
   workable: Boolean!
+  """Seconds since the epoch the task was made."""
+  createdAt: Float!
   """Seconds since the epoch the task last moved."""
   movedAt: Float!
   description: String!
