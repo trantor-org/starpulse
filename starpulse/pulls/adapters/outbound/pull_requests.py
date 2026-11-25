@@ -15,6 +15,7 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
+from starpulse.board.adapters.native_scan import native_keys
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.contracts.task_keys import TaskKeys
@@ -29,7 +30,8 @@ if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
 logger = logging.getLogger(__name__)
 
 PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
-_TASK_KEYS = TaskKeys(key=re.compile(r"task-\d+", re.I), branch=re.compile(r"task-(\d+)", re.I))
+_TASK_KEYS = native_keys("TASK")
+_WORD = re.compile(r"[\w-]+(?:\.[\w-]+)*")
 DEFAULT_BASE = "main"
 
 
@@ -41,8 +43,10 @@ def pull_record(store: PullStore, url: str, detailed: bool = False) -> dict[str,
 
 
 def _named_tasks(record: dict[str, Any], keys: TaskKeys) -> set[str]:
-    pattern = re.compile(keys.key.pattern, keys.key.flags | re.I)
-    return {m.group(0).lower() for m in pattern.finditer(f"{record.get('headRefName', '')} {record.get('title', '')}")}
+    whole = re.compile(keys.key.pattern, keys.key.flags | re.I)
+    titled = {word.lower() for word in _WORD.findall(record.get("title") or "") if whole.fullmatch(word)}
+    branch = keys.for_branch(record.get("headRefName"))
+    return titled | ({branch.lower()} if branch else set())
 
 
 def delivers(store: PullStore, url: str, task_id: str, keys: TaskKeys | None = None) -> bool:

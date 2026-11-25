@@ -1,12 +1,14 @@
 """`starpulse backfill-uuids`: give every board file and every Task in History the UUID v5 of its board and key.
 
-    starpulse backfill-uuids --config starpulse.toml [--root COPY] [--files-only]
+    starpulse backfill-uuids --config starpulse.toml [--root COPY] [--files-only | --history-only]
 
 It writes `uuid:` under the `id:` line of each board file that has none and appends one `FieldsEdited` carrying the same
 UUID to each Task stream of History that has none, then prints one JSON line: `changed` (files written), `skipped` (the
-paths of files with no front matter or `id`) and `history` (Tasks stamped). A second run changes nothing. `--root` stamps another copy of
-the board folder, and `--files-only` leaves History alone, so a copy of the board takes the run without the live store.
-Stop `serve` first for a run on the live board.
+paths of files with no front matter or `id`), `history` (Tasks stamped) and `stamped` (their keys). A second run changes
+nothing. `--root` stamps another copy of the board folder, and `--files-only` leaves History alone, so a copy of the
+board takes the run without the live store. `--history-only` leaves every file alone and stamps History with the v5 of
+each key. Stop `serve` first for a run that writes files; a History-only run needs no stop, since a stream that
+`serve` appends to meanwhile is read again and stamped on the retry.
 """
 
 import argparse
@@ -39,7 +41,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="stamp the files and leave History as it is, so a copy of the board takes the run; stop `serve` before a run on the live board",
     )
+    parser.add_argument(
+        "--history-only",
+        action="store_true",
+        help="stamp History with each Task's UUID v5 and leave every board file as it is; `serve` may keep running",
+    )
     args = parser.parse_args(argv)
+    if args.files_only and args.history_only:
+        parser.error("--files-only and --history-only exclude each other")
     path = discover(args.config)
     try:
         config = load(path)
@@ -51,7 +60,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{path or 'starpulse.toml'}: the board type is {config.board_type!r}; backfill-uuids stamps a native board, so point --config at one"
         )
     root = args.root or base / str(config.board.get("path", DEFAULT_PATH))
-    stamped = item_uuid.stamp_files(root, config.bridge.board)
+    stamped = item_uuid.Stamped() if args.history_only else item_uuid.stamp_files(root, config.bridge.board)
     history: list[str] = []
     if not args.files_only:
         _, machines, *_ = declared(config, base)
@@ -60,7 +69,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     print(
         json.dumps(
-            {"changed": len(stamped.changed), "skipped": [str(p) for p in stamped.skipped], "history": len(history)}
+            {"changed": len(stamped.changed), "skipped": [str(p) for p in stamped.skipped], "history": len(history), "stamped": history}
         )
     )
     return 0

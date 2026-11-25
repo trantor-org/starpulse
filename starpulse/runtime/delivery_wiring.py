@@ -183,6 +183,6 @@ def start_delivery(
         # record: the pin walk behind it can take minutes, so it runs on a thread of its own
         projected = coalesced(stop, project, "pull-project", after=feed.wait_replayed)
     if config.release is not None:
-        if config.board_type != "native" or not (feed.roles.waiting and feed.roles.ready):
+        if not (feed.roles.waiting and feed.roles.ready):
             raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")
     return actor, projected

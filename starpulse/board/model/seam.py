@@ -1,7 +1,6 @@
 """The Board: what the server, the views and the task actor read and write of StarPulse's Markdown board.
 
-`starpulse.board.adapters.native.board` builds the one a `[board]` table of type `native` names, and
-`starpulse.board.adapters.machines_only.board` the one `machines` names, which draws the machines alone and refuses every task write.
+`starpulse.board.adapters.native.board` builds the one a `[board]` table of type `native` names.
 """
 
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
@@ -209,7 +208,7 @@ class Board:
     """Begin placing the Board's tasks on the feed, on threads of its own; the text is a name unique to this
     running view, and the log is the event log of the view's database."""
     keys: TaskKeys | None
-    """The board's task key scheme; None places any key, as the machines board does."""
+    """The board's task key scheme; None places any key."""
     cues: Callable[[Qualify], Sequence[dict]]
     """The workflow cues the page draws, each `{dag, ...}` with its workflow named as `qualify` does."""
     waits: Mapping[str, Mapping[str, str]]

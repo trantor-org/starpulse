@@ -585,7 +585,7 @@ class ConfigFile(_Table):
     board: dict[str, Any] = Field(
         default={},
         description=(
-            "The board: `type` is `native` or `machines` (no outside module), and the rest of the table is that "
+            "The board: `type` is `native` (the only board, no outside module), and the rest of the table is that "
             "board's settings, shown in the Board examples above. With no `[board]` table the view draws its own "
             'Markdown board, `type = "native"`.'
         ),

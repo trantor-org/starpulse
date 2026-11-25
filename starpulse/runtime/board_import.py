@@ -54,8 +54,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         board, machines, *_ = declared(config, base)
     except (OSError, ValueError) as exc:
         parser.error(f"the board does not assemble: {exc}")
-    if config.board_type != "native":
-        parser.error("the board keeps no task records")
     history = history_store(config, base, machines)
     lanes = history.lane_changes()
     records = {task: record for task in dict.fromkeys(lane[1] for lane in lanes) if (record := board.read(task))}
