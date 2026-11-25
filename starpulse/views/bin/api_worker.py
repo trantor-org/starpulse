@@ -15,6 +15,7 @@ import dataclasses
 import gc
 import os
 import socket
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -147,6 +148,9 @@ def serve_page(
     feed.read_lanes(store.lane_rows)
     # the Board writer's projector indexes each task for search; this process only reads the index
     search = SearchIndex.open(log.engine, config.search)
+    if search is not None:
+        # the first search reads every vector (seconds of a GIL-bound worker); read them beside the start-up, never joined before ready
+        threading.Thread(target=search.warm, name="search-warm", daemon=True).start()
     stop = StopEvent()
     bound_wal(log.engine, stop)  # the one process that checkpoints: a checkin in any worker runs none
     board.attach(log)
