@@ -24,7 +24,6 @@ from starpulse.board.model.seam import (
 from starpulse.contracts.api.dto.requests import (
     CREATE_LISTS,
     CREATE_TEXT,
-    CompleteRequest,
     CreateRequest,
     CreateSpec,
     EditRequest,
@@ -87,7 +86,7 @@ def task_record(
     reader = read_archived if archived else read
     if (record := reader(task)) is None:
         return 404, {"error": f"{task} has no record to read"}
-    return 200, {"task": task, "record": record, "archived": archived, "entered": entered if archived else None, "done": feed.roles.done}
+    return 200, {"id": record.get("uuid") or "", "key": task, "task": task, "record": record, "archived": archived, "entered": entered if archived else None, "done": feed.roles.done}
 
 
 _REPLAYS = Replays()
@@ -197,15 +196,7 @@ def _archive_one(
     return 200, {"task": task, "requested": requested}
 
 
-@with_request(CompleteRequest, "Completing a task")
-def complete_task(
-    request: CompleteRequest, feed: BoardFeed, complete: TaskCompleter
-) -> tuple[int, dict[str, Any]]:
-    """Complete the Done task `request` names through `complete`: the HTTP status and JSON body.
-
-    The board's writer refuses a task that is not Done, which answers 409 with the writer's reason and skill.
-    """
-    task = request.task
+def _completed(task: str, feed: BoardFeed, complete: TaskCompleter) -> tuple[int, dict[str, Any]]:
     if held_task(feed, task) is None:
         return not_held(feed, task)
     written = complete(task)
@@ -389,15 +380,17 @@ def put_task(
 ) -> tuple[int, dict[str, Any]]:
     """Write `task` as `PUT /api/tasks/{id}` says: the HTTP status and JSON body of the verb the body names.
 
-    `reopen` reopens the Done task, `archived: false` restores it, `interactive: true` takes it over and `park` parks
-    it; a change that names only an `assignee` dispatches that session to the task, its `base` assignee the holder it
-    replaces; any other body is an edit over its `base`.
+    `reopen` reopens the Done task, `completed: true` completes it, `archived: false` restores it, `interactive: true`
+    takes it over and `park` parks it; a change that names only an `assignee` dispatches that session to the task, its
+    `base` assignee the holder it replaces; any other body is an edit over its `base`.
     """
     who = who_of(request)
     if request.park is not None:
         return park_task(task, request.park, request.comment or "", who, feed, board.read, board.edit)
     if request.reopen is not None:
         return _reopened(task, request.reopen, who, feed, board.reopen, landed)
+    if request.completed is not None:
+        return _completed(task, feed, board.complete)
     if request.archived is not None:
         return _restored(task, who, feed, board.restore)
     if request.interactive is not None:

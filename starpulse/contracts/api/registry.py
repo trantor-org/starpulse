@@ -24,7 +24,6 @@ from starpulse.contracts.api.dto.pages import DonePage, MachineDetail, Machines
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     AdminRequest,
-    CompleteRequest,
     CreateRequest,
     DocCreateRequest,
     DocListRequest,
@@ -127,7 +126,6 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/start": StartRequest,
     "/api/steps": StepsRequest,
     "/api/retire": RetireRequest,
-    "/api/complete": CompleteRequest,
     "/api/tasks": CreateRequest,
     "/api/machines": MachineCreateRequest,
     "/api/machines/{name}": MachinePutRequest,
@@ -174,9 +172,8 @@ BODIES: dict[str, Any] = {
     "start": Started | SkillRefusal | ApiError,
     "retire": Retired | SkillRefusal | ApiError,
     "retired": RetiredTasks | ApiError,
-    "complete": Completed | SkillRefusal | ApiError,
     "create": Created | CreatedEach | SkillRefusal | ApiError,
-    "task_put": Edited | StaleEdit | Restored | Reopened | TakenOver | Parked | Dispatched | SkillRefusal | ApiError,
+    "task_put": Edited | StaleEdit | Restored | Reopened | Completed | TakenOver | Parked | Dispatched | SkillRefusal | ApiError,
     "task_delete": Archived | SkillRefusal | ApiError,
     "milestones": Milestones | ApiError,
     "milestone": MilestoneShown | ApiError,
@@ -256,10 +253,9 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("POST", "/api/start"): _write("Start a session on a task", "start", StartRequest),
     ("POST", "/api/steps"): _write("Record the seconds each step of an agent command took", "ingest", StepsRequest),
     ("POST", "/api/retire"): _write("Retire a task", "retire", RetireRequest),
-    ("POST", "/api/complete"): _write("Complete a task", "complete", CompleteRequest),
     ("PUT", "/api/tasks"): _write("Create tasks", "create", CreateRequest, "201", "200"),
     ("PUT", "/api/tasks/{id}"): _write(
-        "Write a task over the base named, or reopen, restore, take over, park or dispatch a session to it",
+        "Write a task over the base named, or reopen, complete, restore, take over, park or dispatch a session to it",
         "task_put",
         TaskPutRequest,
         "200",

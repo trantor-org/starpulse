@@ -172,7 +172,7 @@ def start(
     queue = SqlQueue(engine, CONSUMER, only=HANDLED)
     publishes_checks = any(CHECKS_MACHINE in p.machines for p in config.producers if p.name == "github")
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    checks = HeadChecks(GitHubReader(connect(token))) if publishes_checks else None
+    checks = HeadChecks(GitHubReader(connect(token, caller="consumer"))) if publishes_checks else None
 
     url = engine.url
     watch = open_watch(url.database) if url.get_backend_name() == "sqlite" and url.database else None

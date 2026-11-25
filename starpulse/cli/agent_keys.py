@@ -32,6 +32,7 @@ SNAPSHOT_IDENTITY_KEYS = ("graphs", "flows", "machineStrip", "now")
 
 TASK_KEYS = (
     "id",
+    "key",
     "title",
     "lane",
     "phase",

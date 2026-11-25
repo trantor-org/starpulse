@@ -10,6 +10,8 @@ from starpulse.contracts.api._base import _Api
 class TaskRecord(_Api):
     """`GET /api/task/<id>`: the full record of a task from the board's reader, keyed by its editable fields."""
 
+    id: str = Field("", description="The task's stored UUID, which never changes with its key; empty for a task with none yet.")
+    key: str = Field("", description="The task's key, such as `TASK-45`: the same as `task`.")
     task: str
     record: dict[str, Any]
     archived: bool = Field(False, description="The task was archived: read from the archive, off the board's lanes.")

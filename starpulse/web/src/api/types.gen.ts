@@ -53,7 +53,6 @@ export interface ApiContract {
     | StartRequest
     | StepsRequest
     | RetireRequest
-    | CompleteRequest
     | CreateRequest
     | TaskPutRequest
     | MilestoneCreateRequest
@@ -1792,6 +1791,10 @@ export interface MachineState {
   initial: boolean;
   name: string;
   /**
+   * Which state wins when a task's dependencies would put it in more than one: the higher number wins, a tie keeps the task where it is.
+   */
+  priority?: number;
+  /**
    * The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none.
    */
   role?: string | null;
@@ -1915,12 +1918,6 @@ export interface RetireRequest {
   task: string;
 }
 /**
- * `POST /api/complete`: move the Done task `task` into the board's completed tasks.
- */
-export interface CompleteRequest {
-  task: string;
-}
-/**
  * `PUT /api/tasks`: create a task in the lane `status` names or else the board's starting lane, stamped
  * `created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.
  */
@@ -1998,15 +1995,16 @@ export interface CreateSpec {
   urgency?: string | null;
 }
 /**
- * `PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over, park it or
- * dispatch a session to it.
+ * `PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, take it over, park it
+ * or dispatch a session to it.
  *
  * An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that
  * name only an `assignee` dispatch that session to the task, which the task actor pins; the `base` assignee is the
  * holder, found dead, whose lease the dispatch ends first. Otherwise the
- * body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`
- * (the archived task returns to the board), `interactive: true` (the unattended task is taken over) and `park`
- * (the held task pauses for the one reason it names, with the `comment` beside it).
+ * body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `completed: true`
+ * (the Done task moves into the board's completed tasks), `archived: false` (the archived task returns to the
+ * board), `interactive: true` (the unattended task is taken over) and `park` (the held task pauses for the one
+ * reason it names, with the `comment` beside it).
  */
 export interface TaskPutRequest {
   actor?: string | null;
@@ -2017,6 +2015,7 @@ export interface TaskPutRequest {
   breakGlass?: boolean;
   changes?: Changes;
   comment?: string | null;
+  completed?: true | null;
   harness?: string | null;
   interactive?: true | null;
   park?: Park | null;
@@ -2565,6 +2564,14 @@ export interface TaskRecord {
    * When an archived task last changed in the read model: a Done task's entry into Done.
    */
   entered?: number | null;
+  /**
+   * The task's stored UUID, which never changes with its key; empty for a task with none yet.
+   */
+  id?: string;
+  /**
+   * The task's key, such as `TASK-45`: the same as `task`.
+   */
+  key?: string;
   record: {
     [k: string]: unknown;
   };

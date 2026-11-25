@@ -10,7 +10,7 @@ from sqlalchemy import Connection, Engine, Select, func, select, union_all
 from starpulse.event_log.readmodel import queries, rows
 from starpulse.event_log.readmodel.declared import Declared
 from starpulse.event_log.readmodel.fold import Row
-from starpulse.event_log.readmodel.tables import machine_tasks
+from starpulse.event_log.readmodel.tables import board_keys, machine_tasks
 
 
 class ReadModel:
@@ -43,9 +43,19 @@ class ReadModel:
             yield db
 
     def task(self, task_id: str) -> Row | None:
-        """The Task's whole row, archived or not, found by its id in any case; None when it has none."""
+        """The Task's whole row, archived or not, found by its id in any case, else by its UUID or an alias; None when it has none."""
         with self._reading() as db:
-            return rows.load(db, task_id) or rows.load_any_case(db, task_id)
+            if found := rows.load(db, task_id) or rows.load_any_case(db, task_id):
+                return found
+            named = db.execute(
+                select(board_keys.c.task_id).where(board_keys.c.token.in_((task_id, task_id.lower())))
+            ).scalar()
+            return None if named is None else rows.load(db, named)
+
+    def resolve(self, token: str) -> str | None:
+        """The id of the Task that `token` names, as its id in any case, its UUID or an alias; None when it names none."""
+        found = self.task(token)
+        return None if found is None else str(found["id"])
 
     def snapshot(self, done: str, since: float, only: str | None = None) -> list[dict[str, Any]]:
         """The live Tasks (`queries.live`: unarchived, not done or changed since `since`) as summaries with their

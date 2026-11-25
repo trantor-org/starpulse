@@ -31,7 +31,7 @@ import yaml
 from sqlalchemy import and_, delete, func, insert, or_, select
 from sqlalchemy.engine import Engine
 
-from starpulse.board.adapters import native_docs, native_milestones, qa_verdicts
+from starpulse.board.adapters import item_uuid, native_docs, native_milestones, qa_verdicts
 from starpulse.board.adapters.holder_idle import GRACE_EXIT, UNREACHABLE_EXIT, HolderInGrace, HolderUnreachable
 from starpulse.board.adapters.native_lookup import _SETTLED_NS, _aliases, _find, _stamp
 from starpulse.board.adapters.native_scan import (
@@ -59,6 +59,7 @@ from starpulse.board.adapters.task_view import TaskView
 from starpulse.board.model import criteria, entry, rules, write_steps
 from starpulse.board.model.claims import assignee_of
 from starpulse.board.model.guard import Guard, Validate
+from starpulse.board.model.markdown import ARCHIVE_REQUEST
 from starpulse.board.model.policy import Policy, guards_of, profile_matrix
 from starpulse.board.model.rollup import checks_verdict
 from starpulse.board.model.seam import (
@@ -127,6 +128,7 @@ _SETTINGS = {
     "alive",
     "enqueued",
     "closed",
+    "archived",
     "validate",
     "python_path",
     "task_file_name",
@@ -217,7 +219,7 @@ def _github_mergeable(repo: str, number: int) -> str | None:
 def _github_files(repo: str, number: int) -> list[str] | None:
     """The paths pull request `number` changes, None when GitHub is unreadable or its listing is cut at its cap."""
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    transport = connect(token, HOOK_TIMEOUT)
+    transport = connect(token, HOOK_TIMEOUT, caller="native")
     paths: list[str] = []
     try:
         for page in range(1, _FILES_PAGES + 1):
@@ -583,6 +585,7 @@ def _record_of(text: str) -> dict[str, Any]:
     notes, comments = _section(_NOTES, body), _comments(body)
     return {
         "id": str(frontmatter.get("id") or ""),
+        "uuid": str(frontmatter.get("uuid") or ""),
         "title": str(frontmatter.get("title") or ""),
         "type": str(frontmatter.get("type") or ""),
         "status": str(frontmatter.get("status") or ""),
@@ -852,6 +855,7 @@ def _record_from(row: Mapping[str, Any], spelled: Mapping[str, str]) -> dict[str
         "session": row["assignee"] or _session(row["notes"], comments),
         "createdBy": _said(meta, "createdBy"),
         "aliases": list(meta.get("aliases") or []),
+        "uuid": _said(meta, "uuid"),
         "acceptanceCriteria": items["ac"],
         "definitionOfDone": items["dod"],
     }
@@ -860,6 +864,8 @@ def _record_from(row: Mapping[str, Any], spelled: Mapping[str, str]) -> dict[str
 def _file_of(record: Mapping[str, Any]) -> tuple[dict, str]:
     """The front matter and body a task file would hold for `record`, as the board rules read a file."""
     frontmatter: dict[str, Any] = {"id": record["id"]}
+    if record.get("uuid"):
+        frontmatter["uuid"] = record["uuid"]
     spelled = {lane_id(record["status"]): record["status"]}
     for field in (*_SCALARS, "profile", "status", "actorMemory", *_LISTS):
         if record.get(field):
@@ -981,8 +987,10 @@ def _editor(
                 body = _comment(body, text, actor) if text.strip() and not recorded else body
             return body
 
-        # A comment changes no field a rule or the validate hook judges, and the comment that names a refusal must land.
-        judged = guard if changes else replace(guard, rules=(), validate=None)
+        # A comment changes no field a rule or the validate hook judges, and the comment that names a refusal must land;
+        # an archive request is judged, as the archive it asks for is.
+        asked = any(text.strip().startswith(ARCHIVE_REQUEST) for text in texts)
+        judged = guard if changes or asked else replace(guard, rules=(), validate=None)
         if audit:
             judged, actor = replace(judged, validate=None, types=()), TASK_ACTOR
         try:
@@ -1706,7 +1714,7 @@ _NEW_TASK_DETAILS = {
 
 def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) -> str:
     """A new task file as Backlog.md writes one: its front matter, then its Description and Acceptance Criteria."""
-    frontmatter: dict[str, Any] = {"id": task, "title": title, "status": status}
+    frontmatter: dict[str, Any] = {"id": task, "uuid": item_uuid.mint(), "title": title, "status": status}
     if profile := details.get("profile", details.get("assignee")):
         frontmatter["profile"] = [profile]
     keys = ("labels", "milestone", "dependencies", "priority", "impact", "urgency", "created_by")
@@ -1871,11 +1879,11 @@ def _reason(holds: Callable[[str], list[str]]) -> Callable[[str], str | None]:
 
 
 def _notice(command: object, base: Path, unreachable: bool = False) -> Callable[..., None]:
-    """The `parked`, `released`, `idle`, `returned`, `enqueued`, `closed` or `entered` command
+    """The `parked`, `released`, `idle`, `returned`, `enqueued`, `closed`, `archived` or `entered` command
     (the last on any lane entry the board records, by whoever moves the task), run in `base` with `{id}` replaced by the
     task's id, after the task actor moves a task from the working lane to Waiting, from Waiting to Ready, sees its holder
     go idle (with `{verdict}` replaced by the idle step), sends it from Review
-    back to the working lane, reads its pull request ready in Review, or moves it to Done. A nonzero exit raises with what
+    back to the working lane, reads its pull request ready in Review, moves it to Done, or archives it. A nonzero exit raises with what
     the command said. With no command it tells no one."""
     if not command:
         return lambda _task, _verdict="": None
@@ -1982,6 +1990,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "alive": _probe(settings.get("alive"), base),
             "enqueued": _notice(settings.get("enqueued"), base),
             "closed": _notice(settings.get("closed"), base),
+            "archived": _notice(settings.get("archived"), base),
             "entered": _entered(settings.get("entered"), base, root, settings.get("entered_labels")),
             "edit": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles), roles.done),
             "judge": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles), roles.done, True),

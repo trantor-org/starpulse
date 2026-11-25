@@ -332,7 +332,7 @@ WORKER = "github-actions"
 
 def read(url: str) -> list[dict]:
     """The workflows of the repository at `url`, as the sweeper's `runs` kind compares them with the projection."""
-    transport = connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
+    transport = connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"), caller="github_actions")
     return listing(transport, repo_of(url))
 
 
@@ -347,7 +347,7 @@ def follow(url: str, runs: RunsSink, log: EventLog, stop: StopEvent | None = Non
     """
     stop = stop or StopEvent()
     repo = repo_of(url)
-    transport = connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
+    transport = connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"), caller="github_actions")
     reader = GitHubRuns(runs, Repository(transport, repo))
 
     def read() -> None:

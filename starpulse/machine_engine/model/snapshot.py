@@ -45,9 +45,17 @@ def describe(machine: Any, rests: Sequence[str] = ()) -> dict:
     """
     cited = getattr(machine, "citations", {})
     roles = {state: "final" if state in rests else role for state, role in getattr(machine, "roles", {}).items()}
+    priorities = getattr(machine, "priorities", {})
     body: dict[str, Any] = {
         "states": [
-            {"id": s.id, "name": _titled(s.name), "initial": s.initial, "final": s.final, "role": roles.get(s.id)}
+            {
+                "id": s.id,
+                "name": _titled(s.name),
+                "initial": s.initial,
+                "final": s.final,
+                "role": roles.get(s.id),
+                "priority": priorities.get(s.id, 0),
+            }
             for s in machine.states
         ],
         "transitions": [

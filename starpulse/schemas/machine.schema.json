@@ -127,6 +127,11 @@
           "items": {"type": "string", "minLength": 1},
           "uniqueItems": true
         },
+        "priority": {
+          "description": "Which state wins when a task's dependencies would put it in more than one: the higher number wins, a tie keeps the task where it is. Zero when absent.",
+          "type": "integer",
+          "minimum": 0
+        },
         "role": {
           "description": "What this state is for, so StarPulse code reads the role and never the state's name: resting (a task rests here), waiting_on_fact (it leaves when a fact holds) or waiting_on_person (it leaves when a person acts). A state flagged initial or final has that role already.",
           "enum": ["resting", "waiting_on_fact", "waiting_on_person"]

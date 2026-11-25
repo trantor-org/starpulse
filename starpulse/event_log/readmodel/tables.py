@@ -35,6 +35,8 @@ tasks = Table(
     Column("comments", JSON, nullable=False),
     Column("fields", JSON, nullable=False),
     Column("meta", JSON, nullable=False),
+    #: The item's stored UUID, copied from its `meta`: `board_keys` is what resolves one.
+    Column("uuid", String, nullable=False, server_default=""),
     Index("ix_starpulse_tasks_seq", "seq"),
     Index("ix_starpulse_tasks_lower_id", text("lower(id)")),
     Index("ix_starpulse_tasks_live_id", "id", sqlite_where=text("archived = 0")),
@@ -43,6 +45,16 @@ tasks = Table(
     Index("ix_starpulse_tasks_live_assignee", "assignee", sqlite_where=text("archived = 0")),
     Index("ix_starpulse_tasks_archived_updated", "updated_at", sqlite_where=text("archived = 1")),
     Index("ix_starpulse_tasks_live_set", "archived", "state", "updated_at", sqlite_where=text("archived = 0")),
+)
+
+#: One row per name besides its key that a Task answers to: its stored UUID (`kind` uuid) and each alias it lists.
+board_keys = Table(
+    "starpulse_board_keys",
+    metadata,
+    Column("token", String, primary_key=True),
+    Column("task_id", String, nullable=False),
+    Column("kind", String, nullable=False),
+    Index("ix_starpulse_board_keys_task", "task_id"),
 )
 
 #: One row per (machine, task): the state the task holds on that lifecycle machine, the drawn agent as JSON and when the
@@ -96,5 +108,5 @@ snapshot_deltas = Table(
     Column("data", JSON, nullable=False),
 )
 
-READ_MODEL_TABLES = (tasks, criteria, machine_tasks)
+READ_MODEL_TABLES = (tasks, criteria, machine_tasks, board_keys)
 SNAPSHOT_TABLES = (snapshots, snapshot_deltas)

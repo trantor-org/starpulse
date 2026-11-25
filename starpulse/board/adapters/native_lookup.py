@@ -106,7 +106,7 @@ def _has_id(path: Path, task: str, spelled: re.Pattern[str], prefilter: bool) ->
     frontmatter, _ = _split(text)
     if not isinstance(frontmatter, dict):
         return False
-    ids = [str(frontmatter.get("id") or "").strip(), *_aliases(frontmatter)]
+    ids = [str(frontmatter.get("id") or "").strip(), str(frontmatter.get("uuid") or "").strip(), *_aliases(frontmatter)]
     return task.casefold() in {found.casefold() for found in ids}
 
 
@@ -115,7 +115,7 @@ def _has_id(path: Path, task: str, spelled: re.Pattern[str], prefilter: bool) ->
 #: is `_SETTLED_NS` old, as `native._FILE_IDS` is.
 _SPELLED: dict[Path, tuple[tuple[int, int], frozenset[str]]] = {}
 _SPELLED_KEPT = 16384
-_SPELLED_LINE = re.compile(r"^[ \t]*(?:id:|aliases:|-)(.*)$", re.M)
+_SPELLED_LINE = re.compile(r"^[ \t]*(?:id:|uuid:|aliases:|-)(.*)$", re.M)
 _SPELLED_TOKEN = re.compile(r"[^\s,\[\]{}\"'#]+")
 
 #: Per folder, the union of its files' spelled lines at the folder's mtime. A write replaces a file, which moves the
@@ -178,7 +178,7 @@ def _front_matter(text: str) -> str:
 def _id_line(task: str) -> re.Pattern[str]:
     """A front matter line of the `id:`, `aliases:` or list-item kind that holds `task` as a word, quoted or not, in a
     flow list, before a comment, in any case; the parse decides whether it is the id or an alias."""
-    return re.compile(rf"^[ \t]*(?:id:|aliases:|-)[^\n]*(?<![\w-]){re.escape(task)}(?![\w-])", re.M | re.I)
+    return re.compile(rf"^[ \t]*(?:id:|uuid:|aliases:|-)[^\n]*(?<![\w-]){re.escape(task)}(?![\w-])", re.M | re.I)
 
 
 def _aliases(frontmatter: Mapping[str, Any]) -> list[str]:

@@ -16,6 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from starpulse.board.adapters import item_uuid
 from starpulse.board.model.seam import (
     RETRO_MARKER,
     MilestoneArchiver,
@@ -134,7 +135,7 @@ def _render(milestone: str, title: str, sections: Mapping[str, str]) -> str:
     """A milestone file: its front matter, then each non-empty section under `## Description`."""
     body = "\n\n".join(f"## {name}\n\n{text}" if name else text for name, text in sections.items() if text)
     return (
-        f"---\nid: {milestone}\ntitle: {json.dumps(title, ensure_ascii=False)}\n---\n\n## Description\n\n"
+        f"---\nid: {milestone}\nuuid: {item_uuid.mint()}\ntitle: {json.dumps(title, ensure_ascii=False)}\n---\n\n## Description\n\n"
         f"{body}{chr(10) if body else ''}"
     )
 

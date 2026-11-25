@@ -292,7 +292,7 @@ def github_kinds(config: Any, log: EventLog) -> list[GithubKind]:
     if settings is None or not settings.reconcile_token_env:
         return []
     inbox = SqlInbox(log.engine)
-    client = connect_client(lambda: os.environ.get(settings.reconcile_token_env or ""), app_jwt)
+    client = connect_client(lambda: os.environ.get(settings.reconcile_token_env or ""), app_jwt, caller="reconcile")
     return [GithubKind(client, inbox, SqlCursors(inbox.engine), settings, time.time, pull_updates(log))]
 
 

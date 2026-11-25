@@ -122,15 +122,16 @@ class Park(_Request):
 
 
 class TaskPutRequest(_Writer):
-    """`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, restore, take it over, park it or
-    dispatch a session to it.
+    """`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, take it over, park it
+    or dispatch a session to it.
 
     An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that
     name only an `assignee` dispatch that session to the task, which the task actor pins; the `base` assignee is the
     holder, found dead, whose lease the dispatch ends first. Otherwise the
-    body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `archived: false`
-    (the archived task returns to the board), `interactive: true` (the unattended task is taken over) and `park`
-    (the held task pauses for the one reason it names, with the `comment` beside it).
+    body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `completed: true`
+    (the Done task moves into the board's completed tasks), `archived: false` (the archived task returns to the
+    board), `interactive: true` (the unattended task is taken over) and `park` (the held task pauses for the one
+    reason it names, with the `comment` beside it).
     """
 
     base: dict[str, Any] = Field(default_factory=dict)
@@ -139,15 +140,18 @@ class TaskPutRequest(_Writer):
     break_glass: bool = Field(False, alias="breakGlass")
     request_key: str | None = Field(None, min_length=1, max_length=128)
     reopen: NonBlank | None = None
+    completed: Literal[True] | None = None
     archived: Literal[False] | None = None
     interactive: Literal[True] | None = None
     park: Park | None = None
 
     @model_validator(mode="after")
     def _one_write(self) -> TaskPutRequest:
-        named = [name for name in ("reopen", "archived", "interactive", "park") if getattr(self, name) is not None]
+        named = [
+            name for name in ("reopen", "completed", "archived", "interactive", "park") if getattr(self, name) is not None
+        ]
         if len(named) > 1 or (named and (self.changes or (self.comment and named != ["park"]))):
-            raise ValueError("name changes, or exactly one of reopen, archived, interactive and park")
+            raise ValueError("name changes, or exactly one of reopen, completed, archived, interactive and park")
         return self
 
 
@@ -163,10 +167,6 @@ class RetireRequest(_Request):
     task: str
 
 
-class CompleteRequest(_Request):
-    """`POST /api/complete`: move the Done task `task` into the board's completed tasks."""
-
-    task: str
 
 
 class CreateSpec(_Request):

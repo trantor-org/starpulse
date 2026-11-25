@@ -71,6 +71,7 @@ _META = (
     "actorMemory",
     "createdBy",
     "aliases",
+    "uuid",
 )
 #: The record's criteria lists, by the kind the fold keeps them under.
 _KINDS = {"ac": "acceptanceCriteria", "dod": "definitionOfDone"}

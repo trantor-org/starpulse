@@ -148,6 +148,8 @@ class Compiled:
     labels: Mapping[str, str] = field(default_factory=dict)
     aliases: Mapping[str, str] = field(default_factory=dict)
     """Each retired name a state declares in `aliases`, by the state id it became."""
+    priorities: Mapping[str, int] = field(default_factory=dict)
+    """Each state's `priority`, zero when it declares none: the higher state wins a task its dependencies split."""
 
 
 def writers_of(machine: type[Machine]) -> Mapping[str, tuple[Writer, ...]]:
@@ -186,9 +188,20 @@ def compile_document(document: dict[str, Any], path: Path) -> Compiled:
     machine.roles = roles
     labels = {name: state.get("label", name) for name, state in document["states"].items()}
     aliases = {old: name for name, state in document["states"].items() for old in state.get("aliases", ())}
+    priorities = {name: state.get("priority", 0) for name, state in document["states"].items()}
+    machine.priorities = priorities
     drawing = {key: document[key] for key in DRAWING if key in document}
     return Compiled(
-        document["name"], machine, bindings, writers, cues, drawing, roles=roles, labels=labels, aliases=aliases
+        document["name"],
+        machine,
+        bindings,
+        writers,
+        cues,
+        drawing,
+        roles=roles,
+        labels=labels,
+        aliases=aliases,
+        priorities=priorities,
     )
 
 

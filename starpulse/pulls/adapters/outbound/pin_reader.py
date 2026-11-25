@@ -28,7 +28,7 @@ class GitHub:
     ) -> None:
         """`saved` returns the answers the Board last saved; it is called once, when the first read needs them.
         `transport` defaults to one signed in with `GITHUB_TOKEN` or `GH_TOKEN`."""
-        self._transport = transport or connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
+        self._transport = transport or connect(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"), caller="pin_reader")
         self._pointers: dict[tuple[str, str, str], str | None] = {}
         self._reaches: dict[tuple[str, str, str], bool] = {}
         self._saved: Callable[[], Mapping[str, list[list]]] | None = saved

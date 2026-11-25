@@ -24,6 +24,7 @@ try:  # libyaml's loader: the same safe schema and errors, a tenth of the pure-P
 except ImportError:
     from yaml import SafeLoader as _FrontmatterLoader
 
+from starpulse.board.adapters import item_uuid
 from starpulse.board.model.seam import (
     DocArchiver,
     DocCreator,
@@ -246,7 +247,7 @@ def creator(root: Path) -> DocCreator:
             doc, now = _next_id(root), _stamp()
             path = root / "docs" / folder / f"{doc} - {_slug(title.strip())}.md"
             head = (
-                f"id: {doc}\n{_line('title', title.strip())}type: {kind}\n"
+                f"id: {doc}\nuuid: {item_uuid.mint()}\n{_line('title', title.strip())}type: {kind}\n"
                 f"created_date: '{now}'\nupdated_date: '{now}'\n"
             )
             try:

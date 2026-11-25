@@ -1,7 +1,7 @@
 """Where a lifecycle's points are, read from the roles a machine declares and never from a State's name."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from starpulse.machine_engine.model.transitions import lane_id
@@ -31,11 +31,18 @@ class StateRoles:
     waits: Mapping[str, Mapping[str, str]]
     rests: Sequence[str] = ()
     start_is_lane: bool = False
+    priorities: Mapping[str, int] = field(default_factory=dict)
 
     @classmethod
     def of_machine(cls, compiled: Compiled) -> StateRoles:
         """The roles `compiled` declares."""
-        return cls(compiled.roles, compiled.waits, tuple(compiled.drawing.get("rests", ())))
+        return cls(
+            compiled.roles, compiled.waits, tuple(compiled.drawing.get("rests", ())), priorities=compiled.priorities
+        )
+
+    def outranks(self, state: str, other: str) -> bool:
+        """Whether `state` declares a higher `priority` than `other`: the lane a task's dependencies split it across."""
+        return self.priorities.get(state, 0) > self.priorities.get(other, 0)
 
     @classmethod
     def of_statuses(cls, statuses: Sequence[str]) -> StateRoles:

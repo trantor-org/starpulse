@@ -17,6 +17,7 @@ from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel.signals import DELTAS
 from starpulse.event_log.readmodel.snapshot_store import LIVE, SnapshotStore
 from starpulse.event_log.wake import StopEvent
 from starpulse.views.adapters.inbound.compression import Encoded
@@ -59,7 +60,7 @@ class Snapshots:
         self.readers = [
             threading.Thread(
                 target=log.run_on_wake,
-                args=(stop, self._advance, "StarPulse: the stored deltas could not be read"),
+                args=(stop, self._advance, "StarPulse: the stored deltas could not be read", DELTAS),
                 name="snapshot-deltas",
                 daemon=True,
             )

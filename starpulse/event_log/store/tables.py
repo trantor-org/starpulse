@@ -46,3 +46,6 @@ machine_active = Table(
     Column("hash", String, ForeignKey("starpulse_machine_versions.hash"), nullable=False),
     Column("activated_at", Float, nullable=False),
 )
+
+#: The newest Task Event id, as a statement for `EventLog.run_on_wake`'s `signal`.
+NEWEST_EVENT = f"SELECT max(id) FROM {stream_events.name}"

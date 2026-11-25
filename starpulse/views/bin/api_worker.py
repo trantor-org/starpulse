@@ -33,7 +33,9 @@ from starpulse.board.adapters.native import DEFAULT_PATH
 from starpulse.bridge.metrics import metrics_of as bridge_metrics_of
 from starpulse.bridge.subjects import CHECKPOINT, STREAMS
 from starpulse.event_log.caught_up import CaughtUp
+from starpulse.event_log.child_cpu import STATES as CHILDREN
 from starpulse.event_log.child_cpu import metrics_of as child_cpu_metrics_of
+from starpulse.event_log.follower_wakes import metrics_of as follower_wake_metrics_of
 from starpulse.event_log.claude_sessions import entrypoint_of, sessions_dir
 from starpulse.event_log.follower_lag import metrics_of as follower_lag_metrics_of
 from starpulse.event_log.recorder_lag import metrics_of as history_lag_metrics_of
@@ -232,6 +234,7 @@ def serve_page(
         follower_lag_metrics=follower_lag_metrics_of(log, CHECKPOINT, STREAMS),
         skill_cost_metrics=skill_cost.metrics_of(log),
         child_cpu_metrics=child_cpu_metrics_of(log),
+        follower_wake_metrics=follower_wake_metrics_of(log, tuple(CHILDREN)),
         github_metrics=cached(host.github_metrics(config, base), SCRAPE_CACHE_S),
     )
     snapshots = Snapshots(SnapshotStore(log.engine, encode_snapshot), log, stop)

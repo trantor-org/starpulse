@@ -3,6 +3,7 @@
 import threading
 from typing import TYPE_CHECKING, Protocol
 
+from starpulse.event_log.readmodel.signals import FOLDED_ROWS
 from starpulse.event_log.wake import StopEvent
 
 if TYPE_CHECKING:
@@ -27,7 +28,7 @@ def follow_changes(feed: _Feed, moves: _Moves, stop: StopEvent, log: EventLog) -
 
     thread = threading.Thread(
         target=log.run_on_wake,
-        args=(stop, pass_, "scheduler: the change poll failed"),
+        args=(stop, pass_, "scheduler: the change poll failed", FOLDED_ROWS),
         name="scheduler-changes",
         daemon=True,
     )

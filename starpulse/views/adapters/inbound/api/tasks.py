@@ -5,11 +5,10 @@
 - `GET /api/retired`: one page of the retired tasks, newest first, at most `limit` after the `before` cursor, with
   `next` for the page that follows; or those of a `task` or `milestone`, or as `{task, dependencies}` for
   `fields=dependencies`, unpaged.
-- `PUT /api/tasks` creates; `PUT /api/tasks/{id}` writes over the `base` it names, or reopens (`reopen`), restores
-  (`archived: false`), takes over (`interactive: true`), parks (`park`) or dispatches a session (`assignee`);
-  `DELETE /api/tasks/{id}` archives: the task writes.
-- `POST /api/start`, `verdict`, `retire` and
-  `complete`: a task's writes by verb, each over the seams it needs.
+- `PUT /api/tasks` creates; `PUT /api/tasks/{id}` writes over the `base` it names, or reopens (`reopen`), completes
+  (`completed: true`), restores (`archived: false`), takes over (`interactive: true`), parks (`park`) or dispatches a
+  session (`assignee`); `DELETE /api/tasks/{id}` archives: the task writes.
+- `POST /api/start`, `verdict` and `retire`: a task's writes by verb, each over the seams it needs.
 """
 
 import asyncio
@@ -31,7 +30,6 @@ from starpulse.views.application.commands.moves import (
     start_task,
 )
 from starpulse.views.application.commands.tasks import (
-    complete_task,
     create_task,
     delete_task,
     retire_task,
@@ -117,8 +115,7 @@ def retired(request: Request) -> Response:
 
 def routes(api: Api) -> list[ApiRoute]:
     feed, board, services = api.feed, api.board, api.services
-    assign = board.assign
-    create, complete = board.create, board.complete
+    assign, create = board.assign, board.create
 
     def landed(task: str) -> bool:
         _, body = _stored_record(api, task)
@@ -142,7 +139,6 @@ def routes(api: Api) -> list[ApiRoute]:
             "start",
         ),
         "/retire": (lambda client, raw: retire_task(client, raw, board), "retire"),
-        "/complete": (lambda client, raw: complete_task(client, raw, feed, complete), "complete"),
     }
     return [
         ReadRoute("/task/{id:path}", task, timed),

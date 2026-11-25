@@ -32,6 +32,7 @@ def render(api: Api) -> str:
         services.follower_lag_metrics,
         services.skill_cost_metrics,
         services.child_cpu_metrics,
+        services.follower_wake_metrics,
         services.github_metrics,
         api.snapshots.metrics,
         api.page_gauge,
