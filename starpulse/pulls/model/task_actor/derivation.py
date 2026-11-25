@@ -78,6 +78,7 @@ class TaskFacts(Protocol):
     def comments(self, agent: Agent) -> list[str] | None: ...
     def dependency_needs(self, name: str) -> Sequence[str]: ...
     def unfinished(self, name: str) -> tuple[str, ...]: ...
+    def started(self, name: str) -> bool: ...
     def alive(self, name: str) -> bool | None: ...
     def holds(self, name: str) -> tuple[str, ...] | None: ...
     def owns_failure(self, name: str) -> bool: ...
@@ -762,6 +763,12 @@ def stale(facts: TaskFacts, agent: Agent) -> dict[str, list[str]]:
     }
 
 
+def by_start(fact: Callable[[TaskFacts, Agent], Any], *, started: bool) -> Callable[[TaskFacts, Agent], Any]:
+    """`fact` for the tasks a session was ever dispatched to or for the rest, so started work never falls through to
+    Ready when its session ended and cleared the claim."""
+    return lambda facts, agent: fact(facts, agent) if facts.started(agent["id"]) == started else None
+
+
 #: Each fact kind a lane's `waits` name, and the function that answers it.
 FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
     "pr_terminal": pr_terminal,
@@ -782,10 +789,12 @@ FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
     "ask_requested": ask_requested,
     "archive_requested": archive_requested,
     "move_requested": move_requested,
-    "deps_done": deps_done,
+    "deps_done": by_start(deps_done, started=False),
     "deps_done_with_pr": deps_done_with_pr,
+    "deps_done_started": by_start(deps_done, started=True),
     "deps_unresolved": deps_unresolved,
-    "criteria_met": criteria_met,
+    "criteria_met": by_start(criteria_met, started=False),
+    "criteria_met_started": by_start(criteria_met, started=True),
     "owner_stale": owner_stale,
     "overdue": overdue,
 }

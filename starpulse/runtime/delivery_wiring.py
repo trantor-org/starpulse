@@ -5,7 +5,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.adapters.holder_idle import follow_holder_idle
+from starpulse.board.adapters.holder_idle import follow_holder_idle, started
 from starpulse.board.adapters.until_events import follow_until_events
 from starpulse.board.model.seam import (
     Board,
@@ -115,6 +115,7 @@ def start_delivery(
             pins,
             config.board_repo,
             latest=lambda subject, since: last_event_is(log.engine, subject, since),
+            started=lambda task: started(log.engine, task),
             latest_sha=lambda subject: last_event_sha(log.engine, subject),
             holds=board.holds,
             read=board.read,
