@@ -94,6 +94,7 @@ def summary_agent(
         "urgency": meta.get("urgency", ""),
         "tier": meta.get("tier") or DEFAULT_TIER,
         "source": meta.get("source", ""),
+        "frozen": dict(meta["frozen"]) if meta.get("frozen") else None,
         "assignee": summary["assignee"],
         "released": summary["released"],
         "labels": list(summary["labels"]),

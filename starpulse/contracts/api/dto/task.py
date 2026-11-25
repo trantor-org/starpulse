@@ -62,6 +62,14 @@ class ClaimRelease(_Api):
     idle: bool = Field(default=False, description="The task actor ended this claim because its holder sat idle, not the TTL sweep.")
 
 
+class Frozen(_Api):
+    """The freeze the task actor holds a task in: who asked, when and why."""
+
+    by: str
+    at: str
+    reason: str
+
+
 class RawTask(_Api):
     """A Backlog task. On the board its state is its lane; on every other machine, the state its latest machine event left it in."""
 
@@ -75,6 +83,9 @@ class RawTask(_Api):
     assignee: str | None = Field(
         default=None,
         description="The session that last claimed a Board task; empty when none has, absent off the Board.",
+    )
+    frozen: Frozen | None = Field(
+        default=None, description="The freeze the task actor holds the task in; no move of it lands until it is lifted."
     )
     released: ClaimRelease | None = Field(
         default=None, description="The claim-TTL release a Board task's claim ended in; null when none ended it."

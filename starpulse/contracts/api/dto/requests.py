@@ -60,7 +60,9 @@ NonBlank = Annotated[str, AfterValidator(_nonblank)]
 DocLink = Annotated[
     str,
     AfterValidator(doc_link),
-    WithJsonSchema({"type": "string", "pattern": PATTERN, "description": "A doc id (doc-N) or a file path, never a JSON reply"}),
+    WithJsonSchema(
+        {"type": "string", "pattern": PATTERN, "description": "A doc id (doc-N) or a file path, never a JSON reply"}
+    ),
 ]
 
 
@@ -122,8 +124,8 @@ class Park(_Request):
 
 
 class TaskPutRequest(_Writer):
-    """`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, retire, take it over, park it
-    or dispatch a session to it.
+    """`PUT /api/tasks/{id}`: write the task over the `base` it read, or reopen, complete, restore, retire, take it over, park
+    it, ask the task actor to freeze or unfreeze it or dispatch a session to it.
 
     An edit names `changes` (and `base`, the value each changed field had when read) or a `comment`. `changes` that
     name only an `assignee` dispatch that session to the task, which the task actor pins; the `base` assignee is the
@@ -131,8 +133,9 @@ class TaskPutRequest(_Writer):
     body names exactly one of `reopen` (the Done task goes back to In Progress, with this reason), `completed: true`
     (the Done task moves into the board's completed tasks), `archived: false` (the archived task returns to the
     board), `retired: true` (the finished task goes off the board into the history store's retired tasks),
-    `interactive: true` (the unattended task is taken over) and `park` (the held task pauses for the one
-    reason it names, with the `comment` beside it).
+    `interactive: true` (the unattended task is taken over), `park` (the held task pauses for the one
+    reason it names, with the `comment` beside it), `freeze` (the task actor freezes the task in its lane, for this
+    reason) and `unfreeze: true` (the task actor lifts the freeze; only the operator or the freezer may ask it).
     """
 
     base: dict[str, Any] = Field(default_factory=dict)
@@ -146,14 +149,17 @@ class TaskPutRequest(_Writer):
     retired: Literal[True] | None = None
     interactive: Literal[True] | None = None
     park: Park | None = None
+    freeze: NonBlank | None = None
+    unfreeze: Literal[True] | None = None
 
     @model_validator(mode="after")
     def _one_write(self) -> TaskPutRequest:
-        named = [
-            name for name in ("reopen", "completed", "archived", "retired", "interactive", "park") if getattr(self, name) is not None
-        ]
+        verbs = ("reopen", "completed", "archived", "retired", "interactive", "park", "freeze", "unfreeze")
+        named = [name for name in verbs if getattr(self, name) is not None]
         if len(named) > 1 or (named and (self.changes or (self.comment and named != ["park"]))):
-            raise ValueError("name changes, or exactly one of reopen, completed, archived, retired, interactive and park")
+            raise ValueError(
+                "name changes, or exactly one of reopen, completed, archived, retired, interactive, park, freeze and unfreeze"
+            )
         return self
 
 

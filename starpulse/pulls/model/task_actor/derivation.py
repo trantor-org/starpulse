@@ -17,8 +17,10 @@ from starpulse.board.model.markdown import (
     ARCHIVE_ANSWER,
     ARCHIVE_REQUEST,
     ASK_REQUEST,
+    FREEZE_REQUEST,
     MOVE_REQUEST,
     NO_MERGE,
+    UNFREEZE_REQUEST,
     WAIT_REQUEST,
     attention_reason,
     needs_attention_reason,
@@ -610,6 +612,10 @@ def archive_requested(facts: TaskFacts, agent: Agent) -> Held:
     return (f"{ARCHIVE_REQUEST} {answer}", answer) if answer and ARCHIVE_ANSWER.match(answer) else None
 
 
+freeze_requested = _requested(FREEZE_REQUEST)
+unfreeze_requested = _requested(UNFREEZE_REQUEST)
+
+
 def requested_lane(request: str) -> str:
     """The lane a `Move requested: <lane>. <words>` comment names."""
     return request.removeprefix(MOVE_REQUEST).partition(".")[0].strip()
@@ -810,6 +816,8 @@ FACTS: dict[str, Callable[[TaskFacts, Agent], Held]] = {
     "wait_requested": wait_requested,
     "ask_requested": ask_requested,
     "archive_requested": archive_requested,
+    "freeze_requested": freeze_requested,
+    "unfreeze_requested": unfreeze_requested,
     "move_requested": move_requested,
     "deps_done": by_start(deps_done, started=False),
     "deps_done_with_pr": deps_done_with_pr,

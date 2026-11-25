@@ -604,6 +604,7 @@ def _record_of(text: str) -> dict[str, Any]:
         "dependencies": list(_strings(frontmatter.get("dependencies"))),
         "dependencyNeeds": list(_strings(frontmatter.get("dependency_needs"))),
         "actorMemory": dict(frontmatter.get("actor_memory") or {}),
+        "frozen": dict(frontmatter.get("frozen") or {}),
         "references": list(_strings(frontmatter.get("references"))),
         "documentation": list(_strings(frontmatter.get("documentation"))),
         "modifiedFiles": list(_strings(frontmatter.get("modified_files"))),
@@ -771,6 +772,13 @@ def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, 
         frontmatter["actor_memory"] = value
         if not value:
             del frontmatter["actor_memory"]
+    elif field == "frozen":
+        if not isinstance(value, dict):
+            raise ValueError(f"{field} must be a mapping")
+        frozen = {key: str(value.get(key) or "") for key in ("by", "at", "reason")} if value else {}
+        frontmatter["frozen"] = frozen
+        if not frozen:
+            del frontmatter["frozen"]
     elif field in _LISTS:
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             raise ValueError(f"{field} must be a list of text")
@@ -844,6 +852,7 @@ def _record_from(row: Mapping[str, Any], spelled: Mapping[str, str]) -> dict[str
         "dependencies": list(row["dependencies"]),
         "dependencyNeeds": list(meta.get("dependencyNeeds") or []),
         "actorMemory": dict(meta.get("actorMemory") or {}),
+        "frozen": dict(meta.get("frozen") or {}),
         "references": list(row["references"]),
         "documentation": list(row["documentation"]),
         "modifiedFiles": list(row["modified_files"]),
@@ -873,7 +882,7 @@ def _file_of(record: Mapping[str, Any]) -> tuple[dict, str]:
     if record.get("uuids"):
         frontmatter["uuids"] = record["uuids"]
     spelled = {lane_id(record["status"]): record["status"]}
-    for field in (*_SCALARS, "profile", "status", "actorMemory", *_LISTS):
+    for field in (*_SCALARS, "profile", "status", "actorMemory", "frozen", *_LISTS):
         if record.get(field):
             _set_front(frontmatter, field, record[field], spelled)
     frontmatter |= {
@@ -1130,7 +1139,7 @@ def _unlinker(
         else:
             frontmatter.pop("dependency_needs", None)
         held = lane_id(str(frontmatter.get("status") or "")) == waiting
-        if held and not kept and ready is not None and not criteria.authored(body):
+        if held and not kept and ready is not None and not frontmatter.get("frozen") and not criteria.authored(body):
             frontmatter["status"] = ready
             return _comment(body, f"{note}; no dependency is left, so it moved to {ready}.", actor)
         return _comment(body, note, actor)
@@ -1148,6 +1157,9 @@ def _archiver(root: Path, statuses: tuple[str, ...], roles: StateRoles, guard: G
     def archive(task: str, reason: str, /, actor: str = OPERATOR) -> Written:
         if (path := _find(root, task)) is None:
             return Written(False, f"{task} has no task file in {root / 'tasks'}")
+        front = _split(path.read_text())[0]
+        if refusal := guard.frozen_refusal(rules.Record(front, ""), front | {"status": ARCHIVED}, actor):
+            return Written(False, refusal)
         if (
             reason.strip()
             and not (
@@ -1580,7 +1592,9 @@ def _keeps(kept: re.Pattern[str], frontmatter: dict) -> bool:
     return any(kept.fullmatch(label) for label in _strings(frontmatter.get("labels")))
 
 
-def _completer(root: Path, statuses: tuple[str, ...], roles: StateRoles, keep: object = None) -> TaskCompleter:
+def _completer(
+    root: Path, statuses: tuple[str, ...], roles: StateRoles, keep: object = None, guard: Guard = Guard()
+) -> TaskCompleter:
     """A board writer that moves a Done task's file to `completed/`, where the reader and the projection still find it.
 
     The move enters the `completed` lane where the board has one; a board without it keeps the task in Done. A task
@@ -1597,6 +1611,8 @@ def _completer(root: Path, statuses: tuple[str, ...], roles: StateRoles, keep: o
         status = str(frontmatter.get("status") or "")
         if lane_id(status) != roles.done:
             return Written(False, f"{task} is {status or 'without a status'}, not Done")
+        if swept and (refusal := guard.frozen_refusal(rules.Record(frontmatter, ""), frontmatter | {"status": swept}, OPERATOR)):
+            return Written(False, refusal)
         if kept is not None and _keeps(kept, frontmatter):
             return Written(False, f"{task} carries a label that keeps it in {root / 'tasks'}")
         target = root / "completed" / path.name
@@ -2006,7 +2022,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "judge": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles), roles.done, True),
             "archive": _archiver(root, config.statuses, roles, gate),
             "restore": _restorer(root, retired, config.statuses, migrations, gate, roles.done),
-            "complete": _completer(root, config.statuses, roles, settings.get("complete_keep_labels")),
+            "complete": _completer(root, config.statuses, roles, settings.get("complete_keep_labels"), gate),
             "reopen": _reopener(root, config.statuses, roles, gate),
             "retire": _retirer(root, retired, roles, config.prefix),
             "retired": _retired_reader(retired),

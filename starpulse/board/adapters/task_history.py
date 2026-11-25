@@ -73,7 +73,10 @@ _META = (
     "aliases",
     "uuid",
     "uuids",
+    "frozen",
 )
+#: The meta keys a dedicated Event records, so a `FieldsEdited` never carries them.
+_EVENTED = ("frozen",)
 #: The record's criteria lists, by the kind the fold keeps them under.
 _KINDS = {"ac": "acceptanceCriteria", "dod": "definitionOfDone"}
 
@@ -150,7 +153,19 @@ def _meta_value(record: Record, key: str) -> Any:
 
 
 def _meta_changes(before: Record, after: Record) -> dict[str, Any]:
-    return {key: after.get(key) or None for key in _META if _meta_value(before, key) != _meta_value(after, key)}
+    return {
+        key: after.get(key) or None
+        for key in _META
+        if key not in _EVENTED and _meta_value(before, key) != _meta_value(after, key)
+    }
+
+
+def _freeze_events(before: Record, after: Record) -> list[Event]:
+    """A `TaskUnfrozen` of the freeze `after` lifts and a `TaskFrozen` of the one it sets."""
+    was, now = dict(before.get("frozen") or {}), dict(after.get("frozen") or {})
+    if was == now:
+        return []
+    return ([("TaskUnfrozen", was)] if was else []) + ([("TaskFrozen", now)] if now else [])
 
 
 def _criteria_events(before: Record, after: Record) -> list[Event]:
@@ -209,6 +224,7 @@ def _events(before: Record, after: Record | None, note: str) -> list[Event]:
         edited["meta"] = meta
     if edited:
         events.append(("FieldsEdited", edited))
+    events += _freeze_events(before, after)
     if before.get("status") != after.get("status"):
         events.append(("Transitioned", {"from": before.get("status"), "to": after.get("status")}))
     events += _criteria_events(before, after)

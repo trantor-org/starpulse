@@ -66,6 +66,7 @@ from starpulse.contracts.api.dto.results import (
     MilestoneArchived,
     MilestoneCreated,
     MilestoneEdited,
+    FreezeRequested,
     Parked,
     Reopened,
     Restored,
@@ -155,6 +156,7 @@ class ApiContract(_Api):
         | Reopened
         | Dispatched
         | Parked
+        | FreezeRequested
         | Created
         | CreatedEach
         | MachineWritten

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse.board.adapters.native_scan import dependencies
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import ARCHIVE_REQUEST, MOVE_REQUEST
+from starpulse.board.model.markdown import ARCHIVE_REQUEST, FREEZE_REQUEST, MOVE_REQUEST, REQUESTED_BY, UNFREEZE_REQUEST
 from starpulse.board.model.seam import (
     AGENT,
     OPERATOR,
@@ -205,6 +205,22 @@ def _completed(task: str, feed: BoardFeed, complete: TaskCompleter) -> tuple[int
     return 200, {"task": task}
 
 
+def _freeze_requested(
+    task: str, request: TaskPutRequest, who: Who, feed: BoardFeed, edit: TaskEditor
+) -> tuple[int, dict[str, Any]]:
+    """Record a request that the task actor freeze `task`, or lift its freeze: the actor alone writes `frozen`."""
+    if held_task(feed, task) is None:
+        return not_held(feed, task)
+    freezing = request.freeze is not None
+    first = f"{FREEZE_REQUEST} {request.freeze}" if freezing else UNFREEZE_REQUEST
+    by = OPERATOR if who.actor == OPERATOR else who.created_by
+    comment = f"{first}\n{REQUESTED_BY} {by}"
+    written = record_written(feed, task, who, lambda: edit(task, {}, comment, actor=who.actor))
+    if not written.ok:
+        return 409, {"error": written.output, "skill": written.skill}
+    return 200, {"task": task, "request": "freeze" if freezing else "unfreeze"}
+
+
 def _restored(task: str, who: Who, feed: BoardFeed, restore: TaskRestorer) -> tuple[int, dict[str, Any]]:
     written = record_written(feed, task, who, lambda: restore(task))
     if not written.ok:
@@ -381,13 +397,16 @@ def put_task(
 
     `reopen` reopens the Done task, into Ready when an `opened` pull request cites it, else In Progress;
     `completed: true` completes it, `archived: false` restores it, `retired: true` retires the finished task, which
-    the board's writer refuses (409, with its reason) while it is open, `interactive: true` takes it over and `park`
-    parks it; a change that names only an `assignee` dispatches that session to the task, its `base` assignee the
-    holder it replaces; any other body is an edit over its `base`.
+    the board's writer refuses (409, with its reason) while it is open, `interactive: true` takes it over, `park`
+    parks it and `freeze` or `unfreeze` records the request the task actor carries out; a change that names only an
+    `assignee` dispatches that session to the task, its `base` assignee the holder it replaces; any other body is an
+    edit over its `base`.
     """
     who = who_of(request)
     if request.park is not None:
         return park_task(task, request.park, request.comment or "", who, feed, board.read, board.edit)
+    if request.freeze is not None or request.unfreeze is not None:
+        return _freeze_requested(task, request, who, feed, board.edit)
     if request.reopen is not None:
         return _reopened(task, request.reopen, who, feed, board.reopen, landed, opened)
     if request.completed is not None:
