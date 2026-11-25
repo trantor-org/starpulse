@@ -135,31 +135,6 @@ def attention_reason(fact: str, blocker: str, options: Sequence[str], ask: str) 
     return f"{fact.rstrip('. ')}. Blocker: {blocker.rstrip('. ')}. Options: {'; '.join(options)}. {ask}"
 
 
-_FENCE = re.compile(r"(?ms)^[ \t]*```.*?(?:^[ \t]*```|\Z)")
-_DECIDE = re.compile(r"(?m)^\*\*Decide:\*\*[ \t]*(\S.*)$")
-_OPTION = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+(\S.*)$")
-_DECIDE_CHARS = 300
-
-
-def decide_ask(reply: str) -> tuple[str, list[str]] | None:
-    """The question and options of the last `**Decide:**` line of `reply`, or None.
-
-    Only a line that opens with the marker counts: one in a code fence, a code span or a quote is a mention."""
-    text = _FENCE.sub("", reply)
-    found = list(_DECIDE.finditer(text))
-    if not found:
-        return None
-    last = found[-1]
-    question = last.group(1).strip()[:_DECIDE_CHARS].rstrip(".:; ")
-    options: list[str] = []
-    for line in text[last.end() :].lstrip("\n").splitlines():
-        option = _OPTION.match(line)
-        if option is None:
-            break
-        options.append(option.group(1).strip()[:_DECIDE_CHARS])
-    return (question if question.endswith("?") else f"{question}?"), options
-
-
 def names_blocker_and_options(reason: str) -> bool:
     """Whether `reason` names its blocker, then the operator's options, and ends in the ask."""
     text = reason.strip()
