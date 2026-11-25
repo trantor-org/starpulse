@@ -21,7 +21,7 @@ from starpulse.event_log.opening import database_url
 from starpulse.event_log.store import EventStore
 from starpulse.event_log.wake import StopEvent
 from starpulse.runs.application.commands.run_streams import RunStreams, record_run_streams
-from starpulse.runs.application.queries.projection import Publisher
+from starpulse.runs.application.queries.projection import PROJECTION, Publisher
 from starpulse.runs.application.queries.push_runs import PUSHED_INSTANCE, PushRuns
 from starpulse.runs.bin.blocks import RunsConfig, runs_built_blocks
 from starpulse.runs.model import opt_in, run_events
@@ -59,8 +59,11 @@ def start(
     _, feed = worker_board(config, base, log, stop)
     store = history_store(config, base, feed.machines)
     publisher = Publisher(log)
+    # An instance the config no longer names keeps its last report in the log until dropped here.
+    for instance in log.drop_state_entries(PROJECTION, {PUSHED_INSTANCE, *(i.name for i in config.runs)}):
+        logger.warning("runs: dropped the kept workflows of %s: the config no longer names it", instance)
     # The learned step graphs persist only in StarPulse's own store.
-    pushed = PushRuns(publisher.runs(PUSHED_INSTANCE, feed.runs(PUSHED_INSTANCE)), store)
+    pushed = PushRuns(publisher.runs(PUSHED_INSTANCE, feed.runs(PUSHED_INSTANCE)), store, config.event_log_retention_days * 86400)
     publisher.on_listing(pushed.prune)
     for instance, adapter in adapters:
         adapter.follow(instance.url, publisher.runs(instance.name, feed.runs(instance.name)), log)
