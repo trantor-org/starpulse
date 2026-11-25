@@ -5,7 +5,8 @@ required checks, every check posted on the head) and returns the events to publi
 base branch and read again on each `pull_request` delivery, so a ruleset is never polled. A head's pull requests and posted
 checks are read once, then kept current by the deliveries, and a delivery whose payload names only unlinked pull requests
 reads nothing. While GitHub's quota is spent no read is made. A head's rollup is published
-only when its state changes or a required check fails again with a report not seen before, and only for a pull request that is not a draft.
+only when its state changes or a required check fails again with a report not seen before, and only for a pull request that is not a draft
+and a commit that is still the head its last `pull_request` delivery named: a late check of a replaced commit would swap the rollup back and forth with the new head's.
 """
 
 import hashlib
@@ -82,6 +83,7 @@ class HeadChecks:
         self._stamps: dict[tuple[str, str], dict[str, str]] = {}
         self._required: dict[tuple[str, str], frozenset[str]] = {}
         self._last: dict[tuple[str, int], tuple[str, str, str]] = {}
+        self._pushed: dict[tuple[str, int], str] = {}
 
     def _required_of(self, repository: str, base: str, *, fresh: bool) -> frozenset[str]:
         if fresh or (repository, base) not in self._required:
@@ -152,6 +154,7 @@ class HeadChecks:
         elif (moved := _moved_head(event, body)) is not None:
             repository, sha, head, key = moved
             heads, fresh = [head], True
+            _put(self._pushed, (repository, head.number), sha)
         else:
             self._forget(event, body)
             return Plan([], lambda: None)
@@ -167,7 +170,7 @@ class HeadChecks:
             if report is not None:
                 data = {"repository": repository, "pr": head.number, "sha": sha, "name": report.name, "state": report.state}
                 events.append(_event("CHECK_REPORTED", task, (repository, head.number, report.name, key), data | {"required": report.name in required}))
-            if head.draft:
+            if head.draft or self._pushed.get((repository, head.number), sha) != sha:  # a late check of a commit a push replaced
                 continue
             state, unfinished = self._rollup(required, self._results_of(repository, sha, report))
             refailed = state == "failing" and report is not None and report.state == "failing" and report.name in required
