@@ -87,14 +87,15 @@ class ReadModel:
         }
 
     def titled(self, ids: Collection[str] | None = None) -> dict[str, dict[str, Any]]:
-        """Every Task's `title`, `labels`, `milestone` and `profile` by id, archived Tasks included, or those of `ids`
-        alone; an unset milestone or profile is None."""
+        """Every Task's `title`, `labels`, `milestone`, `profile` and `members` by id, archived Tasks included, or those
+        of `ids` alone; an unset milestone or profile is None."""
         return {
             item["id"]: {
                 "title": item["title"],
                 "labels": item["labels"],
                 "milestone": item["milestone"] or None,
                 "profile": (item["meta"] or {}).get("profile") or None,
+                "members": (item["meta"] or {}).get("members") or {},
             }
             for item in self._summaries(queries.titled(ids))
         }

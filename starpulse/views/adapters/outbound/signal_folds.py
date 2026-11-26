@@ -107,8 +107,8 @@ PEER_TTL_S = 30.0
 
 
 def _norm_cell(tasks: Mapping[str, Mapping[str, Any]], task: str) -> tuple[str, int] | None:
-    """The cell `task` is normed in: none for a `batch-umbrella`, which is in no norm cell."""
-    return None if "batch-umbrella" in (tasks.get(task, {}).get("labels") or ()) else cells.cell_of(tasks, task)
+    """The cell `task` is pooled in: none for a `batch-umbrella`, which is in no norm cell."""
+    return None if cells.is_umbrella(tasks, task) else cells.cell_of(tasks, task)
 
 
 class _Peers(NamedTuple):
@@ -152,7 +152,7 @@ class SignalFolds:
         self, task: str, since: float
     ) -> tuple[list[Any], dict[tuple[str, str], tuple[str, float]], Mapping[str, Mapping[str, Any]]] | None:
         """The spend folds of `task`'s sessions with a signal at or after `since`, cut as `window` cuts them and in the
-        order `combine_spend` takes them, the phase rows with a step in that window of the tasks in its (kind, size) cell,
+        order `combine_spend` takes them, the phase rows with a step in that window of the tasks in its (kind, size) cell (a batch umbrella's, each member's cell),
         as `spend.task_spend` weighs `task` against them, and the board's labels of those tasks and `task`; None while
         the task_spend family is being refolded. A peer's row is its spend over all its sessions, so a task that began
         before `since` weighs in whole. The cell's rows and labels are kept for `PEER_TTL_S` seconds: only `task`'s own
@@ -164,9 +164,9 @@ class SignalFolds:
             own = db.execute(_OWN, {"task": task, "floor": since}).all()
             held = self._peers_of(db, titled, since)
         mine = titled({task})
-        cell = _norm_cell(mine, task)
         peers = {
             (peer, phase): (profile, wte)
+            for cell in set(cells.norm_cells(mine, task))
             for peer, phase, profile, wte, last_at in held.cells.get(cell, ())
             if last_at >= since
         }
