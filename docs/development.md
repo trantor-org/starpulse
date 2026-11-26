@@ -38,7 +38,7 @@ The same nightly and dispatch runs record which source files each test executes:
 `--cov --cov-context=test` (line coverage of `starpulse` and `ci`, `[tool.coverage.run]`) and uploads its data as
 `coverage-data`. The `coverage-map` job, once the select job passed and whether the run was green or red (a
 red nightly still uploads its data, and a map frozen behind it goes stale), combines it
-and `ci/coverage_map.py build` writes `<sha>.json` and `latest.json` (`{sha, collected, tests: {node id: [files]}}`) to
+and `ci/coverage_map.py build` writes `<sha>.json` and `latest.json` (`{sha, collected, tests: {node id: [files]}, functions: {file: {function: [positions in tests]}}}`) to
 `$STARPULSE_COVERAGE_MAP_DIR`, default `~/.cache/starpulse-ci/coverage-map` of the CI runner user, which the
 `ci-sp-python` select step also runs as. A parametrized case with no context of its own takes its function's files; a
 collected test with no files is left out. `uv run python ci/coverage_map.py latest` prints the newest map's sha and how
@@ -65,7 +65,12 @@ The required checks run only the tests a pull request or a merge-queue candidate
 `ci-sp-*` checks of the sp-ci pipeline (`ci/run.sh` is its entry point; `ci/reach.py` skips a job the change cannot reach). The public repository runs no GitHub Actions workflow: the merge queue tests every commit, and the full suite runs nightly as the `starpulse-nightly` pipeline (`sp-nightly`; rerun it for a manual run). A nightly fresh-serve run (the `fresh-serve` job of that pipeline, on a worker so it competes with no other CI) builds main's wheel, installs it into an empty virtualenv, starts `starpulse serve` from an empty directory with no config and a bare environment, and runs `ci/fresh_serve.py`, which fails unless `/` answers HTTP 200 and every worker the supervisor names (read from the pid `serve` logs for its context) is alive below `serve` on two checks five seconds apart with the same processes. It proves the out-of-the-box install is the production install. The canary (`ci/canary_smoke.py`, image `ci/canary/Dockerfile`) proves a candidate against a copy of live state: it migrates a `VACUUM INTO` copy of the store to the wheel's head, serves with the live config and machines (relative reads resolve against the live config directory; writes such as `state_dir` go to scratch, so the run switch is never read; board commands are dropped), checks `starpulse reload` exits 0, holds 60 seconds with no worker restart, then opens the board and a task modal in Chromium. The image runs GIL CPython 3.14 with the locked stock wheels, as live does, and runs with `--network none` and no secrets (each token variable the config names gets a placeholder). A store migrated past the wheel's head fails at `migrate:` before anything serves. The image builds from the checkout root after `pnpm --filter @starpulse/web build`; the header of `ci/canary/Dockerfile` has the build and run commands. This repository is public, so its `ci/public_names.py` check fails
 when a tracked file other than a workflow, the runner-label list or a test names the operator's private hosts; docs, comments and fixtures use neutral names.
 A pull request's CI runs only the test files its changes can reach, chosen by `ci/select_tests.py` from the per-test
-coverage map the nightly full suite records (`ci/coverage_map.py`): a changed file selects the tests that executed it. A
+coverage map the nightly full suite records (`ci/coverage_map.py`): a changed file selects the tests that executed it. When
+the edit only changes function or method bodies (read from the pull request's base text, compared as syntax trees), it
+selects only the tests that ran those functions, as node ids, a file when half or more of its tests ran one; a
+constant, signature, decorator, class attribute, added or removed def, a function the map never saw, a map without
+`functions` or a path with no base text selects every test that ran the file. A test whose session-scoped fixture or
+import-time call alone ran a function can be missed; the nightly full run is what catches it. A
 file the map lacks, such as a new module, falls back to the import graph, and a changed test file selects itself. A
 machine, skill or `pyproject.toml` lint-table edit selects the tests of the code that reads it; only a dependency,
 `conftest.py` or fixture change, or any other `pyproject.toml` edit, runs the whole suite.

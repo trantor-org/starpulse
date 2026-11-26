@@ -285,7 +285,8 @@ def appended(
         base = before if before is not None else _replayed(row)
         if write.moves and before is not None and task.casefold() == write.task.casefold():
             base = {**before, "status": _replayed(row)["status"]}  # an explicit move is judged against the History, not a file a hand edit already moved
-        found = ([("Rehydrated", {})] if rehydrates and row["archived"] else []) + _events(base, after, note)
+        held = {"members": row["meta"].get("members")}  # in the History alone, so no file to diff: a write that names none keeps it
+        found = ([("Rehydrated", {})] if rehydrates and row["archived"] else []) + _events({**base, **held}, {**held, **after}, note)
         if write.reason and revises_plan(row["state"], row["plan"], after.get("plan") or "", write.unstarted or ()):
             found.append(("PlanRevised", {"ordinal": revisions + 1, "reason": write.reason}))
         return found
