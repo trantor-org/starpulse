@@ -74,7 +74,7 @@ JOB_BOUNDS_S = (1.0, 5.0, 15.0, 60.0, 300.0, 900.0, 3600.0, 14400.0)
 #: The `type` label of a done task whose type the board does not declare.
 OTHER_TYPE = "other"
 NO_EVENT_METRIC = "starpulse_harness_active_no_event_seconds"
-NO_EVENT_HELP = "Seconds since the last lane move, work event or tool call of the quietest working task whose harness reads active or whose settled holder a running shell keeps busy; 0 when none."
+NO_EVENT_HELP = "Seconds since the last lane move, work event or tool call of a working task, per task, whose harness reads active or whose settled holder a running shell keeps busy; no series when none."
 
 #: The setting the counts and states are saved under, with the last entry of each stream they cover.
 CHECKPOINT = "conformance:checkpoint"
@@ -366,7 +366,7 @@ class Conformance:
             "due": sorted(last + STALL_S for task, last in live.items() if task not in self._stalled),
             "idle": idle,
             "idle_due": {task: last for task, last in quiet.items() if task not in idle},
-            "active_since": min((last for task, last in live.items() if task not in idle), default=None),
+            "active": {task: last for task, last in live.items() if task not in idle},
         }
 
     def _harness_active(self, task: str) -> bool:
@@ -585,13 +585,15 @@ def stalled_exposition(state: Mapping[str, Any], now: float) -> str:
     if not state:
         return ""
     stalled = state["stalled"] + sum(due <= now for due in state["due"])
-    since = state.get("active_since")  # a state kept before this series existed has none until the monitor rewrites it
-    quiet = (
-        0.0 if since is None else max(now - since, 0.0)
-    )  # an entry stamped after the scrape clock reads 0, never negative
+    # a state kept before this series existed has none until the monitor rewrites it; an entry stamped after the scrape
+    # clock reads 0, never negative
+    quiet = "".join(
+        f'{NO_EVENT_METRIC}{{task="{_escape(task)}"}} {max(now - last, 0.0)}\n'
+        for task, last in state.get("active", {}).items()
+    )
     return (
         f"# HELP {STALLED_METRIC} {STALLED_HELP}\n# TYPE {STALLED_METRIC} gauge\n{STALLED_METRIC} {stalled}\n"
-        f"# HELP {NO_EVENT_METRIC} {NO_EVENT_HELP}\n# TYPE {NO_EVENT_METRIC} gauge\n{NO_EVENT_METRIC} {quiet}\n"
+        f"# HELP {NO_EVENT_METRIC} {NO_EVENT_HELP}\n# TYPE {NO_EVENT_METRIC} gauge\n{quiet}"
         f"# HELP {IDLE_METRIC} {IDLE_HELP}\n# TYPE {IDLE_METRIC} gauge\n"
         + "".join(
             f'{IDLE_METRIC}{{task="{_escape(task)}"}} {max(now - last, 0.0)}\n'
