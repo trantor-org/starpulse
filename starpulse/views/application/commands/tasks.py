@@ -49,6 +49,7 @@ from starpulse.views.application.commands.lifecycle import park_task
 from starpulse.views.application.commands.moves import (
     Dispatcher,
     Entrypoint,
+    Live,
     dispatch_task,
     move_refusal,
     remote_control_refusal,
@@ -231,14 +232,19 @@ def _restored(task: str, who: Who, feed: BoardFeed, restore: TaskRestorer) -> tu
 
 
 def _dispatched(
-    task: str, request: TaskPutRequest, feed: BoardFeed, dispatch: Dispatcher | None, entrypoint: Entrypoint | None
+    task: str,
+    request: TaskPutRequest,
+    feed: BoardFeed,
+    dispatch: Dispatcher | None,
+    entrypoint: Entrypoint | None,
+    live: Live | None,
 ) -> tuple[int, dict[str, Any]]:
     """The dispatch an `assignee` change names: it stands alone, and names the session to pin."""
     session = request.changes["assignee"]
     if set(request.changes) != {"assignee"} or not isinstance(session, str) or not session.strip():
         return 400, {"error": "a dispatch changes only `assignee`, to the session to pin"}
     replaces = request.base.get("assignee")
-    return dispatch_task(task, session, replaces if isinstance(replaces, str) else "", feed, dispatch, entrypoint)
+    return dispatch_task(task, session, replaces if isinstance(replaces, str) else "", feed, dispatch, entrypoint, live)
 
 
 def _reopened(
@@ -399,6 +405,7 @@ def put_task(
     opened: Callable[[str], bool] = lambda _: False,
     dispatch: Dispatcher | None = None,
     entrypoint: Entrypoint | None = None,
+    live: Live | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Write `task` as `PUT /api/tasks/{id}` says: the HTTP status and JSON body of the verb the body names.
 
@@ -425,7 +432,7 @@ def put_task(
     if request.interactive is not None:
         return _taken_over(task, take_over, feed)
     if "assignee" in request.changes:
-        return _dispatched(task, request, feed, dispatch, entrypoint)
+        return _dispatched(task, request, feed, dispatch, entrypoint, live)
     edit = EditRequest(
         task=task,
         base=request.base,

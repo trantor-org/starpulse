@@ -31,7 +31,7 @@ from starpulse.contracts.api.dto.requests import (
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     pass
-lazy from starpulse.event_log.claude_sessions import same_holder
+lazy from starpulse.sessions.identity import same_session
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +204,7 @@ def holder_refusal(feed: BoardFeed, agent: dict, task: str, who: Who) -> tuple[i
     if who.actor != AGENT or not who.session or holder in ("", RELEASED_ASSIGNEE) or agent["state"] != feed.roles.working:
         return None
 
-    if same_holder(holder, who.session):
+    if same_session(holder, who.session):
         return None
     return 409, {"error": f"{task} is held by {holder}, not by this session ({who.session}): only its holder writes it"}
 

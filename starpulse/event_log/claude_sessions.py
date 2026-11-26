@@ -32,7 +32,6 @@ __all__ = [
     "live_session",
     "live_socket",
     "local_id",
-    "same_holder",
     "session_activity",
     "sessions_dir",
     "terminal_halt",
@@ -51,9 +50,6 @@ TURN_END = "turn_duration"
 INTERRUPT = "[Request interrupted"
 SESSION_ID = re.compile(r"[\w-]+")
 BRIDGE_ID = re.compile(r"(?:https?://\S+/)?(?:session|cse)_(\w+)/?")
-BRIDGE_FIELD = re.compile(r'"bridgeSessionId"\s*:\s*"([^"]+)"')
-NAME_FIELD = re.compile(r'"agentName"\s*:\s*"([^"]+)"')
-HEAD_BYTES = 16 * 1024
 TAIL_BYTES = 64 * 1024
 MESSAGE_CHARS = 2000
 """How much of a holder's latest report `session_activity` carries before an ellipsis."""
@@ -61,7 +57,6 @@ MISS_TTL_S = 30.0
 """How long a session with no transcript stays unlooked-for: each lookup globs every transcript-project directory."""
 SNAPSHOT_TTL_S = 1.0
 """How long the session records read for one lookup serve the next: one wake's holder lookups share one read."""
-_BRIDGES: dict[tuple[Path, str], tuple[float, frozenset[str]]] = {}
 _PATHS: dict[tuple[Path, str], Path] = {}
 _MISSES: dict[tuple[Path, str], float] = {}
 _clock = time.monotonic
@@ -86,7 +81,7 @@ def _ended(entry: dict[str, Any]) -> bool:
     return entry.get("type") == "user" and _text(entry).startswith(INTERRUPT)
 
 
-def _tail(path: Path, size: int) -> list[str]:
+def tail(path: Path, size: int) -> list[str]:
     with path.open("rb") as transcript:
         start = max(0, path.stat().st_size - size)
         transcript.seek(start)
@@ -117,7 +112,7 @@ def last_turn(root: Path, session: str, *, size: int = TAIL_BYTES, ends: bool = 
     path = transcript_path(root, session)
     if path is None:
         return None
-    for line in reversed(_tail(path, size)):
+    for line in reversed(tail(path, size)):
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:
@@ -171,7 +166,7 @@ def last_report(root: Path, session: str, *, size: int = TAIL_BYTES) -> dict[str
     """`{"last_message", "last_message_at"}` of the newest assistant entry of `session`'s transcript that holds text,
     the text cut to `MESSAGE_CHARS`; empty when none of its last `size` bytes holds one."""
     path = transcript_path(root, session)
-    for line in reversed(_tail(path, size) if path is not None else []):
+    for line in reversed(tail(path, size) if path is not None else []):
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:
@@ -276,7 +271,7 @@ def _running_records(sessions: Path, match: Callable[[dict[str, Any]], bool]) ->
     return (record for record in _records(sessions) if match(record) and _running(record))
 
 
-def _record_of(sessions: Path, session: str) -> dict[str, Any] | None:
+def record_of(sessions: Path, session: str) -> dict[str, Any] | None:
     def names(record: dict[str, Any]) -> bool:
         bridge = record.get("bridgeSessionId")
         wanted, held = BRIDGE_ID.fullmatch(session), BRIDGE_ID.fullmatch(bridge or "")
@@ -289,20 +284,20 @@ def _record_of(sessions: Path, session: str) -> dict[str, Any] | None:
 
 def live_session(sessions: Path, session: str) -> bool:
     """Whether the process registered under `sessions` for `session` (its session id, bridge id or Remote Control URL) is still running."""
-    return _record_of(sessions, session) is not None
+    return record_of(sessions, session) is not None
 
 
 def entrypoint_of(sessions: Path) -> Callable[[str], str]:
     """The `entrypoint` of the running process of a session (any id `live_session` takes): `cli` for a herdr pane,
     `sdk-cli` for a Remote Control child, empty when none runs."""
-    return lambda session: str((_record_of(sessions, session) or {}).get("entrypoint") or "")
+    return lambda session: str((record_of(sessions, session) or {}).get("entrypoint") or "")
 
 
 def live_process(sessions: Path) -> Callable[[str], tuple[str, int] | None]:
     """The local session id and pid of the running process of a session (any id `live_session` takes), None when none runs."""
 
     def find(session: str) -> tuple[str, int] | None:
-        record = _record_of(sessions, session)
+        record = record_of(sessions, session)
         return (str(record["sessionId"]), int(record["pid"])) if record and record.get("sessionId") else None
 
     return find
@@ -349,40 +344,3 @@ def holder_activity(transcripts: Path, sessions: Path, assignee: str, *, now: fl
 def session_activity_of(transcripts: Path, sessions: Path, assignee: str, *, now: float) -> dict[str, Any]:
     """`holder_activity`, or `{"state": "unknown"}` when the holder is no running session with a transcript."""
     return holder_activity(transcripts, sessions, assignee, now=now) or {"state": "unknown"}
-
-
-def _head(path: Path) -> str:
-    with path.open("rb") as transcript:
-        return transcript.read(HEAD_BYTES).decode(errors="replace")
-
-
-def _aliases_of(transcripts: Path, session: str) -> frozenset[str]:
-    key = (transcripts, session)
-    kept = _BRIDGES.get(key)
-    if kept is not None and _clock() < kept[0]:
-        return kept[1]
-    paths = transcripts.glob(f"*/{session}.jsonl") if SESSION_ID.fullmatch(session) else ()
-    texts = [_head(path) + "\n".join(_tail(path, TAIL_BYTES)) for path in paths]
-    fields = BRIDGE_FIELD.findall("\n".join(texts))
-    bridges = (match[1] for match in map(BRIDGE_ID.fullmatch, fields) if match)
-    names = (name.lower() for name in NAME_FIELD.findall("\n".join(texts)))
-    aliases = frozenset((*bridges, *names))
-    _BRIDGES[key] = (_clock() + MISS_TTL_S, aliases)
-    return aliases
-
-
-def holder_keys(assignee: str, transcripts: Path | None = None) -> frozenset[str]:
-    """Every identity a session's claim may name: for its local Claude UUID, the UUID, each bridge id
-    (`session_x`, `cse_x`) and the lowercased name (`task-11650`) its transcripts give it; for a bridge id or Remote
-    Control URL, that bridge id; for a session name, its lowercase."""
-    if bridge := BRIDGE_ID.fullmatch(assignee):
-        return frozenset({bridge[1]})
-    return _aliases_of(transcripts or Path(DEFAULT_TRANSCRIPTS).expanduser(), assignee) | {assignee, assignee.lower()}
-
-
-def same_holder(held: str | None, wanted: str, transcripts: Path | None = None) -> bool:
-    """Whether the assignee `held` and the session `wanted` name one session, in any of its forms."""
-    held = held or ""
-    if not held:
-        return False
-    return held == wanted or not holder_keys(held, transcripts).isdisjoint(holder_keys(wanted, transcripts))

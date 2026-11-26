@@ -100,7 +100,8 @@ class PageServer:
     Given `listening`, it serves on that socket with backlog `INHERITED_BACKLOG`, and binds nothing; given
     `tls` (a certificate and its key), it serves TLS on it and HTTP/3 on a UDP socket bound to the same address.
     `stopping`, when set, is called once as the server stops
-    and before its streams end, so a page learns the server is restarting before it loses the stream.
+    and before its streams end, so a page learns the server is restarting before it loses the stream. `serving`, when
+    set, is called once from the loop as the server accepts connections, so what it announces is true.
 
     A stopping server ends every open stream, finishes the requests taken (up to `drain_s` seconds) and closes.
     """
@@ -113,12 +114,13 @@ class PageServer:
         tls: tuple[Path, Path] | None = None,
         stopping: Callable[[], None] | None = None,
         drain_s: float = DRAIN_S,
+        serving: Callable[[], None] | None = None,
     ) -> None:
         for key, file in zip(("tls_cert", "tls_key"), tls or (), strict=False):
             if not file.is_file():
                 raise FileNotFoundError(f"{key} {file} does not exist")
         _tolerate_tls_close_race()
-        self.app, self.stopping, self._drain_s = app, stopping, drain_s
+        self.app, self.stopping, self.serving, self._drain_s = app, stopping, serving, drain_s
         self.socket = (
             listening if listening is not None else socket.create_server(address or ("127.0.0.1", 0), backlog=BACKLOG)
         )
@@ -237,7 +239,12 @@ class PageServer:
 
     async def _wait_and_wind_down(self) -> None:
         assert self._wake is not None
+        if self.serving is not None:  # Hypercorn starts this trigger only once every server accepts
+            self.serving()
         await self._wake.wait()
+        # A socket shared with the next server keeps queueing connections: leave them there, never accept one only to
+        # close it unread as the stop completes.
+        asyncio.get_running_loop().remove_reader(self.socket.fileno())
         if self.stopping is not None:
             await asyncio.to_thread(self.stopping)
         await self.app.end_streams()
