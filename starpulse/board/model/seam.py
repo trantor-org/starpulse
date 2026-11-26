@@ -322,3 +322,6 @@ class Board:
     frozen: Callable[[str], None]
     """Tells the board that the task actor froze or unfroze a task, given its id, so it can post the freeze on the pull
     requests the task references; a raise is logged and the write stands."""
+    halted: Callable[[str, str], None]
+    """Tells the board that the task actor wrote or cleared a task's `frozen` fact, given its id and `freeze` or `thaw`, so
+    the holder session is halted in place or resumed; a raise is logged and the fact stands."""

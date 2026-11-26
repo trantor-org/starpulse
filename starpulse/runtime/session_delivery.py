@@ -174,6 +174,11 @@ def _parked(event: Event, lane_of: Callable[[str], str | None] | None, working: 
     return lane_of(parts[-2]) not in (working(), "unknown")
 
 
+def _held(event: Event, frozen: Callable[[str], bool] | None) -> bool:
+    parts = event.subject.split(".")
+    return bool(frozen and parts[-1] == "feedback" and len(parts) >= 5 and frozen(parts[-2]))
+
+
 def _seen_key(event: Event) -> tuple[str, str] | None:
     try:
         return event.subject, str(json.loads(event.body)["event_id"])
@@ -208,6 +213,7 @@ def route(
     working: Callable[[], str] = lambda: "in_progress",
     closed: Callable[[str], bool] | None = None,
     forgotten: set[str] | None = None,
+    frozen: Callable[[str], bool] | None = None,
 ) -> Route:
     """A session with no registration has no route, so its events stay on its consumer. A consumer named for a
     claude.ai URL holder is the running session whose record in `sessions` carries that bridge id, which registered
@@ -217,7 +223,10 @@ def route(
     `_SEEN_MAX` of each consumer being remembered. `lane_of` is a task's lane now: a `holder_resume` or
     `review_refused` for a task not In Progress (a restart redelivers a resume whose ack was lost after the task
     parked; a refusal queued behind a busy holder is moot once the repaired task moved to review) is acked with no
-    line; `forgotten` is the keys `forget_ended` removed, so a routed registration gone for any other cause is logged once. `working` is the lane the board's machine works a task in, `in_progress` unless it names another."""
+    line; `forgotten` is the keys `forget_ended` removed, so a routed registration gone for any other cause is logged once.
+    `working` is the lane the board's machine works a task in, `in_progress` unless it names another. `frozen` is
+    whether a task is frozen: its session is halted, so its feedback waits unacked (the server redelivers it) until the
+    unfreeze resumes the session."""
     seen: dict[str, dict[tuple[str, str], None]] = {}
     routed: dict[str, str] = {}
     gone = forgotten if forgotten is not None else set()
@@ -252,13 +261,24 @@ def route(
                 and not _parked(event, lane_of, working)
                 and not _quieted(event, quiet or {}, own, sessions)
             ]
+            held = [event for event in sent if _held(event, frozen)]
+            sent = [event for event in sent if event not in held]
             lines = [line_for(event) for event in sent]
-            delivered = notifier.notify(registration, lines) if lines else True
-            if delivered:
+            notified = notifier.notify(registration, lines) if lines else True
+            if notified:
                 received.update(dict.fromkeys(key for event in sent if (key := _seen_key(event))))
                 for key in list(received)[:-_SEEN_MAX]:
                     del received[key]
-            outcome = "quieted, nothing sent" if not lines else "delivered" if delivered else "not delivered"
+            delivered = notified and not held
+            outcome = (
+                "held for the freeze"
+                if held
+                else "quieted, nothing sent"
+                if not lines
+                else "delivered"
+                if delivered
+                else "not delivered"
+            )
             logger.info("session %s: %s %s", name, ", ".join(event.subject for event in events), outcome)
             return delivered
 
