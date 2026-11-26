@@ -59,7 +59,7 @@ def done_response(feed: BoardFeed, read: TaskReader, query: dict[str, list[str]]
 
 def _done_card(stub: dict, record: Mapping[str, Any]) -> dict:
     """A kanban card for a cold done task: its stub's id and entered time with the card fields of its board record."""
-    card = {key: record[key] for key in ("labels", "milestone", "type") if key in record}
+    card = {key: record[key] for key in ("labels", "milestone", "type", "follows") if key in record}
     named = {"id": stub["id"], "title": record.get("title") or stub["id"], "state": "done"}
     return named | {"model": record.get("profile") or "", "entered": stub["entered"]} | card
 
@@ -104,7 +104,6 @@ def search_response(
     query: dict[str, list[str]],
     *,
     wait: bool = False,
-    spans: dict[str, float] | None = None,
 ) -> tuple[bytes, int]:
     """The body and status for `/api/search`: the tasks holding every word of `?q=`, best first, at most `?limit=`;
     each repeated `?label=` keeps only the tasks carrying it, and `?finished_within_days=` drops a task that finished
@@ -113,8 +112,7 @@ def search_response(
     vector for before it answers, where `/api/search` answers by words at once and embeds in the background.
 
     A server with no index is 404; a blank `q`, a `limit` that is not an integer from 1 to 100, a
-    `finished_within_days` that is not a positive integer or a `before` that is no task key is 400. `spans`, when
-    given, receives the seconds the query's embedding took (`embed_s`) and the rest of the search (`sql_s`)."""
+    `finished_within_days` that is not a positive integer or a `before` that is no task key is 400."""
     if search is None:
         return _error("this server keeps no search index"), 404
     words = query.get("q", [""])[0].strip()
@@ -139,12 +137,7 @@ def search_response(
             "and a task key ?before="
         ), 400
     since = None if days is None else time.time() - days * 86400
-    started = time.monotonic()
-    spans = {} if spans is None else spans
-    hits = search.search(
-        words, limit, labels=query.get("label", []), finished_since=since, before=before, wait=wait, spans=spans
-    )
-    spans["sql_s"] = time.monotonic() - started - spans.get("embed_s", 0.0)
+    hits = search.search(words, limit, labels=query.get("label", []), finished_since=since, before=before, wait=wait)
     return encode("search", {"query": words, "hits": hits}), 200
 
 

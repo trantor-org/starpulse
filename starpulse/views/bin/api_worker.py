@@ -59,6 +59,7 @@ from starpulse.sessions import identity
 from starpulse.sessions.adapters.outbound.session_start import starter
 from starpulse.sessions.adapters.outbound.wake_metrics import metrics_of as wake_metrics_of
 from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
+from starpulse.views.adapters.inbound import tracing
 from starpulse.views.adapters.inbound.asgi_app import page_app
 from starpulse.views.adapters.inbound.page_server import DRAIN_S, PageServer
 from starpulse.views.adapters.inbound.snapshots import Snapshots
@@ -128,9 +129,7 @@ def serve_page(
     host: Host,
 ) -> None:
     """Build the Page API and serve it on `listening` until stopped: in the `starpulse worker api` child."""
-
-
-
+    tracing.configure(os.environ)
     producer_tokens, opted_in = ready
     base = args.config.parent if args.config else Path.cwd()
     board_dir = base / str(config.board.get("path", DEFAULT_PATH))
@@ -216,7 +215,6 @@ def serve_page(
         if config.webhook_producer and cloudevents
         else None,
         lanes=lambda: lane_surfaces(log.engine, config.board, base),
-        slow_read_s=config.slow_read_seconds,
         scrape_cache_s=SCRAPE_CACHE_S,
         actor_metrics=actor_metrics,
         # the lane followers run in `starpulse worker contexts` and `conformance`; this process relays the metrics they keep

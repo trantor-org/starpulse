@@ -21,7 +21,6 @@ import json
 import logging
 import os
 import threading
-import time
 import urllib.request
 from collections import OrderedDict
 from collections.abc import Sequence
@@ -29,6 +28,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import numpy as np
+from opentelemetry import trace
 from sqlalchemy import Connection, Engine, bindparam, text
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
@@ -423,7 +423,6 @@ class SearchIndex:
         finished_since: float | None = None,
         before: tuple[str, int] | None = None,
         wait: bool = False,
-        spans: dict[str, float] | None = None,
     ) -> list[dict]:
         """The tasks holding every word of `query`, best first, as `{task, title, lane, score, snippet}`; `score` is
         higher for a better match and `snippet` is the text around it. With an embeddings endpoint the order blends
@@ -436,16 +435,15 @@ class SearchIndex:
 
         A hit carries every one of `labels`, and with `finished_since` (epoch seconds) a task that finished before it
         is no hit; an open task always may be. With `before` (a task key's prefix and number) a hit is a task of its prefix with a lower
-        number, created before it; every filter applies before `limit` cuts. `spans`, when given, receives the seconds
-        spent getting the query's vector as `embed_s`."""
+        number, created before it; every filter applies before `limit` cuts.
+
+        Under a request's trace the vector's lookup or embedding is an `embed` span."""
         match = _match(query)
         if not match:
             return []
         limit = max(1, limit)
-        embedding = time.monotonic()
-        vector = self._query_vector(query, wait)
-        if spans is not None:
-            spans["embed_s"] = time.monotonic() - embedding
+        with trace.get_tracer("starpulse").start_as_current_span("embed"):
+            vector = self._query_vector(query, wait)
         filtered, narrowing = _filtered(labels, finished_since, before, row="row")
         task = ", task" if before else ""
         if vector is not None:

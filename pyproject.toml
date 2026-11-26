@@ -23,6 +23,8 @@ dependencies = [
     "pyjwt[crypto]>=2.8",
     "ariadne>=1.1.1",
     "graphql-core>=3.3.2",
+    "opentelemetry-sdk>=1.45.2",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.2",
 ]
 
 [project.scripts]

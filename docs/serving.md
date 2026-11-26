@@ -394,7 +394,7 @@ GET /api/machines/{name}
                    unknown name is 404
 GET /api/done[?before=T][&limit=N][&milestone=M]
                    {tasks, more}: the next `limit` done tasks (default 20, at most 100) past their hot day,
-                   newest done first, each {id, title, state, model, labels, milestone, type, entered} read from the
+                   newest done first, each {id, title, state, model, labels, milestone, type, follows, entered} read from the
                    board on request. `before` is the `entered` of the last one held (epoch seconds; none: the newest). `milestone`
                    keeps the tasks of that milestone, filtered in the read model, so `board --milestone` pages only that milestone.
                    A board that cannot read a task is 404, a bad `before` or `limit` 400
@@ -568,7 +568,6 @@ tracker_url = "https://tracker.example.com"
 database_url = "sqlite:////var/lib/starpulse/history.sqlite"
 event_log_retention_days = 7   # the default
 event_log_archive_dir = "starpulse-archive"   # the default
-slow_read_seconds = 1   # the default
 # pull_requests = true
 # take_over_command = ["/usr/local/bin/take-over"]
 # webhook_producer = "grafana-alerts"
@@ -778,7 +777,6 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `database_url` (text): The SQLAlchemy URL of the history store; unset, `starpulse-history.sqlite` beside the config. The credentials never live here; they come from the driver's environment, such as `PGPASSWORD`.
 - `event_log_retention_days` (whole number, 1 or more, default `7`): How long `serve` keeps the event log's rows: the sweeper prunes older ones at start and each pass, so the table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this resumes at the oldest kept row. The `machine:events` stream is exempt: the prune never deletes it, because a read-model rebuild refolds every machine's tasks from it. On its first pass the sweeper also puts the archived rows of that stream back at their archived `id`, once. A whole number of days.
 - `event_log_archive_dir` (text, default `"starpulse-archive"`): Where the sweeper writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to this file unless absolute.
-- `slow_read_seconds` (number, above 0, default `1.0`): The seconds a `GET /metrics`, `GET /api/task/<id>`, `GET /api/search` or `GET /api/search/similar` read may take, from accept to the last byte written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the reads of the same route running when it began, and `busy` and `streams`, the request workers in use (the read itself included) and the streams open when it was accepted; a search adds `embed_s` and `sql_s`, the seconds spent getting the query's vector and on the rest of the search. No other route is timed.
 - `worker_memory` (table of `[worker_memory.<context>]` table): The memory limits (proportional size on Linux, resident size on macOS) `serve` holds its two worker children to, in megabytes (see Worker processes), set as `[worker_memory.api]` and `[worker_memory.contexts]` with either key left out. Past `soft_mb` it replaces the child, past `hard_mb` it kills and restarts it. Defaults, soft/hard: `api` 4096/8192, `contexts` 1536/3072, `pulls` 1024/2048.
 - `mode` (`"ic"`, default `"ic"`): `ic`, the one value: one person on one machine.
 - `host` (text, default `"127.0.0.1"`): The address `serve` and `worker api` listen on; the default answers this machine only, and `0.0.0.0` answers the network. The `--host` flag overrides it.
@@ -888,6 +886,23 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `hard_mb` (whole number, 1 or more): Past this the child is killed and restarted. Above `soft_mb`.
 
 <!-- config-reference:end -->
+
+## Tracing
+
+The Page API exports a span for each request to a read or write route, but not for a stream, which stays open too long
+to be one span. Nothing is exported until the standard OpenTelemetry environment names an endpoint:
+`OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) turns it on over OTLP/HTTP, and
+`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` and the other `OTEL_*` variables apply as the SDK reads them. The config
+file has no tracing setting.
+
+A span is named `<method> <route>` (`GET /api/task/{id}`) and runs from the request's arrival to the last byte sent.
+Its attributes are `http.request.method`, `http.route`, `http.response.status_code`, `starpulse.workers_busy` and
+`starpulse.streams_open` (the request workers in use, the request itself included, and the streams open when it
+arrived), and `starpulse.caught_up_s` when the request waited for the workers' writes.
+
+Its children are `queue` (the wait for a handler thread), `compute` (the answer built) and `write` (the answer sent),
+an `embed` for a search's vector, and a `sql` for each statement the request ran, with the statement's first 500
+characters as `db.statement`. A slow read is a TraceQL query, such as `{ span.http.route = "/api/search" && duration > 1s }`.
 
 ## Scheduler
 
@@ -1447,7 +1462,7 @@ publishes nothing, so a page keeps a card until it reloads. The page's snapshot 
   `/api/task/<id>` and the routes above, and a verb that needs a task's description or criteria reads `/api/task/<id>`.
 
 `GET /api/done[?before=<entered>][&limit=20][&milestone=<id>]` returns `{tasks, more}`, the next page of cold done tasks, newest done
-first, each `{id, title, state, model, labels, milestone, type, entered}`, its card fields from the read model when the feed has one (no board file is opened), else read from the board on request. `before` is
+first, each `{id, title, state, model, labels, milestone, type, follows, entered}`, its card fields from the read model when the feed has one (no board file is opened), else read from the board on request. `before` is
 the `entered` of the last task held; `limit` is 1-100; `milestone` keeps that milestone's tasks. A board that cannot read a task answers 404. A cold task has no
 `moves`, so moving it is a 409; `task show` and the held stream read it whole through its record.
 

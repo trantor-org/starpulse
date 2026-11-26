@@ -213,8 +213,6 @@ class Config:
     """The port they listen on when no `--port` is given."""
     hours: float = _DEFAULTS.hours
     """How far back a task's latest move on a machine counts when no `--hours` is given."""
-    slow_read_seconds: float = _DEFAULTS.slow_read_seconds
-    """`serve` logs a `slow_read` line for each `GET /metrics`, `GET /api/task/<id>`, `GET /api/search` or `GET /api/search/similar` that took this many seconds or more, from accept to the last byte written, with the seconds it waited for a handler thread, computed its answer and wrote it; a search adds `embed_s` and `sql_s`."""
     analytics: Analytics = field(default_factory=Analytics)
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots or stops."""
     release: Release | None = None
@@ -512,7 +510,6 @@ def load(path: Path | None) -> Config:
         webhook_token_env=file.webhook_token_env,
         pull_requests=file.pull_requests,
         worker_memory=_worker_memory(file),
-        slow_read_seconds=float(file.slow_read_seconds),
         tls=_tls(file, path),
         host=file.host,
         port=file.port,

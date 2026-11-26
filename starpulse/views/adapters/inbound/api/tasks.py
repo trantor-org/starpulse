@@ -1,6 +1,6 @@
 """Tasks: a task's record and every write that changes one, and the retired tasks.
 
-- `GET /api/task/{id}`: a task's record, with the pull requests it cites; a read that takes long is logged.
+- `GET /api/task/{id}`: a task's record, with the pull requests it cites.
 - `GET /api/task-records?ids=A,B`: the records of the tasks named, in one read; a task the board cannot read is left out.
 - `GET /api/retired`: one page of the retired tasks, newest first, at most `limit` after the `before` cursor, with
   `next` for the page that follows; or those of a `task` or `milestone`, or as `{task, dependencies}` for
@@ -16,7 +16,6 @@
 import asyncio
 from collections.abc import AsyncIterator, Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any
 
 from starlette.requests import Request
@@ -25,8 +24,7 @@ from starlette.responses import Response, StreamingResponse
 from starpulse.board.adapters.holder_idle import started as started_by
 from starpulse.contracts.api.dto.milestones import RetiredTask
 from starpulse.views.adapters.inbound.api.answering import answer, client, on_worker, query, reading, seams
-from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
-from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole, whole_body
 from starpulse.board.adapters.native_scan import native_keys
 from starpulse.board.adapters.task_links import TaskLinks
@@ -133,11 +131,6 @@ def routes(api: Api) -> list[ApiRoute]:
     def opened(task: str) -> bool:
         return any(pull.get("state") == "OPEN" for pull in cited(task))
 
-    slow = SlowReads("/api/task", services.slow_read_s)
-
-    def timed(request: Request, arrival: Arrival) -> AbstractContextManager[Any]:
-        return slow.watch(request.path_params["id"], arrival)
-
     # Every write route, by path: the handler over the seams it needs and the kind of body it answers
     # (`contracts.api.registry.BODIES`). Each handler parses its body through the request model it is declared with.
     def started(task: str) -> bool:
@@ -152,7 +145,7 @@ def routes(api: Api) -> list[ApiRoute]:
     links, tasks, store = TaskLinks(api.history.engine), ReadModel(api.history.engine), EventStore(api.history.engine)
     forges = {"github": GitHubAdapter(keys=board.keys or native_keys())}
     return [
-        ReadRoute("/task/{id:path}", task, timed),
+        ReadRoute("/task/{id:path}", task),
         ReadRoute("/task-records", task_records, params=frozenset({"ids"})),
         ReadRoute("/retired", retired, params=frozenset({"before", "fields", "limit", "milestone", "task"})),
         *(WriteRoute(path, ("POST",), guarded(kind, whole_body(handler))) for path, (handler, kind) in writes.items()),
