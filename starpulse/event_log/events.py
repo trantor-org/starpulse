@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from starpulse.event_log.event_log import EventLog
 
 STREAM = "machine:events"
+#: Epoch seconds of 2023-01-01: an event timed before it is a fixture's `time=60.0`, not a run, so the step table refuses it.
+EARLIEST_TIME = 1_672_531_200.0
 
 
 def publish(
