@@ -83,7 +83,7 @@ is public for the names listed here:
 - `starpulse.runtime.ephemeral_board`: `ephemeral_board(seeds)`, which opens a task per `TaskSeed` on a scratch board and returns their records (the `starpulse task show` reply) with the `WriteInstance` that wrote them, so a project tests against a board without a harness of its own; a record is read after the Board writer has folded every verb run through the instance.
 - `starpulse.runtime.write_instance`: `write_instance(base)`, which serves the write routes over the board a config file names so a test writes tasks through StarPulse (`WriteInstance.run` calls a `starpulse` verb in-process).
 - `starpulse.runtime.config`: loading the config file and the runs adapter a `type` names.
-- `starpulse.runtime.closure`: `CONFIG_OWNERS` (the processes that read each key) with `restarts_serve` (whether a change to the raw tables needs `serve` itself restarted).
+- `starpulse.runtime.closure`: `restarts_serve` (whether a change to the raw tables needs `serve` itself restarted).
 - `starpulse.runtime.machine_files`: `import_definitions(config, base, paths=None)` and `export_definitions(config, base, out)`, which activate machine definitions from files and write the active ones out, for a project that keeps them in its repository.
 - `starpulse.runtime.nats_server`: `DEFAULT_PORT`, the port the bridge's NATS server listens on when `[bridge] port` names none, for a test that must pick another.
 - `starpulse.runtime.placed`: `Placed(machines=None)`, a read model over a temporary database whose `put(task)` places a `BoardTask` and whose `draw(**settings)` returns the `BoardFeed`, for a test that serves or starts a board over placed tasks.
@@ -118,7 +118,7 @@ Release 0.y deleted the top-level facade modules and the `_internal` package; a 
 | `starpulse.adapter_kit` (`WriteInstance`, `write_instance`) | `starpulse.runtime.write_instance` |
 | `starpulse.board_feed` | `starpulse.board` |
 | `starpulse.config` (`Config`, `ConfigError`, `load`, `runs_adapter`) | `starpulse.runtime.config` |
-| `starpulse.config` (`CONFIG_OWNERS`, `restarts_serve`) | `starpulse.runtime.closure` |
+| `starpulse.config` (`restarts_serve`) | `starpulse.runtime.closure` |
 | `starpulse.config` (`CommitKeys`) | `starpulse.board` |
 | `starpulse.config` (`RunsInstance`) | `starpulse.runs` |
 | `starpulse.conformance` | `starpulse.machine_engine` |

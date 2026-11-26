@@ -1,8 +1,6 @@
-"""The config blocks the views worker is built from or re-reads, in a leaf module so `runtime.closure` names them without
-importing the worker."""
+"""The config section the views worker reads, in a leaf module so `runtime` names it without importing the worker."""
 
 from collections.abc import Mapping
-from hashlib import sha256
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -35,11 +33,3 @@ class ApiConfig(Protocol):
     webhook_producer: str | None
     webhook_token_env: str | None
     tls: tuple[Path, Path] | None
-
-
-def api_built_blocks(config: ApiConfig) -> tuple:
-    """What of `config` the page is built from at start; a change needs a new process.
-
-    That includes the bytes of the certificate and key, which the process reads once: a renewed pair replaces the Page
-    API on the shared socket without restarting `serve`. Raises `OSError` when one cannot be read."""
-    return (config, sha256(b"".join(file.read_bytes() for file in config.tls or ())).hexdigest())
