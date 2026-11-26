@@ -463,6 +463,13 @@ export function chainOf(tasks: KanbanTask[], id: string, roles: Roles): { holds:
   return { holds: reach(id, e.heldBy), waitsOn: reach(id, e.waitsOn) };
 }
 
+/** Where each card sits in the hovered card's chain: the hovered card itself ("alone" when its chain is empty), a Waiting task it holds, an open task it waits on. */
+export function chainRole(tasks: KanbanTask[], hovered: string, roles: Roles): (id: string) => "self" | "alone" | "holds" | "waits" | undefined {
+  const c = chainOf(tasks, hovered, roles);
+  const self = c.holds.size || c.waitsOn.size ? "self" : "alone";
+  return (id) => (id === hovered ? self : c.holds.has(id) ? "holds" : c.waitsOn.has(id) ? "waits" : undefined);
+}
+
 /** How many Waiting tasks each task holds: those that depend on it while it is not Done, directly or through other Waiting tasks, each counted once. */
 export function holdCounts(tasks: KanbanTask[], roles: Roles): Map<string, number> {
   const { heldBy } = edges(tasks, roles);
