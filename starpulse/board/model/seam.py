@@ -319,3 +319,6 @@ class Board:
     archived: Callable[[str], None]
     """Tells the board that the task actor archived a task, given its id, so it can close the pull requests the task
     leaves open; a raise is logged and the archive stands."""
+    frozen: Callable[[str], None]
+    """Tells the board that the task actor froze or unfroze a task, given its id, so it can post the freeze on the pull
+    requests the task references; a raise is logged and the write stands."""

@@ -176,6 +176,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "prs": [pulls.get(url, {"url": url}) for url in agent.get("prs", [])],
         "moves": _review_held(_agent_moves(agent, snapshot), pulls.values(), roles_of(snapshot).review),
         "released": agent.get("released"),
+        "frozen": agent.get("frozen"),
     }
 
 

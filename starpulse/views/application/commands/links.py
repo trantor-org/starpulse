@@ -1,6 +1,7 @@
 """A task's pull request links: the task actor stores one only on the request of the session that holds the task."""
 
-from collections.abc import Mapping
+import logging
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any, NamedTuple
 
@@ -14,6 +15,8 @@ from starpulse.pulls.adapters.outbound.github import GitHubAdapter
 from starpulse.views.application.commands.guard import EDIT_LOCK, RELEASED_ASSIGNEE, held_task, not_held, with_request
 
 lazy from starpulse.event_log.claude_sessions import same_holder
+
+logger = logging.getLogger(__name__)
 
 #: The forge adapters by instance name: the one place a URL turns into a change reference and back.
 type Forges = Mapping[str, GitHubAdapter]
@@ -102,8 +105,17 @@ def _task(tasks: ReadModel, token: str) -> _Named | _Answer:
 
 
 @with_request(LinkPutRequest, "Linking a task")
-def put_link(request: LinkPutRequest, token: str, feed: BoardFeed, tasks: ReadModel, links: TaskLinks, forges: Forges) -> _Answer:
-    """`PUT /api/tasks/{id}/links`: 201 with the link written, 200 with the link already stored, else its refusal."""
+def put_link(
+    request: LinkPutRequest,
+    token: str,
+    feed: BoardFeed,
+    tasks: ReadModel,
+    links: TaskLinks,
+    forges: Forges,
+    frozen: Callable[[str], None],
+) -> _Answer:
+    """`PUT /api/tasks/{id}/links`: 201 with the link written, 200 with the link already stored, else its refusal.
+    A link written to a frozen task tells `frozen`, so the new pull request gets the freeze's check; a raise is logged."""
     if not isinstance(found := _task(tasks, token), _Named):
         return found
     uuid, handle = found
@@ -125,6 +137,11 @@ def put_link(request: LinkPutRequest, token: str, feed: BoardFeed, tasks: ReadMo
         }
     except StaleVersion:
         return 409, {"error": f"{handle}'s links moved while this was written: send it again"}
+    if written and (tasks.task(token) or {}).get("meta", {}).get("frozen"):
+        try:
+            frozen(handle)
+        except Exception:
+            logger.exception("the frozen hook for %s failed after its link %s was stored", handle, ref)
     return (201 if written else 200), _link(link, handle, forges)
 
 

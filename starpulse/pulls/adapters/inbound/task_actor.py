@@ -358,6 +358,7 @@ class TaskActor:
         released: Callable[[str], None] = _ignore,
         closed: Callable[[str], None] = _ignore,
         archived: Callable[[str], None] = _ignore,
+        frozen: Callable[[str], None] = _ignore,
         returned: Callable[[str], None] = _ignore,
         alive: Callable[[str], bool] = lambda _task: False,
         enqueued: Callable[[str], None] = _ignore,
@@ -450,6 +451,7 @@ class TaskActor:
         self._released = released
         self._closed = closed
         self._archived = archived
+        self._frozen = frozen
         self._returned = returned
         self._alive = alive
         self._enqueued = enqueued
@@ -1685,6 +1687,8 @@ class TaskActor:
         if not written.ok:
             logger.warning("task actor: the %s of %s was not written: %s", fact, name, written.output)
             self._refused_by(written)
+        elif changes:
+            self._notice(self._frozen, name, "was written but the board was not told")
 
     def _log_unready(self, agent: dict[str, Any]) -> None:
         """Log once per change the condition that keeps a working task's open pull request from being ready."""

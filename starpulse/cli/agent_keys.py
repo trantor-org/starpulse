@@ -56,6 +56,7 @@ TASK_KEYS = (
     "prs",
     "moves",
     "released",
+    "frozen",
     "description",
 )
 
