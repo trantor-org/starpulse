@@ -25,6 +25,13 @@ def _head(path: Path) -> str:
         return transcript.read(_HEAD_BYTES).decode(errors="replace")
 
 
+def _ends(path: Path) -> str:
+    try:
+        return _head(path) + "\n".join(tail(path, TAIL_BYTES))
+    except FileNotFoundError:
+        return ""
+
+
 class ClaudeCodeIdentity:
     """Every id a Claude Code session answers to, and whether the harness confirms it running.
 
@@ -60,7 +67,7 @@ class ClaudeCodeIdentity:
         if kept is not None and self._clock() < kept[0]:
             return kept[1]
         paths = self._transcripts.glob(f"*/{session}.jsonl") if SESSION_ID.fullmatch(session) else ()
-        text = "\n".join(_head(path) + "\n".join(tail(path, TAIL_BYTES)) for path in paths)
+        text = "\n".join(map(_ends, paths))
         bridges = (match[1] for match in map(BRIDGE_ID.fullmatch, _BRIDGE_FIELD.findall(text)) if match)
         found = frozenset((*bridges, *(name.lower() for name in _NAME_FIELD.findall(text))))
         self._kept[session] = (self._clock() + MISS_TTL_S, found)

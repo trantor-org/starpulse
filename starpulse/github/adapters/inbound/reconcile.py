@@ -95,13 +95,17 @@ def _deliveries(client: Client, inbox: Inbox, cursors: SqlCursors, counted: Reco
     return lost
 
 
-def _redelivering(lost: list[dict[str, Any]], event: str, at: str | None) -> bool:
-    """Whether a delivery of `event` the inbox lacks was attempted around `at`: GitHub sent that push and the listener
-    refused it, and its redelivery is asked this pass, so the fact is no missed push."""
+def _redelivering(lost: list[dict[str, Any]], event: str, at: str | None, repository_id: int | None) -> bool:
+    """Whether a delivery of `event` the inbox lacks was attempted around `at` for the repository `repository_id`: GitHub
+    sent that push and the listener refused it, and its redelivery is asked this pass, so the fact is no missed push. An
+    attempt naming another repository is not this fact's."""
     if not at:
         return False
     return any(
-        attempt.get("event") == event and epoch(at) - EARLY_S <= epoch(attempt["delivered_at"]) <= epoch(at) + LATE_S for attempt in lost
+        attempt.get("event") == event
+        and (repository_id is None or attempt.get("repository_id") in (None, repository_id))
+        and epoch(at) - EARLY_S <= epoch(attempt["delivered_at"]) <= epoch(at) + LATE_S
+        for attempt in lost
     )
 
 
@@ -141,12 +145,13 @@ def _pulls(
     counted.looked()
     oldest = pulls[::-1]
     for pull, later in zip(oldest, [*oldest[1:], None]):
+        repository_id = ((pull.get("base") or {}).get("repo") or {}).get("id")
         head = (pull.get("head") or {}).get("sha", "")
         found = [(pull_delivery(repository, pull), pull.get("closed_at"))]
         held = stored(repository, pull["number"])
         refresh = update_delivery(repository, pull) if not held or epoch(pull["updated_at"]) > epoch(held) else None
         # a stale `updatedAt` alone is no missed push
-        if refresh is not None and inbox.save(refresh, SOURCE) and not held and not _redelivering(lost, refresh.event, pull["updated_at"]):
+        if refresh is not None and inbox.save(refresh, SOURCE) and not held and not _redelivering(lost, refresh.event, pull["updated_at"], repository_id):
             counted.inserted(refresh.event)
         if head:
             suites = _read(client, f"/repos/{repository}/commits/{head}/check-suites").body.get("check_suites", [])
@@ -159,7 +164,7 @@ def _pulls(
             ]
         for delivery, at in found:
             if delivery is not None and not _reported(inbox, delivery, at) and inbox.save(delivery, SOURCE):
-                if (not at or epoch(at) < now - SETTLE_S) and not _redelivering(lost, delivery.event, at):
+                if (not at or epoch(at) < now - SETTLE_S) and not _redelivering(lost, delivery.event, at, repository_id):
                     counted.inserted(delivery.event)
         if later and epoch(later["updated_at"]) > epoch(pull["updated_at"]):
             cursors.put(name, Cursor(pull["updated_at"], None))

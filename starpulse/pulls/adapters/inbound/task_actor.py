@@ -1795,6 +1795,8 @@ class TaskActor:
                 self._settling = ""
             if moved:
                 return  # the lane facts moved the task (a ready pull request to Review): there is nothing to resume
+            if (self._feed.task(name, lean=True) or {}).get("frozen"):
+                return  # frozen while `touch` ran: its session is halted now, never idle
             answered = "kind-decide" in agent["labels"] and operator_answered(
                 (self._feed.task(name) or {}).get("description", "")
             )
