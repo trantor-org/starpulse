@@ -11,7 +11,7 @@ import { Viewport, ViewportRow } from "../../shared/ViewportRows";
 import { ago } from "../../shared/clock";
 import type { HudState } from "../../render/hud";
 import {
-  CLOSED, actorFault, applySuggestion, ciTone, applyTaskRecord, assigneeOptions, chainOf, claimChip, sessionChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll,
+  CLOSED, actorFault, applySuggestion, ciTone, applyTaskRecord, assigneeOptions, chainRole, claimChip, sessionChip, clearFilters, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll,
   offBoardTask, stacked as stacksState, withRecordPulls, stackOf, stackStep, toggleFold, unheld, unheldShown, unstacked, whyHidden,
   type ClaimChip, type KanbanTask, type Layout, type PhaseAt, type Prefs, type Stack, type StackEvent, type StackOpen,
 } from "./kanbanModel";
@@ -119,8 +119,8 @@ function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed;
   );
 }
 
-/** Where a card sits in the hovered card's chain: the hovered card, a Waiting task it holds or an open task it waits on. */
-export type Chain = "self" | "holds" | "waits";
+/** Where a card sits in the hovered card's chain: the hovered card ("alone" when its chain is empty), a Waiting task it holds or an open task it waits on. */
+export type Chain = "self" | "alone" | "holds" | "waits";
 
 /** A task card; compact keeps the id, pull request, title and machine line and drops the footer of labels, dependencies and profile. */
 export function Card({ task, holds = 0, chain, under = false, links, cross, onCross, now, marks, names, roles, compact = false, onOpen, onPress, onPlay, onHover, onAhead, dismiss, dismissStart, style }: {
@@ -779,13 +779,9 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   const holds = useMemo(() => (drawBoard ? holdCounts(cards, roles) : NO_HOLDS), [drawBoard, cards, roles]);
   const blockers = useMemo(() => holders(cards, roles, holds), [cards, roles, holds]);
   const [pointed, setHovered] = useState<string | null>(null);
-  // a card the Recent rail points at draws as the hovered one, ringed even when it holds and waits on nothing, since no pointer is on it
+  // a card the Recent rail points at draws as the hovered one, since no pointer is on it
   const hovered = pointed ?? spot;
-  const chain = useMemo(() => {
-    const c = hovered && !lift ? chainOf(cards, hovered, roles) : null;
-    if (!c || (!c.holds.size && !c.waitsOn.size && hovered !== spot)) return null;
-    return (id: string): Chain | undefined => (id === hovered ? "self" : c.holds.has(id) ? "holds" : c.waitsOn.has(id) ? "waits" : undefined);
-  }, [cards, hovered, lift, roles, spot]);
+  const chain = useMemo(() => (hovered && !lift ? chainRole(cards, hovered, roles) : null), [cards, hovered, lift, roles]);
   const hiddenWhy = useMemo(() => (spot ? whyHidden(cards, roles, prefs, spot) : null), [spot, cards, roles, prefs]);
   useEffect(() => void note?.(hiddenWhy), [hiddenWhy, note]);
   // a new spot, or its card first drawn, scrolls: a board event or clock tick must not yank the operator's scroll back to a card already shown

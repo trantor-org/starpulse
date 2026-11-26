@@ -172,10 +172,13 @@ describe("what holds the Waiting lane", () => {
   });
 
   it("marks a card's place in the hovered chain, and leaves a card outside it as it was", () => {
-    const as = (chain?: "self" | "holds" | "waits") =>
+    const as = (chain?: "self" | "alone" | "holds" | "waits") =>
       renderToStaticMarkup(<Card task={task} chain={chain} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} />);
 
     expect(as("self")).toContain('class="card chain-self"');
+    expect(as("alone")).toContain('class="card chain-alone"');
+    expect(as("alone")).not.toContain("outlined:");
+    expect(as("self")).toContain("outlined:");
     expect(as("holds")).toContain('class="card chain-holds"');
     expect(as("waits")).toContain('class="card chain-waits"');
     expect(as()).toContain('class="card"');

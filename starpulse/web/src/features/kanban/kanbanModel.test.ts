@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { MoveStore, place, type Post, type Reply } from "./move";
-import { NO_PREFS, applySuggestion, boardCount, applyTaskRecord, assigneeOptions, chainOf, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll, stackOf, toggleFold, whyHidden, withRecordPulls, type KanbanTask } from "./kanbanModel";
+import { NO_PREFS, applySuggestion, boardCount, applyTaskRecord, assigneeOptions, chainOf, chainRole, columnsOf, filtersActive, hideMilestone, hideTask, holdCounts, holders, kanbanTasks, labelSuggestions, layout, milestoneOptions, milestoneOutline, show, showAll, stackOf, toggleFold, whyHidden, withRecordPulls, type KanbanTask } from "./kanbanModel";
 import { climb, offBoardTask, prReadState } from "./kanbanModel";
 import type { Sky } from "../../render/sky";
 import phaseCases from "../../../../../tests/fixtures/board/phase_cases.json";
@@ -523,6 +523,10 @@ describe("what holds the Waiting lane", () => {
     expect(chainOf(board, "PIVOT", LIFECYCLE_ROLES)).toEqual({ holds: new Set(["S1", "S2"]), waitsOn: new Set(["GATE"]) });
     expect(chainOf(board, "S2", LIFECYCLE_ROLES)).toEqual({ holds: new Set(), waitsOn: new Set(["PIVOT", "SIDE", "GATE"]) });
     expect(chainOf(board, "TIMED", LIFECYCLE_ROLES)).toEqual({ holds: new Set(), waitsOn: new Set() });
+    const role = chainRole(board, "TIMED", LIFECYCLE_ROLES);
+    expect([role("TIMED"), role("PIVOT")]).toEqual(["alone", undefined]);
+    const pivot = chainRole(board, "PIVOT", LIFECYCLE_ROLES);
+    expect([pivot("PIVOT"), pivot("S1"), pivot("GATE"), pivot("TIMED")]).toEqual(["self", "holds", "waits", undefined]);
   });
 
   it("stop at a dependency cycle instead of counting forever", () => {
