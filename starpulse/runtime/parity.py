@@ -2,7 +2,8 @@
 
 It reads the open, completed and archived task files the config's board holds and the retired tasks of the store the
 config names, and prints one JSON line: the tasks `checked`, those `missing` a History, those `differing` (each with its
-differing lines) and, with `--import`, the tasks `imported` first, each given one `TaskImported` Event. The store is
+differing lines) and, with `--import`, the tasks `imported` first, each given one `TaskImported` Event, and the tasks `backfilled`, each given the creation
+answers (ADR needed, duplicate search and resolution) its file holds and its History lacks. The store is
 read, and written only by `--import`. The exit code is 0 for an empty report, 1 for a report that lists a task, and 2 for
 a flag the command does not allow or a config that cannot be read."""
 
@@ -13,7 +14,7 @@ from pathlib import Path
 
 lazy from sqlalchemy import create_engine
 
-lazy from starpulse.board.adapters.task_parity import check, filed, import_missing
+lazy from starpulse.board.adapters.task_parity import backfill_answers, check, filed, import_missing
 lazy from starpulse.event_log.opening import database_url
 lazy from starpulse.event_log.store import EventStore
 lazy from starpulse.runtime.config import ConfigError, discover, load
@@ -36,6 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     root = base / str(config.board.get("path", "backlog"))
     try:
         imported = import_missing(filed(root, engine), engine) if args.load else []
+        backfilled = backfill_answers(filed(root, engine), engine) if args.load else []
         report = check(filed(root, engine), EventStore(engine))
     finally:
         engine.dispose()
@@ -43,7 +45,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         json.dumps(
             {
                 "checked": report.checked,
-                **({"imported": imported} if args.load else {}),
+                **({"imported": imported, "backfilled": backfilled} if args.load else {}),
                 "missing": report.missing,
                 "differing": report.differing,
             }
