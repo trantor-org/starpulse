@@ -164,7 +164,7 @@ def routes(api: Api) -> list[ApiRoute]:
             guarded(
                 "task_link_put",
                 lambda request: put_link(
-                    client(request), whole(request), request.path_params["id"], feed, tasks, links, forges
+                    client(request), whole(request), request.path_params["id"], feed, tasks, links, forges, board.frozen
                 ),
             ),
         ),

@@ -129,6 +129,7 @@ _SETTINGS = {
     "enqueued",
     "closed",
     "archived",
+    "frozen",
     "validate",
     "python_path",
     "task_file_name",
@@ -1905,7 +1906,7 @@ def _reason(holds: Callable[[str], list[str]]) -> Callable[[str], str | None]:
 
 
 def _notice(command: object, base: Path, unreachable: bool = False) -> Callable[..., None]:
-    """The `parked`, `released`, `idle`, `returned`, `enqueued`, `closed`, `archived` or `entered` command
+    """The `parked`, `released`, `idle`, `returned`, `enqueued`, `closed`, `archived`, `frozen` or `entered` command
     (the last on any lane entry the board records, by whoever moves the task), run in `base` with `{id}` replaced by the
     task's id, after the task actor moves a task from the working lane to Waiting, from Waiting to Ready, sees its holder
     go idle (with `{verdict}` replaced by the idle step), sends it from Review
@@ -2017,6 +2018,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "enqueued": _notice(settings.get("enqueued"), base),
             "closed": _notice(settings.get("closed"), base),
             "archived": _notice(settings.get("archived"), base),
+            "frozen": _notice(settings.get("frozen"), base),
             "entered": _entered(settings.get("entered"), base, root, settings.get("entered_labels")),
             "edit": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles), roles.done),
             "judge": _editor(root, config.statuses, gate, link, roles.attention, _unstarted(roles), roles.done, True),
