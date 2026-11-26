@@ -15,7 +15,6 @@ from _thread import interrupt_main
 from pathlib import Path
 
 from starpulse.runtime import wiring
-from starpulse.runtime.closure import Reader
 from starpulse.runtime.config import Config, rehearsing
 from starpulse.runtime.control import control_file
 from starpulse.runtime.hold import BOOT_ENV, CLAUDE_CODE_FD_ENV, GITHUB_FD_ENV, LISTEN_FD_ENV, adopted_from_env, boot_token
@@ -101,7 +100,6 @@ def main(argv: list[str] | None = None) -> None:
             if kept:
                 held.setdefault("contexts", {})[env_name] = kept
             os.environ.pop(env_name, None)
-    reader = Reader(args.config)
     refused: list[str] = []
 
     def refuse(name: str) -> None:
@@ -114,8 +112,6 @@ def main(argv: list[str] | None = None) -> None:
         held=held,
         standby={"contexts", "pulls"},
         warm=180.0,  # the ceiling for the contexts worker (the pulls worker is quicker), which prepares about a minute beside the old one
-        read=reader,
-        baseline=reader.at_start,
         control=None if rehearsing() else control_file(args.config),  # a rehearsal must not replace the live endpoint
         limits=config.worker_memory,
         adopted=adopted or None,

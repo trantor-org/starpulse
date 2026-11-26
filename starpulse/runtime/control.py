@@ -23,7 +23,7 @@ from typing import Any, Protocol
 from starpulse.runtime.closure import ReloadError
 
 _LOOPBACK = "127.0.0.1"
-_TIMEOUT = 120.0  # a reload reads each closure in a fresh interpreter, then replaces what changed
+_TIMEOUT = 120.0  # a reload replaces every child together
 NOT_RUNNING, FAILED = 1, 2  # `starpulse reload` exit codes; success is 0
 
 

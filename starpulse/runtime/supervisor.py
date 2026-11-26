@@ -6,24 +6,21 @@ takes the writer role and leases only once the old one has ended); past its hard
 limit it is killed and restarted. The run adapters a `[[runs]]` instance configures are threads of `contexts`
 (`starpulse.runtime.contexts`), named by `adapter_contexts`.
 
-`starpulse reload` (`starpulse.runtime.control`) calls `Supervisor.reload`: it reads each child's code and config
-again from the installed files (`starpulse.runtime.closure`) and replaces only the children something changed
-for, as the ADR "StarPulse Supervises Its Own Context Workers" decides; `contexts` is replaced on the union of its
-contexts' closures and told to re-read the live config blocks of any one of them over `SIGHUP`.
+`starpulse reload` (`starpulse.runtime.control`) calls `Supervisor.reload`: it replaces every child together from the
+installed code and re-executes `serve`, as the ADR "StarPulse Supervises Its Own Context Workers" decides, reading and
+hashing no code to choose which.
 """
 
 import logging
 import os
 import select
 import selectors
-import signal
 import socket
 import subprocess
 import sys
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,7 +30,7 @@ import psutil
 from starpulse.event_log.process_exit import ExitWatch
 from starpulse.runs.model import opt_in
 from starpulse.runtime import launch
-from starpulse.runtime.closure import SELF, Reading, ReloadError
+from starpulse.runtime.closure import ReloadError
 from starpulse.runtime.config import Config, MemoryLimit, rehearsing, runs_adapter
 from starpulse.runtime.control import Control
 from starpulse.runtime.hold import (
@@ -48,7 +45,6 @@ from starpulse.runtime.memory import memory_reader
 
 logger = logging.getLogger(__name__)
 
-_HANGUP = getattr(signal, "SIGHUP", None)
 
 #: The `starpulse worker` children `serve` supervises, in start order.
 WORKER_CONTEXTS = ("api", "contexts", "pulls", "conformance")
@@ -131,6 +127,19 @@ class _Child:
     launches: int = 0
 
 
+@dataclass
+class _Beside:
+    """A replacement started beside `old`: its readiness pipe's read end and, for a standby child, its go pipe's write end."""
+
+    name: str
+    child: _Child
+    old: Any
+    before: tuple[float, float, int]
+    ready: int
+    go: int | None
+    deadline: float
+
+
 class Supervisor:
     """Keeps one child per command running, from `start` until `stop`."""
 
@@ -146,8 +155,6 @@ class Supervisor:
         stable_after: float = 60.0,
         grace: float = 10.0,
         warm: float = 30.0,
-        read: Callable[[str], Reading] | None = None,
-        baseline: Callable[[str], Reading] | None = None,
         execute: Callable[[], None] = launch.exec_self,
         control: Path | None = None,
         limits: Mapping[str, MemoryLimit] | None = None,
@@ -183,11 +190,8 @@ class Supervisor:
         self._wake_read.setblocking(False)
         self._wake_write.setblocking(False)
         self._thread: threading.Thread | None = None
-        self._read = read
-        self._baseline = baseline or read
         self._execute = execute
         self._control = Control(control, self) if control else None
-        self._seen: dict[str, Reading] = {}
 
     def _delay(self, failures: int) -> float:
         return min(self._longest_delay, self._first_delay * 2 ** (failures - 1)) if failures else 0.0
@@ -266,11 +270,6 @@ class Supervisor:
 
     def start(self) -> None:
         """Start every child and keep them running on a background thread until `stop`."""
-        if self._read:
-            try:
-                self._seen = self._readings(self._baseline)
-            except ReloadError as exc:
-                logger.warning("reload: no baseline for the installed code: %s", exc)
         now = time.monotonic()
         for name, proc in self._adopted.items():  # the previous image's child, kept in place of one started now
             child = self._children.get(name)
@@ -329,133 +328,139 @@ class Supervisor:
         except OSError:  # nothing more to read
             pass
 
-    def _readings(self, read: Callable[[str], Reading] | None = None) -> dict[str, Reading]:
-        read = read or self._read
-        if read is None:
-            raise ReloadError("this supervisor reads no installed code")
-        names = [*self._children, SELF]
-        with ThreadPoolExecutor(len(names)) as pool:
-            return dict(zip(names, pool.map(read, names), strict=True))
-
     def reload(self) -> dict[str, Any]:
-        """Replace each child whose code or database changed since the last reading, tell each whose only change is its
-        live config block to re-read it, and keep the rest; report each as "replaced", "reloaded" or "kept".
+        """Replace every child together from the release now behind the launcher and report "re-executed", with the
+        `seconds` it took: the caller sends that report, then calls `reexec`, and the next image adopts every
+        replacement, which stays running across the exec, so no child starts cold and no context's ready stamp is
+        dropped.
 
-        When `serve`'s own code changed the Page API is replaced first, beside the old one on the shared socket, from the
-        release now behind the launcher; every other child whose code or config changed is replaced the same way (beside
-        the old one where it can run so), and `supervisor` reports "re-executed": the caller sends that report, then
-        calls `reexec`, and the next image adopts the Page API and every other child, which stays running across the
-        exec, so no child starts cold and no context's ready stamp is dropped. A child whose code and config did not
-        change is reported as "kept", the rest as "replaced". The report's `reads` is
-        "launcher" when the code was read from the release behind the launcher, which a caller that probes code through
-        its own interpreter (an older `starpulse reload`) lacks, and so cannot trust a "kept". Raises `ReloadError`,
-        changing nothing, when a reading fails."""
-        after = self._readings()
+        Each child that can run beside its old one (the Page API, and a standby one) is started beside it, all before
+        any is waited on; each old one ends once its replacement is serving. Raises `ReloadError` when a replacement
+        exited before serving, its old child kept; `serve` keeps supervising on any raise."""
+        started = time.monotonic()
         with self._lock:
             if self._halt.is_set():
                 raise ReloadError("serve is stopping")
-            own = self._seen.get(SELF)
-            reexec = own is not None and not own.same_code(after[SELF])
-            if reexec:
-                for name in self._sockets:
-                    self._replace(name, self._children[name])
-                outcomes = {
-                    n: self._hand_over(n, c, after[n]) for n, c in self._children.items() if n not in self._sockets
-                }
-                outcomes.update(dict.fromkeys(self._sockets, "replaced"))
-                self._halt.set()  # only once the handover held: `_run` ends on it, and a failed reload must leave it running
-            else:
-                outcomes = {n: self._apply(n, c, self._seen.get(n), after[n]) for n, c in self._children.items()}
-            self._seen = after
-        return {"supervisor": "re-executed" if reexec else "kept", "reads": "launcher", "children": outcomes}
+            self._replace_all()
+            self._handed.update(self._children)
+            self._halt.set()  # only once every replacement held: `_run` ends on it, and a failed reload must leave it running
+        seconds = round(time.monotonic() - started, 1)
+        logger.info("reload: replaced %d children in %.1fs", len(self._children), seconds)
+        return {
+            "supervisor": "re-executed",
+            "reads": "launcher",
+            "seconds": seconds,
+            "children": dict.fromkeys(self._children, "replaced"),
+        }
 
-    def _apply(self, name: str, child: _Child, before: Reading | None, now: Reading) -> str:
-        if before is None or not before.same_code(now) or before.restart != now.restart:
-            return self._replace(name, child)
-        return self._keep(name, child, before, now)
-
-    def _keep(self, name: str, child: _Child, before: Reading, now: Reading) -> str:
-        """Leave a child whose code is unchanged running: "kept", or "reloaded" after a SIGHUP when only its live config
-        block changed (replaced where there is no SIGHUP to send)."""
-        if before.live == now.live:
-            return "kept"
-        running = child.proc is not None and child.proc.poll() is None
-        if running and _HANGUP is None:
-            return self._replace(name, child)
-        if running:
-            child.proc.send_signal(_HANGUP)
-        return "reloaded"
-
-    def _hand_over(self, name: str, child: _Child, now: Reading) -> str:
-        """Before a re-exec, keep a running child whose own code and config are unchanged for the next image to adopt
-        (`reexec`), and replace any other from the release behind the launcher, beside the old one where it can run
-        so, then hand the new one over too: the next image starts no child, so no context's stamp is ever dropped."""
-        before = self._seen.get(name)
-        alive = child.proc is not None and child.proc.poll() is None
-        self._handed.add(name)
-        if alive and before is not None and before.same_code(now) and before.restart == now.restart:
-            if _stdin_fd(child.proc) is not None:
-                return self._keep(name, child, before, now)
-        return self._replace(name, child)
-
-    def _replace(self, name: str, child: _Child) -> str:
-        old = child.proc
-        child.failures = 0
-        if old is not None and old.poll() is None and self._beside(name):
-            self._launch_beside(name, child, old)
-        else:
-            if old is not None:
-                self._end([old])
-            self._launch(name, child, time.monotonic())
-        return "replaced"
+    def _replace_all(self) -> None:
+        beside: list[_Beside] = []
+        try:
+            for name, child in self._children.items():
+                child.failures = 0
+                if child.proc is not None and child.proc.poll() is None and self._beside(name):
+                    beside.append(self._start_beside(name, child, child.proc))
+            for name, child in self._children.items():
+                if not any(pending.child is child for pending in beside):
+                    if child.proc is not None:
+                        self._end([child.proc])
+                    self._launch(name, child, time.monotonic())
+        except BaseException:
+            for pending in beside:
+                self._abandon(pending)
+            raise
+        self._finish_beside(beside)
 
     def _beside(self, name: str) -> bool:
         return name in self._sockets or name in self._standby
 
     def _launch_beside(self, name: str, child: _Child, old: Any) -> None:
-        """Start the new child beside `old`, wait until it is about to serve (or `warm` seconds, or its exit), then end
-        `old`, so the old one keeps answering while the new one starts.
+        self._finish_beside([self._start_beside(name, child, old)])
+
+    def _start_beside(self, name: str, child: _Child, old: Any) -> _Beside:
+        """Start the new child beside `old`, with a readiness pipe that reports when it is about to serve.
 
         A standby child (`standby`) is handed a go pipe too and prepares read-only until `serve` closes it, which it does
-        once `old` has ended: its writer and leases are never held beside the old one's.
-
-        Raises `ReloadError`, keeping `old` as the child, when the new one exited before it was serving."""
+        once `old` has ended: its writer and leases are never held beside the old one's."""
         read_end, write_end = os.pipe()
         go_read, go_write = os.pipe() if name in self._standby else (None, None)
         before = (child.started, child.sampled, child.launches)
         try:
             self._launch(name, child, time.monotonic(), write_end, go_read)
-            os.close(write_end)
-            write_end = -1
-            if go_read is not None:
-                os.close(go_read)
-                go_read = None
-            deadline = time.monotonic() + self._warm
-            serving = select.poll()
-            serving.register(read_end, select.POLLIN)
-            while child.proc.poll() is None and not serving.poll(100):
-                if time.monotonic() >= deadline:
-                    logger.warning(
-                        "worker %s pid %s was not serving after %.0fs; ending the old one",
-                        name,
-                        child.proc.pid,
-                        self._warm,
-                    )
-                    break
-        finally:
+        except BaseException:
             os.close(read_end)
-            for fd in (write_end, go_read):
-                if fd is not None and fd >= 0:
-                    os.close(fd)
-        try:
-            if (code := child.proc.poll()) is not None:
-                logger.error("worker %s replacement exited with %s before it was serving; keeping the old one", name, code)
-                child.proc, (child.started, child.sampled, child.launches) = old, before
-                raise ReloadError(f"{name}: the replacement exited with {code} before it was serving")
-            self._end([old])
-        finally:
             if go_write is not None:
                 os.close(go_write)
+            raise
+        finally:
+            os.close(write_end)
+            if go_read is not None:
+                os.close(go_read)
+        return _Beside(name, child, old, before, read_end, go_write, time.monotonic() + self._warm)
+
+    def _abandon(self, pending: _Beside) -> None:
+        """Drop a replacement that never took over: end it, and keep the old child as the child."""
+        if pending.child.proc is not pending.old:
+            self._end([pending.child.proc])
+            pending.child.proc, (pending.child.started, pending.child.sampled, pending.child.launches) = (
+                pending.old,
+                pending.before,
+            )
+        self._close(pending)
+
+    @staticmethod
+    def _close(pending: _Beside) -> None:
+        os.close(pending.ready)
+        if pending.go is not None:
+            os.close(pending.go)
+
+    def _finish_beside(self, pending: list[_Beside]) -> None:
+        """Wait until each replacement is about to serve (or `warm` seconds after it started, or its exit), ending its old
+        child as it is, so the old ones keep answering while the new ones start together.
+
+        Raises `ReloadError`, keeping the old child as the child of each replacement that exited before it was serving,
+        after every other old child has ended."""
+        waiting = {p.ready: p for p in pending}
+        serving = select.poll()
+        for p in pending:
+            serving.register(p.ready, select.POLLIN)
+        ended: list[tuple[_Beside, float]] = []
+        failures: list[str] = []
+        try:
+            while waiting:
+                for fd, _ in serving.poll(100):
+                    self._ready(waiting.pop(fd), serving, ended, failures)
+                for p in [p for p in waiting.values() if p.child.proc.poll() is not None or time.monotonic() >= p.deadline]:
+                    if p.child.proc.poll() is None:
+                        logger.warning(
+                            "worker %s pid %s was not serving after %.0fs; ending the old one",
+                            p.name,
+                            p.child.proc.pid,
+                            self._warm,
+                        )
+                    del waiting[p.ready]
+                    self._ready(p, serving, ended, failures)
+        finally:
+            for p in waiting.values():
+                self._abandon(p)
+            for p, deadline in ended:
+                try:
+                    self._reap([p.old], deadline)
+                finally:
+                    self._close(p)
+        if failures:
+            raise ReloadError("; ".join(failures))
+
+    def _ready(self, p: _Beside, serving: Any, ended: list[tuple[_Beside, float]], failures: list[str]) -> None:
+        serving.unregister(p.ready)
+        if (code := p.child.proc.poll()) is not None:
+            logger.error("worker %s replacement exited with %s before it was serving; keeping the old one", p.name, code)
+            failures.append(f"{p.name}: the replacement exited with {code} before it was serving")
+            p.child.proc, (p.child.started, p.child.sampled, p.child.launches) = p.old, p.before
+            self._close(p)
+            return
+        p.old.terminate()
+        ended.append((p, time.monotonic() + self._grace))
 
     def reexec(self) -> None:
         """Replace this process with a new one running the same command, after `reload` reported "re-executed".
@@ -489,7 +494,10 @@ class Supervisor:
         """Terminate each process and kill one still running `grace` seconds after."""
         for proc in running:
             proc.terminate()
-        deadline = time.monotonic() + self._grace
+        self._reap(running, time.monotonic() + self._grace)
+
+    @staticmethod
+    def _reap(running: list[Any], deadline: float) -> None:
         for proc in running:
             try:
                 # adr-exempt: handshake
