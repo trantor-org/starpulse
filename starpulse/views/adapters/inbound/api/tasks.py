@@ -31,6 +31,7 @@ from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, who
 from starpulse.board.adapters.native_scan import native_keys
 from starpulse.board.adapters.task_links import TaskLinks
 from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.store import EventStore
 from starpulse.pulls.adapters.outbound.github import GitHubAdapter
 from starpulse.views.application.commands.links import delete_link, put_link
 from starpulse.views.application.commands.moves import (
@@ -148,7 +149,7 @@ def routes(api: Api) -> list[ApiRoute]:
             "start",
         ),
     }
-    links, tasks = TaskLinks(api.history.engine), ReadModel(api.history.engine)
+    links, tasks, store = TaskLinks(api.history.engine), ReadModel(api.history.engine), EventStore(api.history.engine)
     forges = {"github": GitHubAdapter(keys=board.keys or native_keys())}
     return [
         ReadRoute("/task/{id:path}", task, timed),
@@ -164,7 +165,16 @@ def routes(api: Api) -> list[ApiRoute]:
             guarded(
                 "task_link_put",
                 lambda request: put_link(
-                    client(request), whole(request), request.path_params["id"], feed, tasks, links, forges, board.frozen
+                    client(request),
+                    whole(request),
+                    request.path_params["id"],
+                    feed,
+                    tasks,
+                    links,
+                    forges,
+                    board.read,
+                    store,
+                    board.frozen,
                 ),
             ),
         ),
@@ -174,7 +184,7 @@ def routes(api: Api) -> list[ApiRoute]:
             guarded(
                 "task_link_delete",
                 lambda request: delete_link(
-                    client(request), whole(request), request.path_params["id"], feed, tasks, links, forges
+                    client(request), whole(request), request.path_params["id"], feed, tasks, links, forges, board.read, store
                 ),
             ),
         ),

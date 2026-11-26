@@ -157,6 +157,11 @@ LISTS: dict[str, type[BaseModel]] = {
     "/api/docs": DocListRequest,
 }
 
+def writes(method: str, path: str) -> bool:
+    """Whether a route writes: any method but GET, bar the POSTs that only list."""
+    return method != "GET" and not (method == "POST" and path in LISTS)
+
+
 #: Every body a route may send, by route: what `encode` validates a body against.
 BODIES: dict[str, Any] = {
     "error": ApiError,
@@ -207,7 +212,7 @@ BODIES: dict[str, Any] = {
     "doc_create": DocCreated | SkillRefusal | ApiError,
     "doc_put": DocEdited | SkillRefusal | ApiError,
     "doc_archive": DocArchived | SkillRefusal | ApiError,
-    "graphql": GraphqlResponse,
+    "graphql": GraphqlResponse | ApiError,
     "view": ViewShown | ApiError,
     "ingest": Accepted | ApiError,
 }
@@ -269,7 +274,7 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/history-window"): _read("How many hours of history the store keeps", "window"),
     ("PUT", "/api/history-window"): _write("Set the history window", "window", WindowRequest),
     ("DELETE", "/api/history-window"): _write("Reset the history window to its default", "window"),
-    ("GET", "/api/task/{id}"): _read("One task, by its id or an alias it carries", "task"),
+    ("GET", "/api/task/{id}"): _read("One task, by its key, an alias it carries or its UUID", "task"),
     ("GET", "/api/task-records"): _read("Task records, the ids named when given", "task_records", "ids"),
     ("GET", "/api/retired"): _read("Retired tasks", "retired", "before", "fields", "limit", "milestone", "task"),
     ("POST", "/api/start"): _write("Start a session on a task", "start", StartRequest),

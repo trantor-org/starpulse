@@ -5,9 +5,9 @@ from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from sqlalchemy import Connection, Engine, Select, func, select, union_all
+from sqlalchemy import Connection, Engine, Select, func, or_, select, union_all
 
-from starpulse.event_log.readmodel import queries, rows
+from starpulse.event_log.readmodel import queries, rows, task_uuid
 from starpulse.event_log.readmodel.declared import Declared
 from starpulse.event_log.readmodel.fold import Row
 from starpulse.event_log.readmodel.tables import board_keys, machine_tasks
@@ -163,7 +163,7 @@ class ReadModel:
 
     def machine_task(self, machine: str, task: str) -> dict[str, Any] | None:
         """The agent `machine` holds for `task`, or None when it places none."""
-        statement = select(machine_tasks.c.agent).where(machine_tasks.c.machine == machine, machine_tasks.c.task == task)
+        statement = select(machine_tasks.c.agent).where(machine_tasks.c.machine == machine, machine_tasks.c.task_uuid == task_uuid.of(task))
         with self._reading() as db:
             return db.execute(statement).scalar()
 
@@ -210,9 +210,10 @@ class ReadModel:
         elif live_since is None:
             raise ValueError("keep_open needs live_since, the start of the live window")
         else:
-            live = queries.live_ids(keep_open, live_since)
+            live = queries.live_uuids(keep_open, live_since)
             statement = union_all(
-                statement.where(mt.task.in_(live)), statement.where(mt.active_at >= since, mt.task.not_in(live))
+                statement.where(mt.task_uuid.in_(live)),
+                statement.where(mt.active_at >= since, or_(mt.task_uuid.is_(None), mt.task_uuid.not_in(live))),
             )
         with self._reading() as db:
             found = [tuple(row) for row in db.execute(statement).all()]

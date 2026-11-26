@@ -181,6 +181,11 @@ def _flagged(
                 return median(values), used
         return None, None
 
+    def why_none(task: str) -> str:
+        if cells[task][0] is None:
+            return "no kind or size"
+        return "batch umbrella" if peers[task][0] is None else f"under {MIN_N} peers in kind × size"
+
     norm = {key: norm_of(*key) for key in rows}
     phase_norms: dict[str, list[float | None]] = defaultdict(list)
     for (task, _), (value, _) in norm.items():
@@ -198,6 +203,7 @@ def _flagged(
             "above_norm": task_norm[task] is not None and total[task] > FLAG_RATIO * task_norm[task],
             "phase_norm_wte": norm[(task, phase)][0],
             "norm_profile": norm[(task, phase)][1],
+            "no_norm_reason": None if norm[(task, phase)][0] is not None else why_none(task),
             "phase_above_norm": norm[(task, phase)][0] is not None and row["wte"] > FLAG_RATIO * norm[(task, phase)][0],
         }
         for (task, phase), row in sorted(rows.items(), key=lambda kv: (kv[0][0], kv[1]["first_at"]))

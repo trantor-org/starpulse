@@ -1,24 +1,23 @@
 """The body each write route takes."""
 
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Annotated, Literal
 
 from pydantic import (
     AfterValidator,
-    ConfigDict,
     Field,
     StrictFloat,
     StrictInt,
     StringConstraints,
     ValidationInfo,
-    WithJsonSchema,
     field_validator,
     model_validator,
 )
 
 from starpulse.contracts.api._base import _Request
 from starpulse.contracts.api.dto.admin import Clock, Density, OpensOn, Scale, Theme
+from starpulse.contracts.api.dto.machine_definition import MachineDefinition, PolicyRows
 from starpulse.contracts.api.dto.scheduler import QuietHours
-from starpulse.contracts.doc_links import PATTERN, doc_link
+from starpulse.contracts.api.dto.task_fields import Changes, DocLink, EditBase
 from starpulse.contracts.tiers import TIERS
 
 #: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
@@ -56,23 +55,6 @@ def _nonblank(value: str) -> str:
 #: Text a write names that must hold something: a blank name is an error, not an absent one.
 NonBlank = Annotated[str, AfterValidator(_nonblank)]
 
-#: One `documentation` entry: a doc id (doc-N) or a file path, never a command's JSON reply.
-DocLink = Annotated[
-    str,
-    AfterValidator(doc_link),
-    WithJsonSchema(
-        {"type": "string", "pattern": PATTERN, "description": "A doc id (doc-N) or a file path, never a JSON reply"}
-    ),
-]
-
-
-class Changes(TypedDict, total=False):
-    """An edit's fields by name: any field the board takes, with each `documentation` entry a link."""
-
-    __pydantic_config__ = ConfigDict(extra="allow")  # type: ignore[misc]  # pydantic reads it off a TypedDict
-    documentation: list[DocLink] | None
-
-
 class _Writer(_Request):
     """The writer a board write names: `actor` is `operator` from the page and `agent` from a session; a write naming
     neither is `anonymous`. The `session` and `harness` it names land on the change's `board:lanes` row."""
@@ -101,7 +83,7 @@ class EditRequest(_Writer):
     """An edit: change fields of the task; `base` holds the value each changed field had when the page read it."""
 
     task: str
-    base: dict[str, Any]
+    base: EditBase
     changes: Changes
     comment: str | None = None
     break_glass: bool = Field(False, alias="breakGlass")  # an editor import: its Events are marked break-glass (D5)
@@ -138,7 +120,7 @@ class TaskPutRequest(_Writer):
     reason) and `unfreeze: true` (the task actor lifts the freeze; only the operator or the freezer may ask it).
     """
 
-    base: dict[str, Any] = Field(default_factory=dict)
+    base: EditBase = Field(default_factory=EditBase)
     changes: Changes = Field(default_factory=Changes)
     comment: str | None = None
     break_glass: bool = Field(False, alias="breakGlass")
@@ -283,7 +265,7 @@ class JobListRequest(_Request):
 class MachineCreateRequest(_Request):
     """`PUT /api/machines`: create a machine from `definition`, a machine document, when no active machine has its name."""
 
-    definition: dict[str, Any]
+    definition: MachineDefinition
 
 
 class MachinePutRequest(_Request):
@@ -291,9 +273,9 @@ class MachinePutRequest(_Request):
     `hash` of the machine detail the caller read). `policy`, the table rows of the whole board policy, is written and
     activated with it."""
 
-    definition: dict[str, Any]
+    definition: MachineDefinition
     base: NonBlank
-    policy: dict[str, Any] | None = None
+    policy: PolicyRows | None = None
 
 
 class MilestonePutRequest(_Request):

@@ -143,6 +143,9 @@ _GRACE = "grace:"
 _GRACE_S = 190.0
 #: Seconds before a pull request GitHub could not yet answer for (`mergeable` gave None) is asked again.
 _MERGEABLE_RETRY_S = 30.0
+#: Seconds a settled `mergeable` answer outlives a move of the base tip alone: every open pull request is read again on each
+#: merge to the default branch, which spent a third of the GitHub core budget in a merge-heavy hour. A new head is read at once.
+_BASE_MOVE_REREAD_S = 600.0
 #: Seconds a dispatched or resumed session has to report its start; a healthy dispatch reports within seconds.
 _START_BOUND_S = 300.0
 #: The prefix of the deadline key that checks a resume's start, apart from a task's own overdue deadline.
@@ -1391,7 +1394,12 @@ class TaskActor:
             detail = (pull_record(self._store, url, detailed=True) or record).get("detail") or {}
             version = (record["headRefOid"], detail.get("baseOid"))
             settled = self._settled.get(url, ((), None, 0.0))
-            if settled[0] != version:
+            base_moved_only = (
+                settled[0][:1] == version[:1]
+                and settled[1] in ("MERGEABLE", "CONFLICTING")
+                and self._clock() - settled[2] < _BASE_MOVE_REREAD_S
+            )
+            if settled[0] != version and not base_moved_only:
                 self._read_mergeable(url, version, record["repo"], record["number"])
                 return {**record, "mergeable": "UNKNOWN"}  # a stored MERGEABLE may predate the base's tip: unsettled until GitHub answers
             if settled[1] is None and self._clock() - settled[2] >= _MERGEABLE_RETRY_S:

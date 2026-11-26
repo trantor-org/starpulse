@@ -40,6 +40,10 @@ class SpendPhase(_Api):
         description="The `profile` of the cell `phase_norm_wte` came from, or `mixed` for the kind and size cell pooling every profile; "
         "null when there is no norm."
     )
+    no_norm_reason: str | None = Field(
+        description="Why `phase_norm_wte` is null: `batch umbrella`, `no kind or size`, or `under 5 peers in kind × size`; "
+        "null when there is a norm."
+    )
     phase_above_norm: bool = Field(description="`wte` is over three times `phase_norm_wte`.")
 
 

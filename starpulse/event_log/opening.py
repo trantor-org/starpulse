@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlalchemy import Engine, func, or_, select
 
 from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.readmodel import task_uuid
 from starpulse.event_log.tables import machine_events
 
 #: The file a config without `database_url` keeps its history in, beside the config.
@@ -34,6 +35,6 @@ def last_run_event(engine: Engine, run: str, task: str | None = None) -> float |
     none: the harness keys a taskless session's telemetry by its session id and a task-branch session's by its task, so
     this is when that session last acted."""
     c = machine_events.c
-    match = (c.run == run) if task is None else or_(c.run == run, c.task == task)
+    match = (c.run == run) if task is None else or_(c.run == run, c.task_uuid == task_uuid.of(task))
     with engine.connect() as db:
         return db.execute(select(func.max(c.occurred_at)).where(match)).scalar()

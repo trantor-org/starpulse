@@ -591,9 +591,51 @@
       "type": "object"
     },
     "Changes": {
-      "additionalProperties": true,
-      "description": "An edit's fields by name: any field the board takes, with each `documentation` entry a link.",
+      "additionalProperties": false,
+      "description": "An edit's fields by name, each as the board's writer takes it. `documentation` entries are links; `appendNotes`\nadds to the notes as they are when the write lands, and `planReason` is why the plan changes: neither has a base.",
       "properties": {
+        "acceptanceCriteria": {
+          "items": {
+            "$ref": "#/$defs/ChecklistItem"
+          },
+          "type": "array"
+        },
+        "actorMemory": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "adrNeeded": {
+          "type": "string"
+        },
+        "appendNotes": {
+          "type": "string"
+        },
+        "assignee": {
+          "type": "string"
+        },
+        "definitionOfDone": {
+          "items": {
+            "$ref": "#/$defs/ChecklistItem"
+          },
+          "type": "array"
+        },
+        "dependencies": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dependencyNeeds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
         "documentation": {
           "anyOf": [
             {
@@ -608,9 +650,105 @@
               "type": "null"
             }
           ]
+        },
+        "duplicateResolution": {
+          "type": "string"
+        },
+        "duplicateSearch": {
+          "type": "string"
+        },
+        "finalSummary": {
+          "type": "string"
+        },
+        "follows": {
+          "type": "string"
+        },
+        "frozen": {
+          "$ref": "#/$defs/FrozenEdit"
+        },
+        "impact": {
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "milestone": {
+          "type": "string"
+        },
+        "modifiedFiles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "needsAttention": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "planReason": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "references": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tier": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "urgency": {
+          "type": "string"
         }
       },
       "title": "Changes",
+      "type": "object"
+    },
+    "ChecklistItem": {
+      "additionalProperties": false,
+      "description": "One acceptance criterion or definition-of-done item; an item without `n` is numbered after the highest given.",
+      "properties": {
+        "checked": {
+          "type": "boolean"
+        },
+        "n": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "checked"
+      ],
+      "title": "ChecklistItem",
       "type": "object"
     },
     "Cite": {
@@ -2345,6 +2483,130 @@
       "title": "DonePage",
       "type": "object"
     },
+    "EditBase": {
+      "description": "The value each changed field had when the caller read it, a field the record holds as it holds it: a field the\nedit does not change may be named or left out.",
+      "properties": {
+        "acceptanceCriteria": {
+          "items": {
+            "$ref": "#/$defs/ChecklistItem"
+          },
+          "type": "array"
+        },
+        "actorMemory": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "adrNeeded": {
+          "type": "string"
+        },
+        "assignee": {
+          "type": "string"
+        },
+        "definitionOfDone": {
+          "items": {
+            "$ref": "#/$defs/ChecklistItem"
+          },
+          "type": "array"
+        },
+        "dependencies": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dependencyNeeds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "documentation": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "duplicateResolution": {
+          "type": "string"
+        },
+        "duplicateSearch": {
+          "type": "string"
+        },
+        "finalSummary": {
+          "type": "string"
+        },
+        "follows": {
+          "type": "string"
+        },
+        "frozen": {
+          "$ref": "#/$defs/FrozenEdit"
+        },
+        "impact": {
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "milestone": {
+          "type": "string"
+        },
+        "modifiedFiles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "needsAttention": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "references": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tier": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "urgency": {
+          "type": "string"
+        }
+      },
+      "title": "EditBase",
+      "type": "object"
+    },
     "Edited": {
       "description": "An edit's answer: `advice` is what the board tells the mover about the task now it is edited, when it has any;\n`warnings` are the lane rules an operator's move broke and landed.",
       "properties": {
@@ -2381,6 +2643,73 @@
         "changed"
       ],
       "title": "Edited",
+      "type": "object"
+    },
+    "EventMatch": {
+      "additionalProperties": false,
+      "description": "How one event field is matched: exactly one of `equals`, `in` and `exists`.",
+      "properties": {
+        "equals": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "exists": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "in": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "EventMatch",
       "type": "object"
     },
     "ExitTool": {
@@ -2647,6 +2976,47 @@
       "title": "Frozen",
       "type": "object"
     },
+    "FrozenEdit": {
+      "additionalProperties": false,
+      "description": "Who froze the task, when and why.",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "title": "FrozenEdit",
+      "type": "object"
+    },
     "GateSummary": {
       "properties": {
         "bypassable": {
@@ -2796,7 +3166,9 @@
         "variables": {
           "anyOf": [
             {
-              "additionalProperties": true,
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
               "type": "object"
             },
             {
@@ -3083,6 +3455,7 @@
       "title": "Jobs",
       "type": "object"
     },
+    "JsonValue": {},
     "LaneSurface": {
       "description": "What a session holding the lane may call: its tools, its exit tools and the skill bound on entry.",
       "properties": {
@@ -3576,7 +3949,7 @@
         },
         "states": {
           "items": {
-            "$ref": "#/$defs/MachineState"
+            "$ref": "#/$defs/starpulse__contracts__api__dto__machine__MachineState"
           },
           "type": "array"
         },
@@ -3645,19 +4018,322 @@
       "title": "Machine",
       "type": "object"
     },
+    "MachineCite": {
+      "additionalProperties": false,
+      "properties": {
+        "quote": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "skill": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "quote"
+      ],
+      "title": "MachineCite",
+      "type": "object"
+    },
     "MachineCreateRequest": {
       "additionalProperties": false,
       "description": "`PUT /api/machines`: create a machine from `definition`, a machine document, when no active machine has its name.",
       "properties": {
         "definition": {
-          "additionalProperties": true,
-          "type": "object"
+          "$ref": "#/$defs/MachineDefinition"
         }
       },
       "required": [
         "definition"
       ],
       "title": "MachineCreateRequest",
+      "type": "object"
+    },
+    "MachineCue": {
+      "additionalProperties": false,
+      "properties": {
+        "dag": {
+          "pattern": "^[A-Za-z0-9_-]+/[A-Za-z0-9_./-]+$",
+          "type": "string"
+        },
+        "event": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+          "type": "string"
+        },
+        "grace": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "on": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "resolves": {
+          "enum": [
+            "forced",
+            "next"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "dag",
+        "on",
+        "resolves"
+      ],
+      "title": "MachineCue",
+      "type": "object"
+    },
+    "MachineDefinition": {
+      "additionalProperties": false,
+      "description": "A machine document: its states, the events that move a task between them, and what it declares around them.",
+      "properties": {
+        "bindings": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cues": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MachineCue"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "events": {
+          "minProperties": 1,
+          "patternProperties": {
+            "^[A-Za-z][A-Za-z0-9_]*$": {
+              "items": {
+                "$ref": "#/$defs/MachineTransition"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "launches": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/MachineLaunch"
+              },
+              "minProperties": 1,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "main_line": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "migrations": {
+          "anyOf": [
+            {
+              "patternProperties": {
+                "^[a-z][a-z0-9_]*$": {
+                  "pattern": "^[a-z][a-z0-9_]*$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+          "type": "string"
+        },
+        "next": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineNext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "parents": {
+          "anyOf": [
+            {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rests": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "states": {
+          "minProperties": 1,
+          "patternProperties": {
+            "^[a-z][a-z0-9_]*$": {
+              "$ref": "#/$defs/starpulse__contracts__api__dto__machine_definition__MachineState"
+            }
+          },
+          "type": "object"
+        },
+        "submachines": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MachineSubmachine"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tiers": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "pattern": "^[a-z][a-z0-9_]*$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "anyOf": [
+            {
+              "enum": [
+                "machine",
+                "phase machine",
+                "sub-machine"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "writers": {
+          "anyOf": [
+            {
+              "patternProperties": {
+                "^[A-Za-z][A-Za-z0-9_]*$": {
+                  "items": {
+                    "$ref": "#/$defs/MachineWriter"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "name",
+        "states",
+        "events"
+      ],
+      "title": "MachineDefinition",
       "type": "object"
     },
     "MachineDetail": {
@@ -3792,6 +4468,51 @@
       "title": "MachineEntryFrom",
       "type": "object"
     },
+    "MachineGuard": {
+      "additionalProperties": false,
+      "properties": {
+        "when": {
+          "minProperties": 1,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {
+              "$ref": "#/$defs/EventMatch"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "when"
+      ],
+      "title": "MachineGuard",
+      "type": "object"
+    },
+    "MachineLaunch": {
+      "additionalProperties": false,
+      "properties": {
+        "machine": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "skill": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill"
+      ],
+      "title": "MachineLaunch",
+      "type": "object"
+    },
     "MachineListRequest": {
       "additionalProperties": false,
       "description": "`POST /api/machines`: list the machines the board draws. It takes no field.",
@@ -3885,7 +4606,7 @@
         },
         "states": {
           "items": {
-            "$ref": "#/$defs/MachineState"
+            "$ref": "#/$defs/starpulse__contracts__api__dto__machine__MachineState"
           },
           "type": "array"
         },
@@ -3968,6 +4689,28 @@
       "title": "MachineListed",
       "type": "object"
     },
+    "MachineNext": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "skill",
+            "operation"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "MachineNext",
+      "type": "object"
+    },
     "MachinePutRequest": {
       "additionalProperties": false,
       "description": "`PUT /api/machines/{name}`: activate `definition`, a machine document named `name`, over the version `base` (the\n`hash` of the machine detail the caller read). `policy`, the table rows of the whole board policy, is written and\nactivated with it.",
@@ -3976,14 +4719,12 @@
           "type": "string"
         },
         "definition": {
-          "additionalProperties": true,
-          "type": "object"
+          "$ref": "#/$defs/MachineDefinition"
         },
         "policy": {
           "anyOf": [
             {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/$defs/PolicyRows"
             },
             {
               "type": "null"
@@ -4011,47 +4752,6 @@
       "title": "MachineRetired",
       "type": "object"
     },
-    "MachineState": {
-      "properties": {
-        "final": {
-          "type": "boolean"
-        },
-        "id": {
-          "type": "string"
-        },
-        "initial": {
-          "type": "boolean"
-        },
-        "name": {
-          "type": "string"
-        },
-        "priority": {
-          "default": 0,
-          "description": "Which state wins when a task's dependencies would put it in more than one: the higher number wins, a tie keeps the task where it is.",
-          "type": "integer"
-        },
-        "role": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none."
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "initial",
-        "final"
-      ],
-      "title": "MachineState",
-      "type": "object"
-    },
     "MachineStrip": {
       "description": "The last 24 hours of machine entries, counted over every machine.",
       "properties": {
@@ -4066,6 +4766,155 @@
         "entries"
       ],
       "title": "MachineStrip",
+      "type": "object"
+    },
+    "MachineSubmachine": {
+      "additionalProperties": false,
+      "properties": {
+        "exits": {
+          "patternProperties": {
+            "^[a-z][a-z0-9_]*$": {
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "machine": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "routes": {
+          "anyOf": [
+            {
+              "patternProperties": {
+                "^[a-z][a-z0-9_]*$": {
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "when": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "state",
+        "machine",
+        "exits"
+      ],
+      "title": "MachineSubmachine",
+      "type": "object"
+    },
+    "MachineTransition": {
+      "additionalProperties": false,
+      "properties": {
+        "cite": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineCite"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ]
+        },
+        "if": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineGuard"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "to": {
+          "type": "string"
+        },
+        "unless": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineGuard"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "title": "MachineTransition",
+      "type": "object"
+    },
+    "MachineWriter": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "pattern": "^[A-Za-z0-9_-]+(/[A-Za-z0-9_./-]+)?$",
+          "type": "string"
+        },
+        "trigger": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "actor",
+        "trigger"
+      ],
+      "title": "MachineWriter",
       "type": "object"
     },
     "MachineWritten": {
@@ -4577,6 +5426,81 @@
       "title": "Outlier",
       "type": "object"
     },
+    "Pack": {
+      "description": "A color pack as the page builds it: `c` the role colors, `r` each role's derivation (a color, or a mix of two derivations), `x` any extra tokens.",
+      "properties": {
+        "c": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "r": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "src": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "vibe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "x": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "name",
+        "c",
+        "r"
+      ],
+      "title": "Pack",
+      "type": "object"
+    },
+    "PackSource": {
+      "properties": {
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "title": "PackSource",
+      "type": "object"
+    },
     "Park": {
       "additionalProperties": false,
       "description": "Pause the task on exactly one reason, which picks the lane: `untilTask` (tasks that must reach Done, or\n`TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait;\n`operator` (what only the operator can do) needs attention.",
@@ -4638,6 +5562,302 @@
         "to"
       ],
       "title": "Parked",
+      "type": "object"
+    },
+    "PolicyExit": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "event": {
+          "type": "string"
+        },
+        "trigger": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "actor",
+        "trigger"
+      ],
+      "title": "PolicyExit",
+      "type": "object"
+    },
+    "PolicyLane": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "integer"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "position"
+      ],
+      "title": "PolicyLane",
+      "type": "object"
+    },
+    "PolicyProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "size",
+        "profile"
+      ],
+      "title": "PolicyProfile",
+      "type": "object"
+    },
+    "PolicyRoute": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "event": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "source",
+        "target"
+      ],
+      "title": "PolicyRoute",
+      "type": "object"
+    },
+    "PolicyRows": {
+      "additionalProperties": false,
+      "description": "The table rows of the whole board policy; a table left out holds no row.",
+      "properties": {
+        "exits": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PolicyExit"
+          },
+          "type": "array"
+        },
+        "lanes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PolicyLane"
+          },
+          "type": "array"
+        },
+        "profiles": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PolicyProfile"
+          },
+          "type": "array"
+        },
+        "routes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PolicyRoute"
+          },
+          "type": "array"
+        },
+        "rules": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PolicyRule"
+          },
+          "type": "array"
+        },
+        "tools": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PolicyTool"
+          },
+          "type": "array"
+        },
+        "vocabularies": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PolicyVocabulary"
+          },
+          "type": "array"
+        },
+        "watches": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PolicyWatch"
+          },
+          "type": "array"
+        }
+      },
+      "title": "PolicyRows",
+      "type": "object"
+    },
+    "PolicyRule": {
+      "additionalProperties": false,
+      "properties": {
+        "on": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "position": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "require": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "skill": {
+          "type": "string"
+        },
+        "unless_actor": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "position",
+        "on",
+        "require",
+        "reason",
+        "skill",
+        "unless_actor"
+      ],
+      "title": "PolicyRule",
+      "type": "object"
+    },
+    "PolicyTool": {
+      "additionalProperties": false,
+      "properties": {
+        "lane": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lane",
+        "tool"
+      ],
+      "title": "PolicyTool",
+      "type": "object"
+    },
+    "PolicyVocabulary": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "integer"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value",
+        "position"
+      ],
+      "title": "PolicyVocabulary",
+      "type": "object"
+    },
+    "PolicyWatch": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "type": "string"
+        },
+        "fact": {
+          "type": "string"
+        },
+        "lane": {
+          "type": "string"
+        },
+        "position": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "lane",
+        "fact",
+        "event",
+        "position"
+      ],
+      "title": "PolicyWatch",
       "type": "object"
     },
     "Pool": {
@@ -5979,13 +7199,15 @@
       "type": "object"
     },
     "SavedBg": {
-      "description": "A background an operator imported; `n` is the page's own neutrals shape.",
+      "description": "A background an operator imported; `n` is its neutral colors by name.",
       "properties": {
         "id": {
           "type": "string"
         },
         "n": {
-          "additionalProperties": true,
+          "additionalProperties": {
+            "type": "string"
+          },
           "type": "object"
         },
         "name": {
@@ -6001,14 +7223,13 @@
       "type": "object"
     },
     "SavedPack": {
-      "description": "A color pack an operator imported; `pack` is the page's own pack shape.",
+      "description": "A color pack an operator imported.",
       "properties": {
         "id": {
           "type": "string"
         },
         "pack": {
-          "additionalProperties": true,
-          "type": "object"
+          "$ref": "#/$defs/Pack"
         }
       },
       "required": [
@@ -7024,6 +8245,17 @@
           },
           "type": "array"
         },
+        "no_norm_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why `phase_norm_wte` is null: `batch umbrella`, `no kind or size`, or `under 5 peers in kind \u00d7 size`; null when there is a norm."
+        },
         "norm_profile": {
           "anyOf": [
             {
@@ -7130,6 +8362,7 @@
         "above_norm",
         "phase_norm_wte",
         "norm_profile",
+        "no_norm_reason",
         "phase_above_norm"
       ],
       "title": "SpendPhase",
@@ -7639,8 +8872,7 @@
           "default": null
         },
         "base": {
-          "additionalProperties": true,
-          "type": "object"
+          "$ref": "#/$defs/EditBase"
         },
         "breakGlass": {
           "default": false,
@@ -8401,6 +9633,131 @@
         "trigger"
       ],
       "title": "Writer",
+      "type": "object"
+    },
+    "starpulse__contracts__api__dto__machine__MachineState": {
+      "properties": {
+        "final": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "initial": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "priority": {
+          "default": 0,
+          "description": "Which state wins when a task's dependencies would put it in more than one: the higher number wins, a tie keeps the task where it is.",
+          "type": "integer"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The type the machine declares the state: `initial`, `final`, `resting`, `waiting_on_fact` or `waiting_on_person`; null when it declares none."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "initial",
+        "final"
+      ],
+      "title": "MachineState",
+      "type": "object"
+    },
+    "starpulse__contracts__api__dto__machine_definition__MachineState": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "anyOf": [
+            {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "final": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "initial": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "label": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "role": {
+          "anyOf": [
+            {
+              "enum": [
+                "resting",
+                "waiting_on_fact",
+                "waiting_on_person"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "MachineState",
       "type": "object"
     }
   },

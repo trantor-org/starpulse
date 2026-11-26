@@ -71,6 +71,7 @@ _lane_changes = Table(
     Column("actor", String),
     Column("task_uuid", String),
     Index("ix_starpulse_lane_changes_task", "task", "observed_at"),
+    Index("ix_starpulse_lane_changes_task_uuid", "task_uuid", "observed_at"),
 )
 _learned_steps = Table(
     "starpulse_learned_steps",
@@ -346,7 +347,7 @@ class HistoryStore:
         c = _lane_changes.c
         with self.engine.connect() as db:
             rows = db.execute(
-                select(c.observed_at, c.old_status, c.new_status, c.actor).where(c.task == task).order_by(*_LANE_ORDER)
+                select(c.observed_at, c.old_status, c.new_status, c.actor).where(c.task_uuid == task_uuid.of(task)).order_by(*_LANE_ORDER)
             ).all()
         return lane_changes([tuple(row) for row in rows])
 
@@ -360,7 +361,7 @@ class HistoryStore:
         with self.engine.connect() as db:
             rows = db.execute(
                 select(c.occurred_at, c.event)
-                .where(or_(c.task == task, c.run == task), c.machine == flow)
+                .where(or_(c.task_uuid == task_uuid.of(task), c.run == task), c.machine == flow)
                 .order_by(*_STEP_ORDER)
             ).all()
         return machine_steps(self._machines[flow], [tuple(row) for row in rows])
@@ -375,7 +376,7 @@ class HistoryStore:
         floor = since if self._retention is None else max(since, now - self._retention)
         query = (
             select(c.machine, c.occurred_at, c.event)
-            .where(c.task == task, c.machine.in_(self._machines))
+            .where(c.task_uuid == task_uuid.of(task), c.machine.in_(self._machines))
             .order_by(*_STEP_ORDER)
         )
         if self._retention is not None:

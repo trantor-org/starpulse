@@ -10,6 +10,7 @@ from sqlalchemy import Engine, select
 
 from starpulse.event_log.events import STREAM as MACHINE_STREAM
 from starpulse.event_log.lane_events import STREAM as LANE_STREAM
+from starpulse.event_log.readmodel import task_uuid
 from starpulse.event_log.tables import events as log_events
 from starpulse.event_log.tables import machine_events
 from starpulse.event_log.wake import StopEvent
@@ -65,7 +66,7 @@ def dispatcher(log: EventLog) -> Callable[[str, str, str], bool]:
 def started(engine: Engine, task: str) -> bool:
     """Whether a session was ever dispatched to `task`: the start event is where its started state is read."""
     c = machine_events.c
-    found = select(c.id).where(c.task == task, c.machine == HARNESS_MACHINE, c.event == DISPATCHED).limit(1)
+    found = select(c.id).where(c.task_uuid == task_uuid.of(task), c.machine == HARNESS_MACHINE, c.event == DISPATCHED).limit(1)
     with engine.connect() as db:
         return db.execute(found).first() is not None
 
@@ -76,7 +77,7 @@ def _newest(engine: Engine, task: str, until: float) -> tuple[str, dict[str, str
     newest = (
         select(c.event, log_events.c.fields)
         .select_from(machine_events.outerjoin(log_events, log_events.c.event_id == c.event_id))
-        .where(c.task == task, c.machine == HARNESS_MACHINE, c.event != STOPPED, c.occurred_at <= until)
+        .where(c.task_uuid == task_uuid.of(task), c.machine == HARNESS_MACHINE, c.event != STOPPED, c.occurred_at <= until)
         .order_by(c.occurred_at.desc(), c.id.desc())
         .limit(1)
     )

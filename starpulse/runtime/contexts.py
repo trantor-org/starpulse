@@ -311,7 +311,7 @@ def default_starters(
         from starpulse.event_log.claude_sessions import live_socket, same_holder, sessions_dir
         from starpulse.machine_engine.model.transitions import lane_id
         from starpulse.pulls.adapters.outbound.pulls import stored_head
-        from starpulse.runtime.session_delivery import exit_watcher, forget_ended, route
+        from starpulse.runtime.session_delivery import exit_watcher, forget_ended, route, running
         from starpulse.sessions.adapters.outbound import claude_code_notify as claude
         from starpulse.sessions.adapters.outbound.registry import Registry, directory
         from starpulse.sessions.adapters.outbound.wake_metrics import Wakes
@@ -354,6 +354,7 @@ def default_starters(
                 log,
                 {**declared(config, base)[1], **GITHUB_MACHINES},
             )
+        forgotten: set[str] = set()
         return worker.start(
             config.bridge.port,
             config.bridge.board,
@@ -370,11 +371,13 @@ def default_starters(
                 lane_of,
                 lambda: shared()[1].roles.working,
                 closed,
+                forgotten,
             ),
-            forget_ended(registry, live_socket(sessions_dir(os.environ)), sessions_dir(os.environ)),
+            forget_ended(registry, live_socket(sessions_dir(os.environ)), sessions_dir(os.environ), forgotten),
             config.bridge.incidents,
             exit_watcher(log, registry, sessions_dir(os.environ), held_by),
             events,
+            running(sessions_dir(os.environ)),
         )
 
     def search(own: threading.Event) -> Callable[[], None]:

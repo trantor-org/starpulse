@@ -10,7 +10,7 @@ const FAILED_TTL_MS = 5_000;
 
 /** Every field of a `SpendPhase` the rail draws or totals. */
 const SPEND_FIELDS =
-  "task phase kind size steps side_steps input output cache_read cache_write wte peak_context compactions models profile first_at last_at task_wte norm_wte above_norm phase_norm_wte norm_profile phase_above_norm";
+  "task phase kind size steps side_steps input output cache_read cache_write wte peak_context compactions models profile first_at last_at task_wte norm_wte above_norm phase_norm_wte norm_profile no_norm_reason phase_above_norm";
 
 const cached = new Map<string, { at: number; ttl: number; answer: Promise<SpendPhase[] | null> }>();
 
@@ -71,6 +71,7 @@ export function SpendRows({ rows }: { rows: SpendPhase[] }) {
       <span className="big" title="Weighted token equivalents: an uncached input token is 1, a cache write 1.25, a cache read 0.1, an output token 5">{compactWte(total)} WTE</span>
       {rows[0].above_norm && norm != null && <span className="spend-flag" title={`Median for ${rows[0].kind ?? "?"} size ${rows[0].size ?? "?"}: ${compactWte(norm)} WTE`}>{(total / norm).toFixed(1)}× norm ({compactWte(norm)})</span>}
       {!rows[0].above_norm && norm != null && <span className="k">norm {compactWte(norm)}</span>}
+      {norm == null && <span className="k">no norm: {rows.find((r) => r.no_norm_reason)?.no_norm_reason}</span>}
     </div>
     {rows.map((r) => <div className="spend-row" key={r.phase} data-phase={r.phase}>
       <span className="ph">{PHASE_NAME[r.phase] ?? r.phase}</span>

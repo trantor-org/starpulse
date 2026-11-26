@@ -135,11 +135,12 @@ def start(
     reach: Mapping[str, Reach] | None = None,
     registered: Callable[[], None] = lambda: None,
     events: ingest.Request | None = None,
+    running: Callable[[str], bool] | None = None,
 ) -> Callable[[], None]:
     """Start the bridge over `log` for `board`, ending when `stop` is set; `feed()` is the board's read side. Return its reload.
 
     `route` finds how to reach a session's consumer: with it, the events waiting on a consumer it knows are delivered
-    (`bridge.delivery`). `reach` is each incident type's reach (`bridge.reach`). `settle` runs after each lane move and `reconcile`. `registered` runs when the delivery starts and each time a session registers. `events` applies what producers publish to the
+    (`bridge.delivery`); `running` says whether a consumer's session runs, so a routeless one that does leaves delivery behind. `reach` is each incident type's reach (`bridge.reach`). `settle` runs after each lane move and `reconcile`. `registered` runs when the delivery starts and each time a session registers. `events` applies what producers publish to the
     board's ingest (`bridge.ingest`); without it none is applied.
     """
     stream = f"starpulse-{board}"
@@ -149,7 +150,7 @@ def start(
     delivery: Delivery | None = None
     if route:
         link = Publisher(url, stream, stream_subjects(board))
-        delivery = Delivery(JetStreamMailbox(link, stream), route, behind=Behind(log, DELIVERY))
+        delivery = Delivery(JetStreamMailbox(link, stream), route, behind=Behind(log, DELIVERY), **({"running": running} if running else {}))
         link.listen(
             wake_subject(board), lambda: (registered(), delivery.wake())
         )  # `starpulse subscribe` signals it once a session's route is registered

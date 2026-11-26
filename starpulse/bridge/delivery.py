@@ -62,9 +62,16 @@ Route = Callable[[str], Handler | None]
 
 class Delivery:
     def __init__(
-        self, mailbox: Mailbox, route: Route, *, clock: Callable[[], float] = time.time, behind: Behind | None = None
+        self,
+        mailbox: Mailbox,
+        route: Route,
+        *,
+        clock: Callable[[], float] = time.time,
+        behind: Behind | None = None,
+        running: Callable[[str], bool] = lambda _name: False,
     ) -> None:
         self._mailbox, self._route, self._clock, self._behind = mailbox, route, clock, behind
+        self._running = running
         self._unrouted: set[str] = set()
         self._woken = threading.Event()
         self._deadlines = Deadlines(lambda _name: self.wake(), clock=clock)
@@ -73,6 +80,8 @@ class Delivery:
         self._woken.set()
 
     def once(self) -> None:
+        """One pass. A consumer with events waiting and no route whose session `running` says runs is behind, on every pass
+        until it registers: its holder is live and will never be told."""
         stuck = False
         for name, ack_wait in self._mailbox.waiting().items():
             handler = self._route(name)
@@ -80,6 +89,7 @@ class Delivery:
                 if name not in self._unrouted:
                     self._unrouted.add(name)
                     logger.warning("delivery: consumer %s has events waiting and no session route", name)
+                stuck = stuck or self._running(name)
                 continue
             self._unrouted.discard(name)
             try:

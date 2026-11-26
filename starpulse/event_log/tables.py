@@ -113,6 +113,7 @@ scheduler_runs = Table(
     Column("task_uuid", String),
     Index("ix_starpulse_scheduler_runs_tier_points", "tier", "points"),
     Index("ix_starpulse_scheduler_runs_unnamed", "task", sqlite_where=text("task_uuid IS NULL")),
+    Index("ix_starpulse_scheduler_runs_task_uuid", "task_uuid"),
     sqlite_autoincrement=True,
 )
 
@@ -179,6 +180,7 @@ machine_events = Table(
     Column("sha", String),
     Column("task_uuid", String),
     Index("ix_starpulse_machine_events_task", "task", "machine", "occurred_at"),
+    Index("ix_starpulse_machine_events_task_uuid", "task_uuid", "machine", "occurred_at"),
     Index("ix_starpulse_machine_events_run", "run", "machine", "occurred_at"),
 )
 

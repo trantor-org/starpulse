@@ -436,6 +436,36 @@
               }
             }
           },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "4XX": {
             "description": "A refusal",
             "content": {
@@ -471,6 +501,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MachineRetired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -551,6 +611,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MachineWritten"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -849,6 +939,36 @@
               }
             }
           },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "4XX": {
             "description": "A refusal",
             "content": {
@@ -878,6 +998,36 @@
               }
             }
           },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "4XX": {
             "description": "A refusal",
             "content": {
@@ -893,7 +1043,7 @@
     },
     "/api/task/{id}": {
       "get": {
-        "summary": "One task, by its id or an alias it carries",
+        "summary": "One task, by its key, an alias it carries or its UUID",
         "tags": [
           "tasks"
         ],
@@ -905,7 +1055,8 @@
             "required": true,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "The task's key, an alias it carries or its UUID."
           }
         ],
         "responses": {
@@ -1064,6 +1215,50 @@
               }
             }
           },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
           "4XX": {
             "description": "A refusal",
             "content": {
@@ -1108,6 +1303,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -1177,6 +1402,50 @@
               }
             }
           },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
           "4XX": {
             "description": "A refusal",
             "content": {
@@ -1211,7 +1480,8 @@
             "required": true,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "The task's key, an alias it carries or its UUID."
           }
         ],
         "requestBody": {
@@ -1301,6 +1571,53 @@
               }
             }
           },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StaleEdit"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
           "4XX": {
             "description": "A refusal",
             "content": {
@@ -1336,7 +1653,8 @@
             "required": true,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "The task's key, an alias it carries or its UUID."
           }
         ],
         "responses": {
@@ -1346,6 +1664,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Archived"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
                 }
               }
             }
@@ -1384,7 +1746,8 @@
             "required": true,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "The task's key, an alias it carries or its UUID."
           }
         ],
         "requestBody": {
@@ -1414,6 +1777,57 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Link"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UnrecognisedUrl"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/NotHolder"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DeliveredElsewhere"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
                 }
               }
             }
@@ -1456,7 +1870,8 @@
             "required": true,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "The task's key, an alias it carries or its UUID."
           }
         ],
         "requestBody": {
@@ -1476,6 +1891,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Link"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/NotHolder"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -1577,6 +2029,50 @@
               }
             }
           },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
           "4XX": {
             "description": "A refusal",
             "content": {
@@ -1619,6 +2115,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MilestoneArchived"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
                 }
               }
             }
@@ -1706,6 +2246,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MilestoneCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
                 }
               }
             }
@@ -1807,6 +2391,50 @@
               }
             }
           },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
           "4XX": {
             "description": "A refusal",
             "content": {
@@ -1849,6 +2477,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DocArchived"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
                 }
               }
             }
@@ -1936,6 +2608,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DocCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillRefusal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
                 }
               }
             }
@@ -2054,6 +2770,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -2185,6 +2931,46 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -2234,6 +3020,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -2291,6 +3107,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -2848,9 +3694,120 @@
         "type": "object"
       },
       "Changes": {
-        "additionalProperties": true,
-        "description": "An edit's fields by name: any field the board takes, with each `documentation` entry a link.",
+        "additionalProperties": false,
+        "description": "An edit's fields by name, each as the board's writer takes it. `documentation` entries are links; `appendNotes`\nadds to the notes as they are when the write lands, and `planReason` is why the plan changes: neither has a base.",
         "properties": {
+          "description": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "finalSummary": {
+            "type": "string"
+          },
+          "needsAttention": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "impact": {
+            "type": "string"
+          },
+          "urgency": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          },
+          "milestone": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "adrNeeded": {
+            "type": "string"
+          },
+          "duplicateSearch": {
+            "type": "string"
+          },
+          "duplicateResolution": {
+            "type": "string"
+          },
+          "follows": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "dependencies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "dependencyNeeds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "references": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "modifiedFiles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "acceptanceCriteria": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistItem"
+            },
+            "type": "array"
+          },
+          "definitionOfDone": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistItem"
+            },
+            "type": "array"
+          },
+          "actorMemory": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object"
+          },
+          "frozen": {
+            "$ref": "#/components/schemas/FrozenEdit"
+          },
           "documentation": {
             "anyOf": [
               {
@@ -2865,9 +3822,36 @@
                 "type": "null"
               }
             ]
+          },
+          "appendNotes": {
+            "type": "string"
+          },
+          "planReason": {
+            "type": "string"
           }
         },
         "title": "Changes",
+        "type": "object"
+      },
+      "ChecklistItem": {
+        "additionalProperties": false,
+        "description": "One acceptance criterion or definition-of-done item; an item without `n` is numbered after the highest given.",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "checked": {
+            "type": "boolean"
+          },
+          "n": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "text",
+          "checked"
+        ],
+        "title": "ChecklistItem",
         "type": "object"
       },
       "Cite": {
@@ -4555,6 +5539,130 @@
         "title": "DonePage",
         "type": "object"
       },
+      "EditBase": {
+        "description": "The value each changed field had when the caller read it, a field the record holds as it holds it: a field the\nedit does not change may be named or left out.",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "finalSummary": {
+            "type": "string"
+          },
+          "needsAttention": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "impact": {
+            "type": "string"
+          },
+          "urgency": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          },
+          "milestone": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "adrNeeded": {
+            "type": "string"
+          },
+          "duplicateSearch": {
+            "type": "string"
+          },
+          "duplicateResolution": {
+            "type": "string"
+          },
+          "follows": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "dependencies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "dependencyNeeds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "references": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "modifiedFiles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "acceptanceCriteria": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistItem"
+            },
+            "type": "array"
+          },
+          "definitionOfDone": {
+            "items": {
+              "$ref": "#/components/schemas/ChecklistItem"
+            },
+            "type": "array"
+          },
+          "actorMemory": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object"
+          },
+          "frozen": {
+            "$ref": "#/components/schemas/FrozenEdit"
+          },
+          "documentation": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "title": "EditBase",
+        "type": "object"
+      },
       "Edited": {
         "description": "An edit's answer: `advice` is what the board tells the mover about the task now it is edited, when it has any;\n`warnings` are the lane rules an operator's move broke and landed.",
         "properties": {
@@ -4591,6 +5699,73 @@
           "changed"
         ],
         "title": "Edited",
+        "type": "object"
+      },
+      "EventMatch": {
+        "additionalProperties": false,
+        "description": "How one event field is matched: exactly one of `equals`, `in` and `exists`.",
+        "properties": {
+          "equals": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "in": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "EventMatch",
         "type": "object"
       },
       "ExitTool": {
@@ -4784,6 +5959,47 @@
         "title": "Frozen",
         "type": "object"
       },
+      "FrozenEdit": {
+        "additionalProperties": false,
+        "description": "Who froze the task, when and why.",
+        "properties": {
+          "by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "FrozenEdit",
+        "type": "object"
+      },
       "GraphqlError": {
         "description": "One error a query met, as the GraphQL over HTTP spec names its fields.",
         "properties": {
@@ -4871,7 +6087,9 @@
           "variables": {
             "anyOf": [
               {
-                "additionalProperties": true,
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
                 "type": "object"
               },
               {
@@ -5158,6 +6376,7 @@
         "title": "Jobs",
         "type": "object"
       },
+      "JsonValue": {},
       "LaneSurface": {
         "description": "What a session holding the lane may call: its tools, its exit tools and the skill bound on entry.",
         "properties": {
@@ -5645,7 +6864,7 @@
           },
           "states": {
             "items": {
-              "$ref": "#/components/schemas/MachineState"
+              "$ref": "#/components/schemas/MachineState-Output"
             },
             "type": "array"
           },
@@ -5771,19 +6990,322 @@
         "title": "Machine",
         "type": "object"
       },
+      "MachineCite": {
+        "additionalProperties": false,
+        "properties": {
+          "skill": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "quote": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "quote"
+        ],
+        "title": "MachineCite",
+        "type": "object"
+      },
       "MachineCreateRequest": {
         "additionalProperties": false,
         "description": "`PUT /api/machines`: create a machine from `definition`, a machine document, when no active machine has its name.",
         "properties": {
           "definition": {
-            "additionalProperties": true,
-            "type": "object"
+            "$ref": "#/components/schemas/MachineDefinition"
           }
         },
         "required": [
           "definition"
         ],
         "title": "MachineCreateRequest",
+        "type": "object"
+      },
+      "MachineCue": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+            "type": "string"
+          },
+          "dag": {
+            "pattern": "^[A-Za-z0-9_-]+/[A-Za-z0-9_./-]+$",
+            "type": "string"
+          },
+          "on": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "resolves": {
+            "enum": [
+              "forced",
+              "next"
+            ],
+            "type": "string"
+          },
+          "grace": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "event",
+          "dag",
+          "on",
+          "resolves"
+        ],
+        "title": "MachineCue",
+        "type": "object"
+      },
+      "MachineDefinition": {
+        "additionalProperties": false,
+        "description": "A machine document: its states, the events that move a task between them, and what it declares around them.",
+        "properties": {
+          "name": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "machine",
+                  "phase machine",
+                  "sub-machine"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "parents": {
+            "anyOf": [
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "states": {
+            "minProperties": 1,
+            "patternProperties": {
+              "^[a-z][a-z0-9_]*$": {
+                "$ref": "#/components/schemas/MachineState-Input"
+              }
+            },
+            "type": "object"
+          },
+          "events": {
+            "minProperties": 1,
+            "patternProperties": {
+              "^[A-Za-z][A-Za-z0-9_]*$": {
+                "items": {
+                  "$ref": "#/components/schemas/MachineTransition"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "migrations": {
+            "anyOf": [
+              {
+                "patternProperties": {
+                  "^[a-z][a-z0-9_]*$": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "bindings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "writers": {
+            "anyOf": [
+              {
+                "patternProperties": {
+                  "^[A-Za-z][A-Za-z0-9_]*$": {
+                    "items": {
+                      "$ref": "#/components/schemas/MachineWriter"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "cues": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MachineCue"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "tiers": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "main_line": {
+            "anyOf": [
+              {
+                "items": {
+                  "pattern": "^[a-z][a-z0-9_]*$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "rests": {
+            "anyOf": [
+              {
+                "items": {
+                  "pattern": "^[a-z][a-z0-9_]*$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "submachines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MachineSubmachine"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "next": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MachineNext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "launches": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/MachineLaunch"
+                },
+                "minProperties": 1,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "name",
+          "states",
+          "events"
+        ],
+        "title": "MachineDefinition",
         "type": "object"
       },
       "MachineDetail": {
@@ -5918,6 +7440,51 @@
         "title": "MachineEntryFrom",
         "type": "object"
       },
+      "MachineGuard": {
+        "additionalProperties": false,
+        "properties": {
+          "when": {
+            "minProperties": 1,
+            "patternProperties": {
+              "^[A-Za-z_][A-Za-z0-9_]*$": {
+                "$ref": "#/components/schemas/EventMatch"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "when"
+        ],
+        "title": "MachineGuard",
+        "type": "object"
+      },
+      "MachineLaunch": {
+        "additionalProperties": false,
+        "properties": {
+          "skill": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "machine": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "skill"
+        ],
+        "title": "MachineLaunch",
+        "type": "object"
+      },
       "MachineListRequest": {
         "additionalProperties": false,
         "description": "`POST /api/machines`: list the machines the board draws. It takes no field.",
@@ -5942,7 +7509,7 @@
           },
           "states": {
             "items": {
-              "$ref": "#/components/schemas/MachineState"
+              "$ref": "#/components/schemas/MachineState-Output"
             },
             "type": "array"
           },
@@ -6094,13 +7661,34 @@
         "title": "MachineListed",
         "type": "object"
       },
+      "MachineNext": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "skill",
+              "operation"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "title": "MachineNext",
+        "type": "object"
+      },
       "MachinePutRequest": {
         "additionalProperties": false,
         "description": "`PUT /api/machines/{name}`: activate `definition`, a machine document named `name`, over the version `base` (the\n`hash` of the machine detail the caller read). `policy`, the table rows of the whole board policy, is written and\nactivated with it.",
         "properties": {
           "definition": {
-            "additionalProperties": true,
-            "type": "object"
+            "$ref": "#/components/schemas/MachineDefinition"
           },
           "base": {
             "type": "string"
@@ -6108,8 +7696,7 @@
           "policy": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/PolicyRows"
               },
               {
                 "type": "null"
@@ -6137,7 +7724,91 @@
         "title": "MachineRetired",
         "type": "object"
       },
-      "MachineState": {
+      "MachineState-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "initial": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "final": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "label": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "aliases": {
+            "anyOf": [
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "resting",
+                  "waiting_on_fact",
+                  "waiting_on_person"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "MachineState",
+        "type": "object"
+      },
+      "MachineState-Output": {
         "properties": {
           "id": {
             "type": "string"
@@ -6192,6 +7863,155 @@
           "entries"
         ],
         "title": "MachineStrip",
+        "type": "object"
+      },
+      "MachineSubmachine": {
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "machine": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "exits": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_]*$": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "routes": {
+            "anyOf": [
+              {
+                "patternProperties": {
+                  "^[a-z][a-z0-9_]*$": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "when": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "state",
+          "machine",
+          "exits"
+        ],
+        "title": "MachineSubmachine",
+        "type": "object"
+      },
+      "MachineTransition": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            ]
+          },
+          "to": {
+            "type": "string"
+          },
+          "if": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MachineGuard"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "unless": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MachineGuard"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "cite": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MachineCite"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "MachineTransition",
+        "type": "object"
+      },
+      "MachineWriter": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "pattern": "^[A-Za-z0-9_-]+(/[A-Za-z0-9_./-]+)?$",
+            "type": "string"
+          },
+          "trigger": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "trigger"
+        ],
+        "title": "MachineWriter",
         "type": "object"
       },
       "MachineWritten": {
@@ -6657,6 +8477,81 @@
         "title": "NotHolder",
         "type": "object"
       },
+      "Pack": {
+        "description": "A color pack as the page builds it: `c` the role colors, `r` each role's derivation (a color, or a mix of two derivations), `x` any extra tokens.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "vibe": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "src": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PackSource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "c": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "r": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "name",
+          "c",
+          "r"
+        ],
+        "title": "Pack",
+        "type": "object"
+      },
+      "PackSource": {
+        "properties": {
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "PackSource",
+        "type": "object"
+      },
       "Park": {
         "additionalProperties": false,
         "description": "Pause the task on exactly one reason, which picks the lane: `untilTask` (tasks that must reach Done, or\n`TASK-N#K` for one open criterion of a task) and `until` (event subjects an alert or a deploy emits) wait;\n`operator` (what only the operator can do) needs attention.",
@@ -6718,6 +8613,302 @@
           "to"
         ],
         "title": "Parked",
+        "type": "object"
+      },
+      "PolicyExit": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "actor",
+          "trigger"
+        ],
+        "title": "PolicyExit",
+        "type": "object"
+      },
+      "PolicyLane": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "position": {
+            "type": "integer"
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "name",
+          "role",
+          "position"
+        ],
+        "title": "PolicyLane",
+        "type": "object"
+      },
+      "PolicyProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "profile": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "size",
+          "profile"
+        ],
+        "title": "PolicyProfile",
+        "type": "object"
+      },
+      "PolicyRoute": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "event",
+          "source",
+          "target"
+        ],
+        "title": "PolicyRoute",
+        "type": "object"
+      },
+      "PolicyRows": {
+        "additionalProperties": false,
+        "description": "The table rows of the whole board policy; a table left out holds no row.",
+        "properties": {
+          "lanes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyLane"
+            },
+            "type": "array"
+          },
+          "routes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyRoute"
+            },
+            "type": "array"
+          },
+          "exits": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyExit"
+            },
+            "type": "array"
+          },
+          "watches": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyWatch"
+            },
+            "type": "array"
+          },
+          "rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyRule"
+            },
+            "type": "array"
+          },
+          "vocabularies": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyVocabulary"
+            },
+            "type": "array"
+          },
+          "profiles": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyProfile"
+            },
+            "type": "array"
+          },
+          "tools": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PolicyTool"
+            },
+            "type": "array"
+          }
+        },
+        "title": "PolicyRows",
+        "type": "object"
+      },
+      "PolicyRule": {
+        "additionalProperties": false,
+        "properties": {
+          "position": {
+            "type": "integer"
+          },
+          "on": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object"
+          },
+          "require": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "skill": {
+            "type": "string"
+          },
+          "unless_actor": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "position",
+          "on",
+          "require",
+          "reason",
+          "skill",
+          "unless_actor"
+        ],
+        "title": "PolicyRule",
+        "type": "object"
+      },
+      "PolicyTool": {
+        "additionalProperties": false,
+        "properties": {
+          "lane": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lane",
+          "tool"
+        ],
+        "title": "PolicyTool",
+        "type": "object"
+      },
+      "PolicyVocabulary": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "position"
+        ],
+        "title": "PolicyVocabulary",
+        "type": "object"
+      },
+      "PolicyWatch": {
+        "additionalProperties": false,
+        "properties": {
+          "lane": {
+            "type": "string"
+          },
+          "fact": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lane",
+          "fact",
+          "event",
+          "position"
+        ],
+        "title": "PolicyWatch",
         "type": "object"
       },
       "Pool": {
@@ -7986,7 +10177,7 @@
         "type": "object"
       },
       "SavedBg": {
-        "description": "A background an operator imported; `n` is the page's own neutrals shape.",
+        "description": "A background an operator imported; `n` is its neutral colors by name.",
         "properties": {
           "id": {
             "type": "string"
@@ -7995,7 +10186,9 @@
             "type": "string"
           },
           "n": {
-            "additionalProperties": true,
+            "additionalProperties": {
+              "type": "string"
+            },
             "type": "object"
           }
         },
@@ -8008,14 +10201,13 @@
         "type": "object"
       },
       "SavedPack": {
-        "description": "A color pack an operator imported; `pack` is the page's own pack shape.",
+        "description": "A color pack an operator imported.",
         "properties": {
           "id": {
             "type": "string"
           },
           "pack": {
-            "additionalProperties": true,
-            "type": "object"
+            "$ref": "#/components/schemas/Pack"
           }
         },
         "required": [
@@ -9478,8 +11670,7 @@
             "default": null
           },
           "base": {
-            "additionalProperties": true,
-            "type": "object"
+            "$ref": "#/components/schemas/EditBase"
           },
           "changes": {
             "$ref": "#/components/schemas/Changes"
