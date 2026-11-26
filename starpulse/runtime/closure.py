@@ -60,6 +60,7 @@ CONTEXT_ENTRIES = (
     "starpulse.runtime.assembly",
     "starpulse.runtime.read_model_follow",
     "starpulse.runtime.session_delivery",
+    "starpulse.runtime.store_refold",
     "starpulse.runtime.supervisor",
     "starpulse.runtime.writer_followers",
     "starpulse.sessions.adapters.outbound.claude_code_notify",

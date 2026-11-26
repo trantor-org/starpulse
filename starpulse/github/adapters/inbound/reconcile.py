@@ -9,7 +9,8 @@ other:
 - For each repository it pages the pull requests updated since a cursor and inserts a `source = 'reconcile'` row for each
   closed pull request and each finished check suite on its head that no row received around the fact reported, which
   the `events` consumer reads like a delivery. Only an inserted row counts as a correction, as only it is a missed push; a
-  fact younger than `SETTLE_S` is inserted but not counted, as its webhook may still be in flight.
+  fact younger than `SETTLE_S`, or one whose event has a lost delivery attempted around it that this pass asks GitHub to
+  redeliver, is inserted but not counted, as its webhook is in flight (a listener that refused it during a migration).
 - It also inserts a `reconciled` row, the pull request as the listing shows it, for each one the PR store lacks or holds
   with an older `updatedAt`, which only the `pulls` consumer reads, whether or not a task cites the pull request.
 
@@ -70,14 +71,16 @@ def _advance(cursors: SqlCursors, name: str, first: Reply, found: list[dict[str,
         cursors.put(name, Cursor(max((item[stamp] for item in found), key=epoch), first.etag))
 
 
-def _deliveries(client: Client, inbox: Inbox, cursors: SqlCursors, counted: Reconciled, now: float) -> None:
+def _deliveries(client: Client, inbox: Inbox, cursors: SqlCursors, counted: Reconciled, now: float) -> list[dict[str, Any]]:
+    """Asks for each lost delivery again and returns the attempts it asked about."""
     cursor = cursors.get("deliveries")
     floor = epoch(cursor.value) if cursor else now - LOOKBACK_S
     first, attempts = _newer(client, _DELIVERIES, cursor, floor, "delivered_at")
     counted.looked()
     refused = 0
-    for attempt in redeliveries(attempts, inbox.known({attempt["guid"] for attempt in attempts})):
-        path = f"/app/hook/deliveries/{attempt}/attempts"
+    lost = redeliveries(attempts, inbox.known({attempt["guid"] for attempt in attempts}))
+    for attempt in lost:
+        path = f"/app/hook/deliveries/{attempt['id']}/attempts"
         answer = client("POST", path, None)
         if 200 <= answer.status < 300:
             counted.redelivered()
@@ -89,6 +92,17 @@ def _deliveries(client: Client, inbox: Inbox, cursors: SqlCursors, counted: Reco
     reached = cursors.get("deliveries")
     if reached:
         counted.lag("deliveries", now - epoch(reached.value))
+    return lost
+
+
+def _redelivering(lost: list[dict[str, Any]], event: str, at: str | None) -> bool:
+    """Whether a delivery of `event` the inbox lacks was attempted around `at`: GitHub sent that push and the listener
+    refused it, and its redelivery is asked this pass, so the fact is no missed push."""
+    if not at:
+        return False
+    return any(
+        attempt.get("event") == event and epoch(at) - EARLY_S <= epoch(attempt["delivered_at"]) <= epoch(at) + LATE_S for attempt in lost
+    )
 
 
 def _reported(inbox: Inbox, delivery: Delivery, at: str | None) -> bool:
@@ -111,7 +125,14 @@ def _suite_id(body: bytes) -> object:
 
 
 def _pulls(
-    client: Client, inbox: Inbox, cursors: SqlCursors, counted: Reconciled, repository: str, now: float, stored: Callable[[str, int], str | None]
+    client: Client,
+    inbox: Inbox,
+    cursors: SqlCursors,
+    counted: Reconciled,
+    repository: str,
+    now: float,
+    stored: Callable[[str, int], str | None],
+    lost: list[dict[str, Any]],
 ) -> None:
     name = f"pull-rows:{repository}"
     cursor = cursors.get(name)
@@ -124,7 +145,8 @@ def _pulls(
         found = [(pull_delivery(repository, pull), pull.get("closed_at"))]
         held = stored(repository, pull["number"])
         refresh = update_delivery(repository, pull) if not held or epoch(pull["updated_at"]) > epoch(held) else None
-        if refresh is not None and inbox.save(refresh, SOURCE) and not held:  # a stale `updatedAt` alone is no missed push
+        # a stale `updatedAt` alone is no missed push
+        if refresh is not None and inbox.save(refresh, SOURCE) and not held and not _redelivering(lost, refresh.event, pull["updated_at"]):
             counted.inserted(refresh.event)
         if head:
             suites = _read(client, f"/repos/{repository}/commits/{head}/check-suites").body.get("check_suites", [])
@@ -137,7 +159,7 @@ def _pulls(
             ]
         for delivery, at in found:
             if delivery is not None and not _reported(inbox, delivery, at) and inbox.save(delivery, SOURCE):
-                if not at or epoch(at) < now - SETTLE_S:
+                if (not at or epoch(at) < now - SETTLE_S) and not _redelivering(lost, delivery.event, at):
                     counted.inserted(delivery.event)
         if later and epoch(later["updated_at"]) > epoch(pull["updated_at"]):
             cursors.put(name, Cursor(pull["updated_at"], None))
@@ -170,8 +192,9 @@ def reconcile(
     """One pass over the App's deliveries and the pull requests of each repository `settings` accepts; `stored` reads the
     `updatedAt` the PR store holds for one, `None` when it holds none."""
     now = clock()
+    lost: list[dict[str, Any]] = []
     try:
-        _deliveries(client, inbox, cursors, counted, now)
+        lost = _deliveries(client, inbox, cursors, counted, now)
     except Exception:
         logger.exception("github reconcile: deliveries")
     try:
@@ -181,7 +204,7 @@ def reconcile(
         return
     for repository in repositories:
         try:
-            _pulls(client, inbox, cursors, counted, repository, now, stored)
+            _pulls(client, inbox, cursors, counted, repository, now, stored, lost)
         except Exception:
             logger.exception("github reconcile: %s", repository)
 
