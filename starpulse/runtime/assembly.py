@@ -16,7 +16,6 @@ from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.policy import Policy, profile_matrix
 from starpulse.board.model.seam import Board
-from starpulse.event_log.claude_sessions import DEFAULT_SESSIONS, DEFAULT_TRANSCRIPTS, session_activity_of
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.opening import database_url
 from starpulse.event_log.readmodel.declared import declared_fields
@@ -51,8 +50,8 @@ logger = logging.getLogger(__name__)
 
 
 def _holder_activity(config: Config) -> Callable[[str], dict[str, Any]]:
-    transcripts = Path(config.board.get("transcripts", DEFAULT_TRANSCRIPTS)).expanduser()
-    return lambda assignee: session_activity_of(transcripts, Path(DEFAULT_SESSIONS).expanduser(), assignee, now=time.time())
+    harness = config.session_harness()
+    return lambda assignee: harness.activity(assignee, time.time())
 
 
 @functools.cache

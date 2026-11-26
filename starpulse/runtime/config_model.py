@@ -496,6 +496,10 @@ class ConfigFile(_Table):
             "nothing can be started."
         ),
     )
+    harness: str = Field(
+        default="claude",
+        description="The harness adapter a session runs in: its session records, transcripts and inbox sockets are read through it. `claude` is the only one that ships.",
+    )
     harnesses_file: str | None = Field(
         default=None,
         description="A file, relative to this one, that declares the tiers and per-harness models.",

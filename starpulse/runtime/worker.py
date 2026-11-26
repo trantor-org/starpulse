@@ -117,7 +117,6 @@ def main(argv: list[str] | None = None) -> None:
     if args.context == "scheduler":
         from starpulse.bridge.account_room import account_room
         from starpulse.scheduler.bin import scheduler_worker
-        from starpulse.sessions.adapters.outbound.claude_code_notify import end_with
         from starpulse.sessions.adapters.outbound.session_start import starter
 
         return scheduler_worker.main(
@@ -128,7 +127,6 @@ def main(argv: list[str] | None = None) -> None:
             hold=hold,
             starter=starter,
             delivered=own_pull_merged,
-            ender=end_with,
             rooms=account_room,
         )
     if args.context == "runs":

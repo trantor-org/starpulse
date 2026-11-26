@@ -51,6 +51,8 @@ from starpulse.runtime.config_model import (
 )
 from starpulse.runtime.nats_server import Bridge
 from starpulse.scheduler.model.config import Scheduler, SchedulerError, parse_scheduler
+from starpulse.sessions.harness import ADAPTERS, configured
+from starpulse.sessions.ports.harness import SessionHarness
 from starpulse.sweeper.config import Sweeper, SweeperError, parse_sweeper
 
 _DEFAULTS = ConfigFile()
@@ -213,6 +215,8 @@ class Config:
     """The port they listen on when no `--port` is given."""
     hours: float = _DEFAULTS.hours
     """How far back a task's latest move on a machine counts when no `--hours` is given."""
+    harness: str = _DEFAULTS.harness
+    """The harness adapter's name (`harness`); `session_harness` builds it."""
     analytics: Analytics = field(default_factory=Analytics)
     """What the instance's agents' telemetry is read against (`[analytics]`); no table: no roots or stops."""
     release: Release | None = None
@@ -255,6 +259,10 @@ class Config:
             for domain, workflows in instance.domains.items():
                 merged[domain] = (*merged.get(domain, ()), *(f"{instance.name}/{w}" for w in workflows))
         return merged
+
+    def session_harness(self) -> SessionHarness:
+        """The harness adapter `harness` names, over this process's environment and the board's `transcripts` directory."""
+        return configured(self.harness, os.environ, self.board.get("transcripts"))
 
     def qualified_processes(self) -> dict[str, tuple[tuple[str, tuple[str, ...]], ...]]:
         """Every instance's processes with workflows as `<instance>/<workflow>`, per domain name, in first-seen order."""
@@ -459,6 +467,8 @@ def load(path: Path | None) -> Config:
         file = ConfigFile.model_validate(raw)
     except ValidationError as exc:
         raise _refusal(exc) from exc
+    if file.harness not in ADAPTERS:
+        raise ConfigError(f"harness {file.harness} is not an adapter: use one of {', '.join(ADAPTERS)}", ["harness"])
     kind, board = _board(file.board)
     return Config(
         file.tracker_url,
@@ -514,4 +524,5 @@ def load(path: Path | None) -> Config:
         host=file.host,
         port=file.port,
         hours=float(file.hours),
+        harness=file.harness,
     )

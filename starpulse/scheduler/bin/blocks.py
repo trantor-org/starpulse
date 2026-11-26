@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from starpulse.scheduler.model.config import Scheduler
+    from starpulse.sessions.ports.harness import SessionHarness
 
 
 class _Bridge(Protocol):
@@ -23,6 +24,9 @@ class SchedulerConfig(Protocol):
     session_start_url: str | None
     bridge: _Bridge
     account_room_alert: str | None
+    harness: str
+
+    def session_harness(self) -> SessionHarness: ...
 
 
 def scheduler_fixed_blocks(config: SchedulerConfig) -> tuple:
@@ -32,4 +36,4 @@ def scheduler_fixed_blocks(config: SchedulerConfig) -> tuple:
 
 def scheduler_live_blocks(config: SchedulerConfig) -> tuple:
     """What of `config` the runtime is built from; a change to anything else needs no rebuild."""
-    return (config.scheduler, config.session_start_url, config.account_room_alert)
+    return (config.scheduler, config.session_start_url, config.account_room_alert, config.harness)

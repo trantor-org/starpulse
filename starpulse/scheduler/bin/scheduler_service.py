@@ -6,14 +6,13 @@ imported at the top of `starpulse.runtime.server`, so the Delivery worker's impo
 
 import threading
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board, Written
 from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.claude_sessions import DEFAULT_TRANSCRIPTS, transcript_written
 from starpulse.event_log.wake import StopEvent
 from starpulse.scheduler.adapters.pressure import watch
 from starpulse.scheduler.adapters.runtime import Runtime
@@ -34,14 +33,13 @@ def start_scheduler(
     *,
     starter: Callable[..., Any],
     delivered: Callable[[EventLog, Mapping[str, Any]], bool],
-    ender: Callable[[Sequence[str]], Callable[[str], None] | None],
     rooms: Callable[..., Callable[[], bool]] = lambda *_: lambda: True,
     clock: Callable[[], float] = time.time,
 ) -> Runtime:
     """The scheduler's runtime with its sampler and dispatch loop running on daemon threads until `stop` is set.
 
     The loop admits from the lane `[scheduler] lane` names (else the board's initial lane), starts a session through
-    `session_start_url` (else the built-in tmux starter in `base`). `runtime` passes `starter`, `delivered`, `ender` and `rooms` (the check that an account has room, which wakes the loop when room frees), as no context imports them.
+    `session_start_url` (else the built-in tmux starter in `base`). `runtime` passes `starter`, `delivered` and `rooms` (the check that an account has room, which wakes the loop when room frees), as no context imports them.
     """
 
     def claim(task: str, comment: str) -> Written:
@@ -50,6 +48,7 @@ def start_scheduler(
     def merged(agent: Mapping[str, Any]) -> bool:
         return delivered(log, agent)
 
+    harness = config.session_harness()
     initial = next(state["id"] for state in feed.machines["board"]["states"] if state.get("initial"))
     lane = config.scheduler.eligible_lane(initial)
 
@@ -64,13 +63,13 @@ def start_scheduler(
         log,
         feed,
         probe,
-        start=starter(config.session_start_url, by="scheduler") or builtin_starter(base),
+        start=starter(config.session_start_url, by="scheduler") or builtin_starter(base, harness),
         claim=claim,
         merged=merged,
         lane=lane,
         clock=clock,
-        transcript=transcript_written(Path(DEFAULT_TRANSCRIPTS).expanduser()),
-        end=ender(config.bridge.end) or (lambda task: None),
+        transcript=harness.transcript_written,
+        end=harness.end_with(config.bridge.end) or (lambda task: None),
         room=rooms(log, config.bridge.board, config.account_room_alert, wake, stop),
     )
     started.append(runtime)

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from starpulse.harness_telemetry.model.harnesses import Harnesses
     from starpulse.pulls.model.pins import Repo
     from starpulse.runs.model.config import Producer
+    from starpulse.sessions.ports.harness import SessionHarness
 
 
 class ApiConfig(Protocol):
@@ -32,3 +33,5 @@ class ApiConfig(Protocol):
     webhook_producer: str | None
     webhook_token_env: str | None
     tls: tuple[Path, Path] | None
+
+    def session_harness(self) -> SessionHarness: ...
