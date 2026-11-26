@@ -1,6 +1,7 @@
 """Whether `serve` can serve the board, as `GET /api/health` and `starpulse rehearse` read it.
 
-A server is ready when the event log is at the schema head, the Board is assembled, the Board context (the writer of
+A server is ready when the event log opened at the schema head (a store a deploy's migrate has since moved ahead
+stays ready: migrations only add, so the release being replaced still reads it), the Board is assembled, the Board context (the writer of
 the Start Criteria dating) has started and every other supervised context has started. Each context records its start
 in the `ready` worker state under the boot token `serve` handed it (`hold.BOOT_ENV`), so a stamp an earlier `serve` left in
 the store, or one a rehearsal copied from the live store, never counts. A `serve` that re-executes and adopts a
@@ -14,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse.event_log.migrate import StoreNotMigrated, require_migrated
+from starpulse.event_log.migrate import StoreNotMigrated
 
 if TYPE_CHECKING:
     from starpulse.board.model.board_feed import BoardFeed
@@ -55,10 +56,10 @@ def _part(ready: bool, detail: str) -> dict[str, Any]:
 
 def _store(log: EventLog) -> dict[str, Any]:
     try:
-        require_migrated(log.engine)
+        _ = log.engine  # the first open refuses a store off the head; one a deploy's migrate moved ahead since stays readable
     except StoreNotMigrated as exc:
         return _part(False, str(exc))
-    return _part(True, "at the schema head")
+    return _part(True, "opened at the schema head")
 
 
 def _started(log: EventLog, expected: Sequence[str], boot: str | None) -> list[str]:

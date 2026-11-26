@@ -380,7 +380,7 @@ GET /api/doctor    {ok, checks}: the `cue:` and `repo:` checks of `starpulse doc
                    No checks (and ok) when the server runs with no config to check
 GET /api/openapi   The OpenAPI 3.1 document of every route (`starpulse/schemas/openapi.json`)
 GET /swagger       Swagger UI drawing that document (loads a pinned release from jsDelivr)
-GET /api/health     {ready, components}: 200 when the event log is at the schema head, the Board is assembled and every
+GET /api/health     {ready, components}: 200 when the event log opened at the schema head (one a deploy's migrate moved ahead since still counts), the Board is assembled and every
                    context this `serve` supervises has started, else 503 naming each component (`store`, `board`, `writer`,
                    `contexts`) that is not, each {ready, detail}; reads no task and writes nothing. `starpulse doctor` and
                    `starpulse rehearse` read it
