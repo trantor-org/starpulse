@@ -20,11 +20,10 @@ from pathlib import Path
 from starpulse.board.adapters.native_scan import native_keys
 from starpulse.board.adapters.task_history import KIND
 from starpulse.board.adapters.task_links import DeliveredElsewhere, TaskLinks
-from starpulse.board.model.feed.shared import pull_links
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore
-from starpulse.pulls.adapters.outbound.github import GitHubAdapter
-from starpulse.pulls.adapters.outbound.pull_requests import delivers
+from starpulse.pulls.adapters.outbound.github import GitHubAdapter, delivers
+from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL, pull_record
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 from starpulse.runtime.assembly import declared, history_store
 from starpulse.runtime.config import ConfigError, discover, load
@@ -54,7 +53,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for task in sorted(events.heads(KIND)):
         row = replay(events.read(KIND, task))
         report["tasks"] += 1
-        uuid, urls = str((row.get("meta") or {}).get("uuid") or ""), pull_links(row["references"])
+        uuid, urls = str((row.get("meta") or {}).get("uuid") or ""), list(dict.fromkeys(ref for ref in row["references"] if PULL_URL.fullmatch(ref)))
         report["pull_requests"] += len(urls)
         refs: dict[str, str] = {}
         for url in urls:
@@ -73,7 +72,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if ref in held:
                 report["unchanged"] += 1
                 continue
-            role = "delivers" if delivers(pulls, url, task, keys) else "cites"
+            role = "delivers" if delivers(pull_record(pulls, url), task, keys) else "cites"
             try:
                 links.put(uuid, role, ref, REQUESTED_BY)
             except DeliveredElsewhere:

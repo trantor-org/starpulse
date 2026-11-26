@@ -3,6 +3,7 @@
 import logging
 import queue
 import time
+from collections.abc import Mapping, Sequence
 from concurrent.futures import Executor
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,7 @@ from starpulse.board.model.feed.shared import (
     LEDGER_WINDOW,
     _cold_stub,
     done_dot,
+    LINKED,
     LIVE_WINDOW_S,
     local_midnight,
     read_model_detail,
@@ -74,12 +76,22 @@ class ViewMethods:
             for state in {summary["state"] for summary in summaries}
             for task_id in self._read_model.ready(state, self._roles.done)
         }
-        return [self._hot_agent(summary, summary["id"] in ready) for summary in summaries]
+        pulls = self._pull_links(summaries)
+        return [self._hot_agent(summary, summary["id"] in ready, pulls.get(summary["id"], ())) for summary in summaries]
 
-    def _hot_agent(self, summary: dict, ready: bool) -> dict:
+    def _pull_links(self, rows: Sequence[Mapping[str, Any]]) -> dict[str, list[tuple[str, str]]]:
+        """The `(role, page)` of each pull request each row's task has a `delivers` or `cites` link to, by task id: a task with no UUID has none."""
+        named = {uuid: str(row["id"]) for row in rows if (uuid := str((row.get("meta") or {}).get("uuid") or ""))}
+        found: dict[str, list[tuple[str, str]]] = {}
+        for uuid, links in self._read_model.linked(list(named), LINKED).items():
+            if pages := [(role, url) for role, ref in links if (url := self._change_url(ref))]:
+                found[named[uuid]] = pages
+        return found
+
+    def _hot_agent(self, summary: dict, ready: bool, links: Sequence[tuple[str, str]] = ()) -> dict:
         return self._active(
             summary_agent(summary, ready, self._read_model_moves(summary), self._default_profiles)
-            | read_model_detail(summary, self._roles.attention)
+            | read_model_detail(summary, self._roles.attention, links)
             | {"final_summary": summary["final_summary"]}
             | self._read_model_readable(summary)
         )
@@ -98,7 +110,7 @@ class ViewMethods:
         if not found:
             return None, self._read_model.cold_done(done, since, task_id).get(task_id)
         ready = bool(self._read_model.ready(found[0]["state"], done, task_id))
-        agent = self._hot_agent(found[0], ready)
+        agent = self._hot_agent(found[0], ready, self._pull_links(found).get(task_id, ()))
         return (done_dot(agent) if agent["state"] == done else agent), None
 
     def cold_done(self) -> dict[str, str]:

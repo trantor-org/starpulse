@@ -154,13 +154,13 @@ class _SharedStore:
 
 
 class _PullLinks:
-    """The task a pull request is linked to: the unarchived task whose references hold its URL."""
+    """The task a pull request is linked to: the unarchived task with a `delivers` or `cites` link to it."""
 
     def __init__(self, model: Any) -> None:
         self._model = model
 
     def task_for(self, repository: str, number: int) -> str | None:
-        cited = self._model.citing(f"https://github.com/{repository}/pull/{number}")
+        cited = self._model.citing(f"change:github:{repository}:{number}")
         return cited[0] if cited else None
 
 

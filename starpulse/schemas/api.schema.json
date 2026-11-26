@@ -6174,6 +6174,21 @@
           "default": null,
           "description": "A Board task's Definition of Done items in file order; absent off the Board."
         },
+        "delivered": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A task's pull requests it has a `delivers` link to."
+        },
         "dependencies": {
           "anyOf": [
             {
@@ -6393,7 +6408,7 @@
             }
           ],
           "default": null,
-          "description": "A task's pull requests: the PR URLs among its references."
+          "description": "A task's pull requests: the pages of the changes it has a `delivers` or `cites` link to."
         },
         "readable": {
           "anyOf": [

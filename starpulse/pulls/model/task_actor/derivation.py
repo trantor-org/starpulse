@@ -32,8 +32,6 @@ from starpulse.board.model.seam import HELD, MERGE_EVIDENCE
 ATTENTION_QUESTION = "Fix it on the task branch and redeliver, or rescope?"
 #: The options a Needs attention ask offers for a task whose session ended with work left.
 RESTART_OR_RESCOPE = ("restart it in a new session", "rescope the task")
-#: What an uncited-pull-request ask says after the task's id: a cited pull request settles it.
-UNCITED_ASK = "has an uncited pull request."
 DONE_HELD = "Held from Done:"
 #: The comment the actor writes beside a request it leaves standing: a request it cannot act on stays the pending one.
 ACTOR_NOTES = (DONE_HELD,)
@@ -79,7 +77,6 @@ class TaskFacts(Protocol):
     def now(self) -> float: ...
     def record(self, url: str) -> dict[str, Any] | None: ...
     def own_prs(self, agent: Agent) -> list[str]: ...
-    def unlinked(self, agent: Agent) -> list[str]: ...
     def landed(self, record: dict[str, Any]) -> bool: ...
     def memory(self, name: str) -> Mapping[str, Any]: ...
     def comments(self, agent: Agent) -> list[str] | None: ...
@@ -276,11 +273,6 @@ def pr_terminal(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
         parts.append(f"{part} ({link})")
     if not parts:
         return None
-    if unlinked := facts.unlinked(agent):
-        # an open pull request naming the task is its delivery too: one cited merge never ends it
-        if any(facts.record(url)["state"] == "MERGED" for url in proved):
-            facts.note_hold(agent, (f"open pull requests name it but it does not cite them: {', '.join(unlinked)}",), DONE_HELD)
-        return None
     merged = merged_at(facts, agent)
     if (
         agent["state"] == facts.roles.working
@@ -377,15 +369,13 @@ def pr_merged_unfinished(facts: TaskFacts, agent: Agent) -> tuple[str, str] | No
 
 def criteria_checked(facts: TaskFacts, agent: Agent) -> tuple[int, str] | None:
     """The criteria count when every criterion is checked or struck and the task ships no pull request: its phase
-    sequence has no `deliver`, or it cites none and its final summary is recorded. An open pull request naming the task
-    and a cited one that has not ended hold it either way, except an open draft a no-`deliver` task cites, handed to a follow-up task. A task with no criteria (an audit signal) always needs that final summary and no pull request.
+    sequence has no `deliver`, or it delivers none and its final summary is recorded. A delivered pull request
+    that has not ended holds it either way, except an open draft a no-`deliver` task cites, handed to a follow-up task. A task with no criteria (an audit signal) always needs that final summary and no pull request.
     A task citing none whose board reports work unfinished (`unfinished`: a built branch not on main) is held from Done
     under `DONE_HELD`."""
     ticks = [resolved(criterion) for criterion in agent.get("criteria", ())]
     if not all(ticks):
         return None
-    if facts.unlinked(agent):
-        return None  # an open pull request naming the task is its delivery, whatever its phase sequence says
     ships_pr = "deliver" in facts.sequence(agent)
     if any(
         (record := facts.record(url)) is None
@@ -414,15 +404,9 @@ def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     a push re-arms the gate, and a repository whose ruleset requires none rolls up passed as soon as the pull
     request is not a draft. A task in Needs attention whose `## Needs attention` ask stays there, answered or not (the
     answer's resume moves it to In Progress, and a bounce to Review would race it),
-    unless its ask ends in the actor's own failing-checks question (`ATTENTION_QUESTION`) or is the uncited-pull-request
-    ask (`UNCITED_ASK`): a ready cited pull request settles both, and `unlinked` still holds while one stays uncited."""
+    unless its ask ends in the actor's own failing-checks question (`ATTENTION_QUESTION`): a ready delivered pull request settles it."""
     reason = needs_attention_reason(agent["description"])
-    if (
-        agent["state"] == facts.roles.attention
-        and reason
-        and not reason.endswith(ATTENTION_QUESTION)
-        and f" {UNCITED_ASK}" not in reason
-    ):
+    if agent["state"] == facts.roles.attention and reason and not reason.endswith(ATTENTION_QUESTION):
         return None
     parts = []
     held = feedback_held(facts, agent)
@@ -441,8 +425,8 @@ def pr_ready(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
             if why_unready(record, held):
                 return None  # Review waits for the last open pull request to go green
             parts.append(f"{record['repo']}#{record['number']} ready")
-    if not parts or facts.unlinked(agent):
-        return None  # an open pull request naming the task is its delivery too: Review waits until it is cited
+    if not parts:
+        return None
     proof = "; ".join(parts)
     return proof, f"Pull request ready: {proof}"
 

@@ -5,7 +5,6 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from starpulse.board.model.feed.shared import pull_links
 from starpulse.board.model.seam import HELD
 from starpulse.pulls.adapters.outbound.pull_requests import landed, pull_record
 from starpulse.pulls.adapters.outbound.unfinished import work_left
@@ -43,9 +42,6 @@ class ActorFacts:
     def own_prs(self, agent: dict[str, Any]) -> list[str]:
         return self._actor._own_prs(agent)
 
-    def unlinked(self, agent: dict[str, Any]) -> list[str]:
-        return self._actor._unlinked(agent)
-
     def landed(self, record: dict[str, Any]) -> bool:
         return landed(self._actor._store, record)
 
@@ -71,11 +67,11 @@ class ActorFacts:
             return (f"the board's unfinished work cannot be read: {error}",)
 
     def _merged_unfinished(self, name: str) -> tuple[str, ...] | None:
-        """The repositories the task modified with no merged pull request when it cites a pull request, else None."""
+        """The repositories the task modified with no merged pull request when it delivers a pull request, else None."""
         actor = self._actor
         if actor._submodules is None or not actor._board_repo or not (row := actor._read(name)):
             return None
-        if not (cited := pull_links(row.get("references") or ())):
+        if not (cited := actor._feed.delivered(name)):
             return None
         records = [pull_record(actor._store, url) for url in cited]
         parent = actor._board_repo.rsplit("/", 1)[-1]

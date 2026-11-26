@@ -84,7 +84,7 @@ from starpulse.event_log.wake import StopEvent, save_on_change
 from starpulse.pulls.adapters.inbound.task_facts import ActorFacts
 from starpulse.pulls.adapters.inbound.task_memory import TaskMemory
 from starpulse.pulls.adapters.inbound.unblock import PinGate
-from starpulse.pulls.adapters.outbound.pull_requests import own_prs, pull_record, uncited
+from starpulse.pulls.adapters.outbound.pull_requests import pull_record
 from starpulse.pulls.model.histogram import Histogram
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
 from starpulse.pulls.model.task_actor import TaskTouched, Trigger, derivation
@@ -128,7 +128,6 @@ IDLE_HOLDERS_METRIC = "starpulse_task_actor_idle_holders"
 IDLE_SECONDS_METRIC = "starpulse_task_actor_idle_holder_seconds"
 READY_METRIC = "starpulse_task_actor_ready_tasks"
 HOLDER_RESUME = "HOLDER_RESUME"
-UNCITED_CHECKS = "UNCITED_CHECKS"
 #: The deliver states after its pull request opened.
 _DELIVERED = frozenset({"pr_opened", "ci_green", "pr_ready"})
 #: Nudges or resumes a fault with no progress between gets before the next one moves the task to Needs attention.
@@ -1378,14 +1377,9 @@ class TaskActor:
         return self._owns_failure(name) or any(map(self._owns_failure, self._seen[name][1]))
 
     def _read_pulls(self) -> set[str]:
-        """The tasks citing a pull request, or holding one open that names them and they do not cite, whose state changed since it was last read."""
+        """The tasks linking a pull request whose state changed since it was last read."""
         touched: set[str] = set()
         watched = {url: set(names) for url, names in self._by_pr.items()}
-        working = self._feed.roles.working
-        for name, (lane, _, cited, *_) in self._seen.items():
-            if lane == working and not cited:  # its holder hears an uncited pull request's checks settle
-                for url in uncited(self._store, {"id": name, "prs": cited}, self._feed.keys):
-                    watched.setdefault(url, set()).add(name)
         for url, names in watched.items():
             if self._pull_states.get(url) != (state := self._pull_state(url)):
                 self._pull_states[url] = state
@@ -1486,12 +1480,7 @@ class TaskActor:
         self._hand_in(url, "mergeable read", settle)
 
     def _own_prs(self, agent: dict[str, Any]) -> list[str]:
-        return own_prs(self._store, agent, self._feed.keys)
-
-    def _unlinked(self, agent: dict[str, Any]) -> list[str]:
-        """The unlinked substate: open pull requests naming the task that it does not cite yet. The task stays in its lane
-        while any exist, never parked; the write of its reference changes the task's record, which re-derives it."""
-        return uncited(self._store, agent, self._feed.keys)
+        return agent["delivered"]
 
     def _pull_state(self, url: str) -> tuple[str, str | None, bool, str, str, str, str, int]:
         record = self._record(url)
@@ -1661,30 +1650,7 @@ class TaskActor:
                 return False  # the file changed under a transient refusal: the next pass judges it anew, no later fact
         if agent["state"] == self._feed.roles.working:
             self._log_unready(agent)
-            self._wake_uncited(name, agent)
         return False
-
-    def _wake_uncited(self, name: str, agent: dict[str, Any]) -> None:
-        """Wake the holder once per head and verdict when the checks settle on an open pull request that names the task
-        and that it does not cite: the holder's topics come from cited pull requests, so no other event reaches it."""
-        if self._own_prs(agent):
-            return
-        for url in self._unlinked(agent):
-            if (record := self._record(url)) is None:
-                continue
-            verdict = checks_verdict(
-                record["state"], record["checks"], record["headRefOid"], record["rollup"], record["requiredChecks"]
-            )
-            woken = f"{url}@{record['headRefOid']}:{verdict}"
-            if verdict == "pending" or woken in (self._memory.of(name).get("uncited_woken") or ()):
-                continue
-            head, number = record["headRefOid"][:12], record["number"]
-            reason = (
-                f"Checks {'passed' if verdict == 'pass' else verdict} on pull request #{number} at {head}, which the "
-                f"task does not cite: rerun deliver, which cites it and readies it"
-            )
-            if self._wake_holder(name, UNCITED_CHECKS, reason):
-                self._memory.keep(name, uncited_woken=[woken])
 
     def _freeze(self, agent: dict[str, Any], fact: str, request: str) -> None:
         """Carry out a request to freeze the task or to lift its freeze, or answer it with one comment when the freeze or
@@ -1767,7 +1733,7 @@ class TaskActor:
         holder settles anew. The one nudge is the only one: a settle after it with no progress (a phase or
         submachine event, a new head) moves the task to Needs attention with its session kept and its profile unchanged,
         except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never nudged: it moves to Needs attention at once when no lifecycle rule
-        takes it (a reopened task's earlier merge), freeing its session slot. A task citing none of its own while an open pull request names it (the `_unlinked` substate) is left as it is, neither nudged nor sent to Needs attention: deliver cites the pull request, and that write re-derives the task. A `confirm` that
+        takes it (a reopened task's earlier merge), freeing its session slot. A `confirm` that
         raises (the holder is busy) holds the task: the next move of a machine other than the harness settles it again, and the
         session's own activity ends the hold. A `nudge` that fails moves the task to Needs attention with the reason, as a
         holder whose nudge was lost settles no more; a holder no session can reach is resumed once as `holder_ended`
@@ -1801,8 +1767,6 @@ class TaskActor:
                 (self._feed.task(name) or {}).get("description", "")
             )
             own = self._own_prs(agent)
-            if not own and self._unlinked(agent):
-                return  # the delivery is open and the merge reconcile cites it: no input of the operator's is missing
             records = [self._record(url) for url in own]
             if own and all(record and record["state"] in TERMINAL for record in records):
                 # a merge GitHub has not timed yet settles on its next read; else no lifecycle rule takes the task

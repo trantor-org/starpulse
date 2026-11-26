@@ -15,10 +15,8 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
-from starpulse.board.adapters.native_scan import native_keys
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.rollup import checks_verdict
-from starpulse.contracts.task_keys import TaskKeys
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
 from starpulse.pulls.application.commands.ci_trail import PullHistory, parse
 from starpulse.pulls.model.pins import Pins, Repo, link
@@ -30,8 +28,6 @@ if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
 logger = logging.getLogger(__name__)
 
 PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
-_TASK_KEYS = native_keys("TASK")
-_WORD = re.compile(r"[\w-]+(?:\.[\w-]+)*")
 DEFAULT_BASE = "main"
 
 
@@ -40,43 +36,6 @@ def pull_record(store: PullStore, url: str, detailed: bool = False) -> dict[str,
     found = PULL_URL.fullmatch(url)
     records = store.find(repo=found[1], number=int(found[2]), detailed=detailed) if found else []
     return records[0] if records else None
-
-
-def _named_tasks(record: dict[str, Any], keys: TaskKeys) -> set[str]:
-    whole = re.compile(keys.key.pattern, keys.key.flags | re.I)
-    titled = {word.lower() for word in _WORD.findall(record.get("title") or "") if whole.fullmatch(word)}
-    branch = keys.for_branch(record.get("headRefName"))
-    return titled | ({branch.lower()} if branch else set())
-
-
-def delivers(store: PullStore, url: str, task_id: str, keys: TaskKeys | None = None) -> bool:
-    """Whether the pull request at `url` can be `task_id`'s delivery: one whose branch or title names tasks and not this
-    one is another task's, a reference only."""
-    found = pull_record(store, url)
-    named = _named_tasks(found, keys or _TASK_KEYS) if found else set()
-    return not named or task_id.lower() in named
-
-
-def own_prs(store: PullStore, agent: dict[str, Any], keys: TaskKeys | None = None) -> list[str]:
-    """The cited pull requests that are not another task's delivery: one whose branch or title names tasks and not
-    this one is a reference, never proof of this task's work."""
-    return [url for url in agent["prs"] if delivers(store, url, agent["id"], keys)]
-
-
-def uncited(store: PullStore, agent: dict[str, Any], keys: TaskKeys | None = None) -> list[str]:
-    """The open pull requests that name the task and that it does not cite: its id in the branch or title, or in the
-    body of one whose branch and title name no task (a body that names a task is a link, not a delivery by itself)."""
-    keys = keys or _TASK_KEYS
-    task_id = agent["id"].lower()
-    mention = re.compile(rf"(?<![\w-]){re.escape(task_id)}(?!\d)")
-    named = [record for record in store.find(state="OPEN", bodies=False) if task_id in _named_tasks(record, keys)]
-    linked = [
-        record
-        for record in store.find(state="OPEN", body_contains=task_id)
-        if not _named_tasks(record, keys) and mention.search(record["body"].lower())
-    ]
-    urls = (f"https://github.com/{record['repo']}/pull/{record['number']}" for record in [*named, *linked])
-    return [url for url in urls if url not in agent["prs"]]
 
 
 def landed(store: PullStore, record: dict[str, Any]) -> bool:
@@ -90,8 +49,8 @@ def landed(store: PullStore, record: dict[str, Any]) -> bool:
 
 
 def merged(store: PullStore, agent: dict[str, Any]) -> bool:
-    """Whether one of the task's own pull requests has merged and landed on `main`."""
-    for url in own_prs(store, agent):
+    """Whether one of the task's delivered pull requests has merged and landed on `main`."""
+    for url in agent["delivered"]:
         found = pull_record(store, url)
         if found and found["state"] == "MERGED" and found["mergedAt"] and landed(store, found):
             return True

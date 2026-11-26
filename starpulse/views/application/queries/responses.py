@@ -64,29 +64,29 @@ def _done_card(stub: dict, record: Mapping[str, Any]) -> dict:
     return named | {"model": record.get("profile") or "", "entered": stub["entered"]} | card
 
 
-#: A GitHub pull request URL, which a task cites in its references: its `owner/repo` and number.
+#: A GitHub pull request URL, which a task links to: its `owner/repo` and number.
 _PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
 
 
-def _cited(references: list[str]) -> list[tuple[str, int]]:
-    """The (repository, number) of each pull request `references` cites."""
-    return [(match[1], int(match[2])) for match in map(_PULL_URL.fullmatch, references) if match]
+def _cited(links: list[str]) -> list[tuple[str, int]]:
+    """The (repository, number) of each pull request page in `links`."""
+    return [(match[1], int(match[2])) for match in map(_PULL_URL.fullmatch, links) if match]
 
 
 def _without_bodies(records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{key: value for key, value in record.items() if key != "body"} for record in records]
 
 
-def cited_pulls(pulls: PullStore | None, references: list[str]) -> list[dict[str, Any]]:
-    """The stored pull requests `references` cite, without their bodies: each one's state and checks, so a task
+def cited_pulls(pulls: PullStore | None, links: list[str]) -> list[dict[str, Any]]:
+    """The stored pull requests `links` name, without their bodies: each one's state and checks, so a task
     record shows them as the pull requests page does."""
     if not pulls:
         return []
-    return _without_bodies(record for repo, number in _cited(references) for record in pulls.find(repo, number))
+    return _without_bodies(record for repo, number in _cited(links) for record in pulls.find(repo, number))
 
 
 def task_pulls(pulls: PullStore | None, links: list[str]) -> list[dict[str, Any]]:
-    """The stored pull requests `links` cite, whole: each with its body and the paths it changes in `detail`."""
+    """The stored pull requests `links` name, whole: each with its body and the paths it changes in `detail`."""
     if not pulls:
         return []
     return [record for repo, number in _cited(links) for record in pulls.find(repo, number, detailed=True, bodies=True)]

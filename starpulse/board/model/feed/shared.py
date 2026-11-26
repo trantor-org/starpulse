@@ -1,8 +1,7 @@
 """Feed constants, helpers and the protocols the feed's other modules share."""
 
 import logging
-import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -33,8 +32,6 @@ FEED_EVENT_RESEND = {
 # The feed's name, not this module's: operators and a host project's tests filter the feed's records by it.
 logger = logging.getLogger("starpulse.board.model.board_feed")
 
-_PULL_REQUEST = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+/?")
-
 # The runs instance pushed workflows belong to, so the page names them `pushed/<workflow>`.
 PUSHED_INSTANCE = "pushed"
 
@@ -46,9 +43,9 @@ SAVE_DEBOUNCE = 10.0
 LEDGER_WINDOW = 86400.0
 
 
-def pull_links(references: Iterable[str]) -> list[str]:
-    """The pull request links among `references`, each once."""
-    return list(dict.fromkeys(ref for ref in references if _PULL_REQUEST.fullmatch(ref)))
+#: The link roles that tie a pull request to a task: `delivers` the one it ships through, `cites` any other it names.
+LINKED = ("delivers", "cites")
+DELIVERS = ("delivers",)
 
 
 def local_midnight(at: float) -> float:
@@ -137,14 +134,15 @@ def settled_entry(summary: Mapping[str, Any], defaults: Mapping[str, Mapping[str
     }
 
 
-def read_model_detail(row: Mapping[str, Any], attention: str | None = None) -> dict:
-    """The fields a summary leaves out that a Task's record draws: its pull requests, description, criteria,
+def read_model_detail(row: Mapping[str, Any], attention: str | None = None, links: Sequence[tuple[str, str]] = ()) -> dict:
+    """The fields a summary leaves out that a Task's record draws: its pull requests (`prs`, the pages of its links), description, criteria,
     Definition of Done items and, in the `attention` lane, the reason its description's Needs attention section gives."""
     acceptance = [item for item in row["criteria"] if item["kind"] == "ac"]
     done = [item for item in row["criteria"] if item["kind"] == "dod"]
     waits_on_person = attention is not None and lane_id(row["state"]) == lane_id(attention)
     return {
-        "prs": pull_links(row["references"]),
+        "prs": list(dict.fromkeys(url for _, url in links)),
+        "delivered": list(dict.fromkeys(url for role, url in links if role in DELIVERS)),
         "description": row["description"],
         "criteria": [{"text": item["text"], "checked": item["checked"]} for item in acceptance],
         "definition_of_done": [{"text": item["text"], "checked": item["checked"]} for item in done],

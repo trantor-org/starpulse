@@ -5,6 +5,7 @@ The adapter depends on nothing of a host project's: not its hooks, its `AGENTS.m
 """
 
 import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -28,6 +29,39 @@ _PASSING = frozenset({"success", "neutral", "skipped"})
 _PULL_PATH = re.compile(r"/([\w.-]+/[\w.-]+)/pull/(\d+)(?:/.*)?", re.ASCII)
 #: A change reference's id as `change_ref` writes it: `owner/name:7`.
 _CHANGE_ID = re.compile(r"([\w.-]+/[\w.-]+):(\d+)", re.ASCII)
+#: A word of a pull request's title, to match against a task key.
+_WORD = re.compile(r"[\w-]+(?:\.[\w-]+)*")
+
+
+def named_tasks(record: Mapping[str, object], keys: TaskKeys) -> set[str]:
+    """The tasks a pull request's title and branch name: the one-time import of the links a task never wrote reads them."""
+    whole = re.compile(keys.key.pattern, keys.key.flags | re.I)
+    titled = {word.lower() for word in _WORD.findall(str(record.get("title") or "")) if whole.fullmatch(word)}
+    branch = keys.for_branch(str(record.get("headRefName") or "") or None)
+    return titled | ({branch.lower()} if branch else set())
+
+
+def delivers(record: Mapping[str, object] | None, task_id: str, keys: TaskKeys) -> bool:
+    """Whether a pull request can be `task_id`'s delivery: one whose branch or title names tasks and not this one is
+    another task's, a reference only."""
+    named = named_tasks(record, keys) if record else set()
+    return not named or task_id.lower() in named
+
+
+def urls_of(forges: Mapping[str, "GitHubAdapter"]) -> Callable[[str], str | None]:
+    """A stored link's reference as the page of the change it names; None for one no configured forge owns."""
+
+    def url(ref: str) -> str | None:
+        kind, _, rest = ref.partition(":")
+        instance, _, identity = rest.partition(":")
+        if kind != "change" or (forge := forges.get(instance)) is None:
+            return None
+        try:
+            return forge.change_url(ChangeRef(adapter=instance, id=identity))
+        except ValueError:
+            return None
+
+    return url
 
 
 @dataclass(frozen=True)

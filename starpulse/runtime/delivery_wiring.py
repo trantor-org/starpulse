@@ -187,6 +187,7 @@ def start_delivery(
         # one projection once the Board replay is done, so it sees every task, then one for each event that changed a
         # record: the pin walk behind it can take minutes, so it runs on a thread of its own
         projected = coalesced(stop, project, "pull-project", after=feed.wait_replayed)
+        feed.on_relinked(lambda _: projected())  # a link written or removed changes which pull requests a task reads
     if config.release is not None:
         if not (feed.roles.waiting and feed.roles.ready):
             raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")

@@ -135,13 +135,13 @@ def _tag(path: str) -> str:
     return _SEGMENT_TAG[path.split("/")[2 if path.startswith("/api/") else 1]]
 
 
-_TASK_ID = "The task's key, an alias it carries or its UUID."
+_TASK_PARAM = "The task's key, an alias it carries or its UUID."
 
 
 def _path_parameter(name: str, path: str) -> dict[str, Any]:
     parameter: dict[str, Any] = {"name": name, "in": "path", "required": True, "schema": {"type": "string"}}
     if path.startswith(("/api/task/", "/api/tasks/")):
-        parameter["description"] = _TASK_ID
+        parameter["description"] = _TASK_PARAM
     return parameter
 
 

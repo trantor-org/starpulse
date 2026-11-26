@@ -81,7 +81,7 @@ class Ingest(Protocol):
 
 class Links(Protocol):
     def task_for(self, repository: str, number: int) -> str | None:
-        """The task whose references hold the pull request, or `None`."""
+        """The task with a link to the pull request, or `None`."""
         ...
 
 

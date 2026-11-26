@@ -24,6 +24,8 @@ from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.github.adapters.inbound import reconcile
+from starpulse.board.adapters.native_scan import native_keys
+from starpulse.pulls.adapters.outbound.github import GitHubAdapter, urls_of
 from starpulse.github.adapters.outbound.app_jwt import app_jwt
 from starpulse.github.adapters.outbound.cursors import SqlCursors
 from starpulse.github.adapters.outbound.inbox import SqlInbox
@@ -64,13 +66,13 @@ def _pull_store(engine: Engine) -> PullStore:
 def own_pull_merged(log: EventLog, agent: Mapping[str, Any]) -> bool:
     """Whether a pull request `agent` owns has merged; the scheduler reads it through `runtime`, as no context imports another.
 
-    Asked of every Ready task on every tick, so it reads only the rows of the pull requests `agent` cites."""
+    Asked of every Ready task on every tick, so it reads only the rows of the pull requests `agent` delivers."""
     from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL, merged  # only the scheduler worker needs them
 
-    if not agent["prs"]:
+    if not agent["delivered"]:
         return False
     store = _pull_store(log.engine)
-    cited = [PULL_URL.fullmatch(url) for url in agent["prs"]]
+    cited = [PULL_URL.fullmatch(url) for url in agent["delivered"]]
     store.refresh([(found[1], int(found[2])) for found in cited if found])
     return merged(store, dict(agent))
 
@@ -164,6 +166,7 @@ def assemble(
         readable=board.readable,
         activity=_holder_activity(config),
         default_profiles=profile_matrix(rows or Policy()),
+        change_url=urls_of({"github": GitHubAdapter(keys=board.keys or native_keys())}),
     )
     return board, feed
 

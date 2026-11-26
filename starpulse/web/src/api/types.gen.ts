@@ -712,6 +712,10 @@ export interface RawTask {
    */
   definition_of_done?: TaskCriterion[] | null;
   /**
+   * A task's pull requests it has a `delivers` link to.
+   */
+  delivered?: string[] | null;
+  /**
    * A task's dependencies, as task ids.
    */
   dependencies?: string[] | null;
@@ -777,7 +781,7 @@ export interface RawTask {
    */
   profile?: string | null;
   /**
-   * A task's pull requests: the PR URLs among its references.
+   * A task's pull requests: the pages of the changes it has a `delivers` or `cites` link to.
    */
   prs?: string[] | null;
   /**

@@ -70,7 +70,7 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
     Backlog.md's default statuses alone), and `cues` the board adapter's workflow cues. `domains`
     is the config's, each workflow as `<instance>/<workflow>`. `source` names what the Board is read from, for the
     page to show until the board adapter has read it. `commit` is each runs instance's `[runs.commit]` keys, by instance
-    name: they say which run parameters carry a merge's commit or a task, so the Ledger pairs a run with it for certain. `dashboards` is each instance's Grafana dashboard URL, by instance name. `start_urls` is each instance's runner start page, by instance name: each of its jobs carries it.
+    name: they say which run parameters carry a merge's commit or a task, so the Ledger pairs a run with it for certain. `change_url` turns a task link's reference into the page of its pull request. `dashboards` is each instance's Grafana dashboard URL, by instance name. `start_urls` is each instance's runner start page, by instance name: each of its jobs carries it.
     """
 
     def __init__(
@@ -94,6 +94,7 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
         default_profiles: Mapping[str, Mapping[str, str]] | None = None,
         activity: Callable[[str], dict[str, Any]] = lambda _: {"state": "unknown"},
+        change_url: Callable[[str], str | None] = lambda _: None,
     ) -> None:
         #: Set by `stop`: every thread an adapter runs for this feed (`spawn`) waits on it.
         self.stopped = StopEvent()
@@ -139,6 +140,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._readable = readable
         #: The session activity of a held working task's holder, which its agent carries; `unknown` when no running session holds it.
         self._activity = activity
+        #: The page of the change a stored link's reference names (None: no forge owns it), which a task's `prs` carry.
+        self._change_url = change_url
         self._board_url = board_url
         self._commit = commit or {}
         self._dashboards = dashboards or {}
@@ -172,6 +175,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._pools: dict[str, list] = {}
         self._runs_errors: dict[str, str] = {}
         self._pulls: dict[str, list[dict]] = {}
+        #: What `relinked` tells after a task's link is written or removed (`on_relinked`).
+        self._relink_listeners: list[Callable[[str], None]] = []
         #: What the pull request projection kept (`PullRequests.answers`), saved so a restart reads warm.
         self._pull_answers: dict = {}
         #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
