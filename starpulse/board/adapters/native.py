@@ -401,6 +401,7 @@ def _land(
     `before`: the refusal (`_STALE` for a changed file), or once it landed an ok `Written` naming the lane rules it
     broke. The lane the write enters runs its entry effects first, whoever writes. An `audit` writes nothing: it is
     the verdict of the rules on the write."""
+    members = frontmatter.pop("members", None)
     earlier = None if before is None else rules.Record(*_split_record(before))
     frontmatter = dict(guard.entered(frontmatter, None if earlier is None else earlier.front))
     text = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)}---{body}"
@@ -419,7 +420,7 @@ def _land(
             if before is not None and path.read_text() != before:
                 return _STALE
             try:
-                _commit(path, text, actor, before)
+                _commit(path, text, actor, before, members)
             except StaleVersion:
                 return _STALE
             os.replace(scratch, path)
@@ -435,10 +436,12 @@ def _identity(path: Path, text: str | None = None) -> tuple[str, dict]:
     return str(record["id"] or path.stem), record
 
 
-def _commit(path: Path, text: str, actor: str, before: str | None) -> None:
+def _commit(path: Path, text: str, actor: str, before: str | None, members: dict | None) -> None:
     """Append to the History of the task a file `text` is about to replace `before` with the Events that write is: what it
     changed in the file, so a hand edit the file held already is never imported."""
     task, record = _identity(path, text)
+    if members is not None:
+        record["members"] = members
     appended(task, record, actor, created=before is None, before=None if before is None else _record_of(before))
 
 
@@ -572,7 +575,7 @@ def _reader(
                     while len(_RECORDS) >= _RECORDS_KEPT:
                         del _RECORDS[next(iter(_RECORDS))]
                     _RECORDS[key] = held
-        return {**held[2], "start_criteria": _live_criteria(held[2], lane_id(held[2]["status"]), done, waiting)}
+        return {**held[2], "members": {}, "start_criteria": _live_criteria(held[2], lane_id(held[2]["status"]), done, waiting)}
 
     return read
 
@@ -588,7 +591,7 @@ def _archived_reader(root: Path, retired: _Retired, done: str | None) -> TaskRea
 
     def read(task: str, /) -> dict[str, Any] | None:
         if (text := retired.text(task)) is not None:
-            return {**_record_of(text), "start_criteria": []}
+            return {**_record_of(text), "members": {}, "start_criteria": []}  # members: an editable field only the History fills
         return files(task)
 
     return read
@@ -626,7 +629,6 @@ def _record_of(text: str) -> dict[str, Any]:
         "dependencies": list(_strings(frontmatter.get("dependencies"))),
         "dependencyNeeds": list(_strings(frontmatter.get("dependency_needs"))),
         "actorMemory": dict(frontmatter.get("actor_memory") or {}),
-        "members": dict(frontmatter.get("members") or {}),
         "frozen": dict(frontmatter.get("frozen") or {}),
         "references": list(_strings(frontmatter.get("references"))),
         "documentation": list(_strings(frontmatter.get("documentation"))),
@@ -798,9 +800,7 @@ def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, 
     elif field == "members":
         if not isinstance(value, dict):
             raise ValueError(f"{field} must be a mapping")
-        frontmatter["members"] = value
-        if not value:
-            del frontmatter["members"]
+        frontmatter["members"] = value  # `_land` lifts it out of the file: only the History keeps it
     elif field == "frozen":
         if not isinstance(value, dict):
             raise ValueError(f"{field} must be a mapping")
@@ -912,7 +912,7 @@ def _file_of(record: Mapping[str, Any]) -> tuple[dict, str]:
     if record.get("uuids"):
         frontmatter["uuids"] = record["uuids"]
     spelled = {lane_id(record["status"]): record["status"]}
-    for field in (*_SCALARS, "profile", "status", "actorMemory", "members", "frozen", *_LISTS):
+    for field in (*_SCALARS, "profile", "status", "actorMemory", "frozen", *_LISTS):
         if record.get(field):
             _set_front(frontmatter, field, record[field], spelled)
     frontmatter |= {

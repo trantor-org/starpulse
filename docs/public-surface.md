@@ -101,11 +101,15 @@ is public for the names listed here:
 - `starpulse.github.model.events`: `CONSUMER`, the queue name the GitHub inbox consumer registers under, for a consumer outside the package.
 - `starpulse.pulls.adapters.outbound.pulls`: `PullStore`, the store the webhook deliveries and lifecycle events save to.
 - `starpulse.views.adapters.outbound.signal_folds`: `changed(events, after, views, since=0.0)`, the stored per-session results folded past a rowid cursor, for a sink that copies only what changed.
+- `starpulse.views.adapters.outbound.task_spend`: `TaskSpend(events)`, whose `catch_up()` relinks and resums the sessions whose spend fold was rewritten, for a seeder that fills the task spend a drawer reads.
+- `starpulse.views.application.queries.responses`: `spend_response(folds, task, query, now)`, the task spend body the route answers and its status, for a test that checks a seeded store renders it.
 - `starpulse.pulls.adapters.inbound.task_actor`: `ACTOR`, the writer name the task actor's moves and refusals carry, for a test that publishes as it.
 - `starpulse.cli.agent_subscribe`: `subscribed(session, subject, config=None)`, whether a session is subscribed to a subject, for a command that must not subscribe it twice.
 - `starpulse.cli.agent_wire`: `CliError`, `server_url(flag, environ)`, `get(base, path, timeout=10.0)` and `put(base, path, body)`, the server address, JSON read and JSON write a command that reads or links a task on the server makes.
 - `starpulse.views.adapters.outbound.request_durations`: `CALLERS`, the first-party client names `X-StarPulse-Client` carries, for a dashboard that checks it lists each.
 - `starpulse.cli.lane_mcp`: `lane_argv(tool, task, arguments)`, the `starpulse` argv a lane tool runs, for a test that checks each names a command the project defines.
+- `starpulse.cli.agent_cli`: `_parser()`, the `starpulse` argument parser, for a test that checks each command form a skill shows parses.
+- `starpulse.bridge.publisher`: `Publisher(url, stream, subjects)`, which creates a stream and publishes to it, for a test that needs a stream to consume.
 - `starpulse.testing`: `until(condition, within=)`, the one bounded wait a test makes on a condition, returning as soon as it holds.
 
 ### Moved in 0.y
