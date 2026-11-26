@@ -494,6 +494,9 @@ export const tally = (g: { n: number; today?: number; subs: unknown[] }) => `${c
  * a planet).
  */
 export const stateR = (s: MState) => (s.mini ? Math.min(12, 3 + 1.2 * Math.sqrt(s.n)) : Math.min(40, 10 + 2.4 * Math.sqrt(s.n)));
+/** A task's angle on its orbit at page time `t`: a frozen task holds its slot. */
+export const orbitAngle = (k: { a0: number; w: number; frozen?: unknown }, t: number) => (k.frozen ? k.a0 : k.a0 + k.w * t);
+
 /** The `k`th task on a machine state's orbit of radius `R`: rings of tasks 8 apart, each ring 7 further out and turned a little. */
 export const taskSlot = (R: number, k: number) => {
   const per = Math.max(8, Math.floor((TAU * R) / 8)), ring = Math.floor(k / per);

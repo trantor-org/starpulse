@@ -50,6 +50,9 @@ export const BOARD_COLOR: Record<string, string> = {};
 /** The nine stops a machine ledger's rows walk from the first state to the last. */
 export const RAMP: string[] = [];
 
+/** A frozen task's tint: a fixed ice blue on every theme, the same hex as the page's `--ice`. */
+export const ICE = "#8fd3f4";
+
 /** An agent is coloured by the tier its profile names (`@agent-<tier>-<effort>`); a person or fast is the other colour. */
 export const tierColor = (profile = "") =>
   profile.startsWith("@agent-deep") ? token("agent-text") : profile.startsWith("@agent-standard") ? token("waits") : token("run-text");

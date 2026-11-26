@@ -25,6 +25,8 @@ import {
 } from "./start";
 import { MilestoneOutline } from "./MilestoneOutline";
 import { NewTaskAction } from "./NewTask";
+import { postFreeze } from "./freeze";
+import { frozenNote } from "../../shared/frozen";
 import { SearchClear } from "../../shared/SearchClear";
 import { useScrollRest } from "../../shared/scrollRest";
 import { TaskView } from "./TaskView";
@@ -131,16 +133,16 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
 }) {
   const live = task.live, claim = marks.claim, queued = task.runs?.find((r) => r.status === "queued"), fault = actorFault(task.description);
   const playing = onPlay && !claim && startLane(task, roles);
-  const cls = ["card", chain && `chain-${chain}`, under && "under", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
+  const cls = ["card", chain && `chain-${chain}`, under && "under", task.frozen && "frozen", compact && "compact", playing && "startable", marks.saving && "saving", (marks.refusal || marks.failed) && "bad", marks.lifted && "ghost", claim && "claiming"].filter(Boolean).join(" ");
   const chip = claimChip(task, roles, now), session = sessionChip(task, now);
   const working = roles.working ? task.moves[roles.working] : undefined;
   const guard = working?.allowed === false ? working.reason : "";
   return (
-    <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} title={chain === "self" ? "outlined: Waiting tasks it holds and open tasks it waits on" : undefined} onClick={onOpen} onPointerDown={(e) => { onAhead?.(); onPress?.(e); }} onFocus={onAhead}
+    <div className={cls} role="button" tabIndex={0} data-id={task.id} style={style} title={task.frozen ? frozenNote(task.frozen) : chain === "self" ? "outlined: Waiting tasks it holds and open tasks it waits on" : undefined} onClick={onOpen} onPointerDown={(e) => { onAhead?.(); onPress?.(e); }} onFocus={onAhead}
       onPointerEnter={onHover && (() => onHover(true))} onPointerLeave={onHover && (() => onHover(false))}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}>
       <div className="top">
-        <span className="id">{task.id}</span><PullChips pulls={task.prs} />
+        <span className="id">{task.id}</span>{task.frozen && <span className="ice" role="img" aria-label={frozenNote(task.frozen)} title={frozenNote(task.frozen)}>❄</span>}<PullChips pulls={task.prs} />
       </div>
       {links && links.length > 0 && <div className="uw"><span className="nw">⧗ waits on</span>{" "}{links.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
       <div className="t">{task.title}</div>
@@ -379,9 +381,9 @@ export function HeldBy({ holders: held, roles, open, hover }: {
   );
 }
 
-function Modal({ task: streamed, guarded, tasks, records, stack, names, roles, marks, now, profiles, milestones, capabilities, close, open, hide, archive, constellation, move, start, dismiss, dismissStart, saved }: {
+function Modal({ task: streamed, guarded, tasks, records, stack, names, roles, marks, now, profiles, milestones, capabilities, close, open, hide, archive, freeze, constellation, move, start, dismiss, dismissStart, saved }: {
   task: KanbanTask; guarded: (id: string) => Promise<KanbanTask["moves"] | null>; tasks: KanbanTask[]; records: RecordCache; stack?: ReactNode; names: Record<string, string>; roles: Roles; marks: Marks; now: number; profiles: string[]; milestones: string[];
-  capabilities?: Capabilities; close: () => void; open: (id: string) => void; hide: () => void; archive: () => void; constellation: () => void;
+  capabilities?: Capabilities; close: () => void; open: (id: string) => void; hide: () => void; archive: () => void; freeze: (reason: string | null) => void; constellation: () => void;
   move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void; saved: (record: TaskRecord) => void;
 }) {
   // the snapshot's moves leave the board's guards unjudged: the menu offers the verdicts read when the task opens
@@ -425,7 +427,7 @@ function Modal({ task: streamed, guarded, tasks, records, stack, names, roles, m
         refusal={marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
         startNote={marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}
         readNote={failed && <div className="editrefusal" role="alert"><b>The full record could not be read.</b> <button className="hidebtn" onClick={() => { setFailed(false); setAttempt((n) => n + 1); }}>Retry</button></div>}
-        close={close} hide={hide} archive={archive} constellation={constellation} move={move} start={start}
+        close={close} hide={hide} archive={archive} freeze={freeze} constellation={constellation} move={move} start={start}
         onSaved={(next) => { setRecord(next); setSaves((n) => n + 1); saved(next); }} />
   );
 }
@@ -938,7 +940,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   const drawCard: DrawCard = (t, extra) => (
     <BoardCard key={t.id} task={t} holds={holds.get(t.id)} chain={chain?.(t.id)} cross={view.cross.get(t.id)} onCross={setOpen} {...extra} now={now} names={hud.names} roles={roles} compact={compact} marks={{ ...marksOf(t.id), lifted: lift?.id === t.id || held?.id === t.id }}
       style={bounced === t.id ? { animation: "kb-shake .65s" } : undefined}
-      onOpen={openCard(t.id)} onPress={canDrag(t.id, started) ? begin(t) : undefined} onPlay={() => starts.ask(t, "play", roles)} onAhead={() => records.readAhead(t.id)}
+      onOpen={openCard(t.id)} onPress={canDrag(t.id, started) && !t.frozen ? begin(t) : undefined} onPlay={() => starts.ask(t, "play", roles)} onAhead={() => records.readAhead(t.id)}
       onHover={(on) => { rest(t.id, on); setHovered((h) => (on ? t.id : h === t.id ? null : h)); }}
       dismiss={() => moves.dismiss(t.id)} dismissStart={() => starts.dismiss(t.id)} />
   );
@@ -1076,7 +1078,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
           const taskStack = stackOf(view, task.id);
           return <Modal key={task.id} task={task} guarded={moves.guarded} tasks={cards} records={records} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} roles={roles} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
           profiles={profilesOf(started.harnesses)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
-          hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task)} constellation={() => constellation(task.lane)}
+          hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task)} freeze={(reason) => void postFreeze(task.id, reason).then((r) => setToast(r.ok ? { text: `${task.id} ${reason === null ? "unfreeze" : "freeze"} requested`, sub: "the task actor applies it" } : { text: `${task.id} not changed`, sub: r.reason }))} constellation={() => constellation(task.lane)}
           move={(to) => { if (!dropAsks(task, to, roles)) return void moves.drop(task, to); starts.ask(task, "modal", roles); setOpen(null); }}
           start={() => { starts.ask(task, "modal", roles); setOpen(null); }}
           dismiss={() => moves.dismiss(task.id)} dismissStart={() => starts.dismiss(task.id)}

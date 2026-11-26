@@ -71,6 +71,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         base=base,
         state_dir=config.scheduler.state_dir,
         keys=board.keys,
+        board_name=config.bridge.board,
         fold=True,
         inbox_files=config.github.inbox_files if config.github else None,
     )
@@ -85,10 +86,13 @@ def maintain(
     base: Path | None = None,
     state_dir: str | None = None,
     keys: TaskKeys | None = None,
+    board_name: str | None = None,
     fold: bool = False,
     inbox_files: str | None = None,
 ) -> None:
     """The work `HistoryStore` used to do on every open: the schema.
+
+    With `board_name` (the config's `[bridge] board`) a Task stream with no UUID takes the v5 of it and its key; a store holding one is refused without it.
 
     With `inbox_files` (a glob for the old GitHub inbox databases) it copies their rows into the store once and leaves the files.
 
@@ -99,7 +103,7 @@ def maintain(
     """
     engine = store_engine(url)
     try:
-        migrate(engine)
+        migrate(engine, board_name)
         log = EventLog(url, engine=engine)  # opened after the migration: an unmigrated store refuses its events
         if fold:
             projector = Projector(engine, EventStore(engine), log=log, drawn=machines, keys=keys)

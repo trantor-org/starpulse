@@ -1,6 +1,7 @@
 // The task view: every section reads in place and edits in place, one at a time, each Save a guarded write of that section's diff.
 import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { ago, fmtAt } from "../../shared/clock";
+import { frozenNote } from "../../shared/frozen";
 import { usePhone } from "../../shared/usePhone";
 import { ciTone, columnsOf, offBoardTask, prReadState, roleOf, type KanbanTask } from "./kanbanModel";
 import { startLane, startable } from "./start";
@@ -48,6 +49,8 @@ export interface TaskViewProps {
   move: (to: string) => void;
   start: () => void;
   archive?: () => void;
+  /** Ask the task actor to freeze the task for a reason, or unfreeze it with `null`; absent where the page cannot write. */
+  freeze?: (reason: string | null) => void;
   onSaved?: (record: TaskRecord, changed: TaskField[]) => void;
   /** The section whose editor starts open: a deterministic entry state for the self-contained preview and static render tests. */
   initialEditing?: Section;
@@ -481,6 +484,8 @@ export function TaskView(p: TaskViewProps) {
   const working = roles.working ? p.task.moves[roles.working] : undefined;
   const unavailable = p.saving || writing;
   const [copied, setCopied] = useState(false);
+  const [freezing, setFreezing] = useState(false);
+  const [freezeWhy, setFreezeWhy] = useState("");
   const copy = () => void copyToClipboard(copyText(p.task, base.title)).then((ok) => {
     if (!ok) return;
     setCopied(true);
@@ -553,6 +558,7 @@ export function TaskView(p: TaskViewProps) {
             </button>
             <LanePill lane={p.task.lane} role={roleOf(roles, p.task.lane)} name={p.lane} />
             {p.saving && <span className="k">saving</span>}
+            {p.task.frozen && <span className="frozenote">❄ {frozenNote(p.task.frozen)}</span>}
             {phone ? <span className="off" aria-disabled="true" title="Star Map is desktop-only">Open in Star Map ↗</span> : <a href="/" onClick={(e) => { e.preventDefault(); p.constellation(); }}>Open in Star Map ↗</a>}
             <div className="acts">
               {startVisible && <button className="startbtn" disabled={!startable(p.task, roles) || unavailable}
@@ -560,6 +566,15 @@ export function TaskView(p: TaskViewProps) {
                 onClick={p.start}>▶ Start session</button>}
               <MoveMenu items={offered} disabled={unavailable} move={p.move} />
               <button className="hidebtn" onClick={p.hide}>Hide task</button>
+              {p.freeze && (p.task.frozen
+                ? <button className="frzbtn" onClick={() => p.freeze!(null)}>Unfreeze</button>
+                : freezing
+                  ? <form className="frzform" onSubmit={(e) => { e.preventDefault(); p.freeze!(freezeWhy.trim()); setFreezing(false); setFreezeWhy(""); }}>
+                    <input type="text" value={freezeWhy} placeholder="Why freeze it?" aria-label="Reason for freezing" autoFocus onChange={(e) => setFreezeWhy(e.currentTarget.value)} />
+                    <button type="submit" className="frzbtn" disabled={!freezeWhy.trim()}>Freeze</button>
+                    <button type="button" className="frzbtn" onClick={() => setFreezing(false)}>Cancel</button>
+                  </form>
+                  : <button className="frzbtn" onClick={() => setFreezing(true)}>Freeze…</button>)}
               {p.capabilities?.archive && <button className="archbtn" onClick={p.archive}>Archive…</button>}
               <button className="tvx" onClick={p.close} aria-label="Close">✕</button>
             </div>

@@ -6,7 +6,7 @@ import { fanBadge, stepStatus } from "../features/fanout/fanoutModel";
 import { stepStates } from "../features/level/stepStates";
 import { ACT, DAG_COLOR, EXT, LABEL, MACHINE, MOON, MUTED, easeO, rgba, tierColor, type Drawing, type DrawCtx } from "./draw";
 import { CORE, MACHINE_RING, NAME_INK, STEM } from "./boardPalette";
-import { token } from "./palette";
+import { ICE, token } from "./palette";
 import { activeDag, dagTurn, IDLE, nameLines, touches, turnDags, type Pivot, type Ties } from "./dagTies";
 import {
   BOARD_COLOR, SUN_R, TAU, bez, clip, curveOf, stateR, taskSlot, terminal, textW,
@@ -286,7 +286,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
         }
         continue;
       }
-      if (t.big)
+      if (t.big && !t.frozen)
         for (let i = 0; i < 8; i++) {
           const a0 = t.ang - Math.sign(t.w) * 0.05 * (i + 1), a1 = t.ang - Math.sign(t.w) * 0.05 * i;
           cx.strokeStyle = rgba(tierColor(t.model), 0.34 * (1 - i / 8));
@@ -295,7 +295,7 @@ export function boardDraw(dc: DrawCtx, d: Drawing, io: BoardIO) {
           cx.arc(t.host.x, t.host.y, t.R, Math.min(a0, a1), Math.max(a0, a1));
           cx.stroke();
         }
-      dot(t.x, t.y, hot ? r * 1.7 : r, rgba(tierColor(t.model), (hot || lit ? 1 : 0.8) * (t.alpha ?? 1)));
+      dot(t.x, t.y, hot ? r * 1.7 : r, rgba(t.frozen ? ICE : tierColor(t.model), (hot || lit ? 1 : 0.8) * (t.alpha ?? 1)));
     }
   }
   // state level: each planet runs its own machine; every move is a comet along its chord and the planet's rim glows while it moves
