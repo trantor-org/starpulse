@@ -38,7 +38,7 @@ _flows = Histogram(
 
 #: The first-party clients that name themselves in `X-StarPulse-Client`; any other value reads `other`.
 CALLERS = frozenset(
-    {"web", "cli", "backlog", "pull-request", "export", "delivery", "dispatch", "agent-commands", "ops-script", "probe"}
+    {"web", "cli", "pull-request", "export", "delivery", "agent-commands", "ops-script", "probe"}
 )
 
 
