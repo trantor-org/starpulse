@@ -5,7 +5,7 @@
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import cached_property, partial
 from typing import TYPE_CHECKING
 
@@ -24,7 +24,6 @@ from starpulse.views.adapters.inbound.api import (
     view_queries,
 )
 from starpulse.views.adapters.inbound.api.table import ApiRoute
-from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
 from starpulse.views.adapters.inbound.api.streams import Streams
 from starpulse.views.adapters.outbound.storage_metrics import cached
 
@@ -51,10 +50,6 @@ class Api:
     clock: Callable[[], float] = time.time
     build: Callable[[], str | None] = lambda: None
     page_gauge: Callable[[], str] | None = None
-    scrape_reads: SlowReads = field(init=False)
-
-    def __post_init__(self) -> None:
-        self.scrape_reads = SlowReads("/metrics", self.services.slow_read_s)
 
     @cached_property
     def exposition(self) -> Callable[[], str]:

@@ -1,21 +1,11 @@
 """The route tables' types: each route is a path and the Starlette endpoint that answers it."""
 
 from collections.abc import Awaitable, Callable, Generator
-from contextlib import AbstractContextManager
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:  # annotation only
     from starlette.requests import Request as Incoming
     from starlette.responses import Response as Reply
-
-
-class Arrival(NamedTuple):
-    """A connection when it was accepted: the time, the request workers busy or about to be (itself included) and the
-    streams open."""
-
-    at: float
-    busy: int = 0
-    streams: int = 0
 
 
 class Stream(NamedTuple):
@@ -27,19 +17,14 @@ class Stream(NamedTuple):
 
 
 Endpoint = Callable[["Incoming"], Awaitable["Reply"]]
-#: Times a read: given the request and its arrival, a context the server holds open from that arrival to the last byte
-#: sent; the value it yields has a `ran()` the server calls once a worker thread has taken the read and a `computed()` it
-#: calls as the answer begins to be sent.
-Watch = Callable[["Incoming", Arrival], AbstractContextManager[Any]]
 
 
 class ReadRoute(NamedTuple):
-    """A GET at `path` (under `/api`), answered by the Starlette endpoint `handler`; `watch`, when set, times each
-    read; `params` are the query names the handler reads, the request-duration histogram's shape vocabulary."""
+    """A GET at `path` (under `/api`), answered by the Starlette endpoint `handler`; `params` are the query names
+    the handler reads, the request-duration histogram's shape vocabulary."""
 
     path: str
     handler: Endpoint
-    watch: Watch | None = None
     params: frozenset[str] = frozenset()
 
 

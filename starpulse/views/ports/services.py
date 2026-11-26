@@ -4,8 +4,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from starpulse.contracts.reads import SLOW_READ_S
-
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.display_settings import DisplaySettings
     from starpulse.board.adapters.search import SearchIndex
@@ -50,7 +48,6 @@ class Services:
     lanes: Callable[[], dict[str, Any]] | None = None
     #: The machines the store holds, which the machine write routes change; None refuses them.
     machines: MachineStore | None = None
-    slow_read_s: float = SLOW_READ_S
     #: Seconds a rendered `/metrics` page is served again; 0 renders each scrape.
     scrape_cache_s: float = 0.0
     actor_metrics: Callable[[], str] | None = None

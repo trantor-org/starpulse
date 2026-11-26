@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from anyio import CancelScope, CapacityLimiter, to_thread
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind
 from starlette.applications import Starlette
 from starlette.convertors import PathConvertor, register_url_convertor
 from starlette.middleware import Middleware
@@ -31,17 +33,15 @@ from starlette.staticfiles import StaticFiles
 
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.model.seam import Board
-from starpulse.contracts.reads import SLOW_READ_S
 from starpulse.event_log.caught_up import CaughtUp
 from starpulse.harness_telemetry.model.harnesses import Harnesses
 from starpulse.runs.adapters.inbound.cloudevents_grpc import PATH as CLOUDEVENTS_GRPC_PATH
 from starpulse.runs.adapters.inbound.cloudevents_grpc import cloudevents_grpc
 from starpulse.views.adapters.inbound.api import graphql, intake, metrics
-from starpulse.views.adapters.inbound.api.answering import CAUGHT_UP_S, PLACE, RAN, SPANS, WORKERS
+from starpulse.views.adapters.inbound.api.answering import CAUGHT_UP_S, PLACE, RAN, WORKERS
 from starpulse.views.adapters.inbound.api.openapi import swagger
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
-from starpulse.views.adapters.inbound.api.slow_reads import SlowReads
-from starpulse.views.adapters.inbound.api.table import ApiRoute, Arrival, ReadRoute, StreamRoute, Watch, WriteRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, StreamRoute, WriteRoute
 from starpulse.views.adapters.inbound.compression import Gzip
 from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.views.adapters.outbound import request_durations
@@ -56,6 +56,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
 
 
 logger = logging.getLogger(__name__)
+_tracer = trace.get_tracer("starpulse")
 
 
 #: Requests answered at once, each on a worker thread; the next waits for one to finish.
@@ -291,29 +292,44 @@ class _Admitted:
             place.give()
 
 
-class _Timed:
-    """Times each read of its route with its `Watch`, from the request's arrival to the last byte sent."""
+class _Traced:
+    """Opens a server span for each request of its route, from the request's arrival to the last byte sent, and gives
+    it the queue (the wait for a worker thread), compute (the answer built) and write (the answer sent) it passed
+    through as children."""
 
-    def __init__(self, app: ASGIApp, watch: Watch, workers: CapacityLimiter, streams: _Streams) -> None:
-        self.app, self._watch, self._workers, self._streams = app, watch, workers, streams
+    def __init__(self, app: ASGIApp, route: str, workers: CapacityLimiter, streams: _Streams) -> None:
+        self.app, self._route, self._workers, self._streams = app, route, workers, streams
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        request = Incoming(scope)
-        arrival = Arrival(
-            time.monotonic(), self._workers.borrowed_tokens + 1, self._streams.open
-        )  # busy counts this one
-        with self._watch(request, arrival) as timing:
-            scope[RAN] = timing.ran
-            scope[SPANS] = timing.spans
+        arrived = time.time_ns()
+        marks: dict[str, int] = {}
+        scope[RAN] = lambda: marks.setdefault("ran", time.time_ns())
+        method = scope["method"]
+        attributes = {
+            "http.request.method": method,
+            "http.route": self._route,
+            "starpulse.workers_busy": self._workers.borrowed_tokens + 1,  # this one is busy
+            "starpulse.streams_open": self._streams.open,
+        }
+        with _tracer.start_as_current_span(
+            f"{method} {self._route}", kind=SpanKind.SERVER, start_time=arrived, attributes=attributes
+        ) as span:
             if CAUGHT_UP_S in scope:
-                timing.spans["caught_up_s"] = scope[CAUGHT_UP_S]
+                span.set_attribute("starpulse.caught_up_s", scope[CAUGHT_UP_S])
 
             async def answering(message: MutableMapping[str, Any]) -> None:
                 if message["type"] == "http.response.start":
-                    timing.computed()
+                    marks["computed"] = time.time_ns()
+                    span.set_attribute("http.response.status_code", message["status"])
                 await send(message)
 
-            await self.app(scope, receive, answering)
+            try:
+                await self.app(scope, receive, answering)
+            finally:  # a write that fails on a closed socket is the slow one most worth the span
+                ran, computed, ended = marks.get("ran"), marks.get("computed"), time.time_ns()
+                for phase, began, finished in (("queue", arrived, ran), ("compute", ran, computed), ("write", computed, ended)):
+                    if began is not None and finished is not None:
+                        _tracer.start_span(phase, start_time=began).end(end_time=finished)
 
 
 class _Observed:
@@ -350,7 +366,6 @@ class PageApp:
         self._grpc = grpc
         self._flows = flows
         self._files = _Build(directory=static, check_dir=False)
-        self._slow_s = SLOW_READ_S if seams is None else seams.services.slow_read_s
         self._workers = CapacityLimiter(REQUEST_THREADS)
         self._reserve = CapacityLimiter(RESERVE_THREADS)
         self._inflight = _Inflight()
@@ -470,29 +485,17 @@ class PageApp:
                 return
             yield frame
 
-    def _slow_watch(self, route: str) -> Watch:
-        """The `slow_read` line for a read of `route` that names no watch of its own."""
-        slow = SlowReads(route, self._slow_s)
-        return lambda request, arrival: slow.watch(request.url.query[:80], arrival)
-
-    def _route(self, route: ApiRoute, observed_under: str | None = None) -> Route:
-        """`route` as a Starlette route at its own path; a read is observed in the request-duration histogram under
-        `observed_under` and its path template, when given."""
+    def _route(self, route: ApiRoute, prefix: str) -> Route:
+        """`route` as a Starlette route at its own path; each request but a stream's is a span, and a read is observed
+        in the request-duration histogram, under `prefix` and its path template."""
         at = route.path
+        traced = Middleware(_Traced, route=prefix + at, workers=self._workers, streams=self._streams)
         match route:
-            case ReadRoute(_, handler, watch, params):
-                if watch is None and observed_under is not None:
-                    watch = self._slow_watch(observed_under + at)
-                timed = (
-                    []
-                    if watch is None
-                    else [Middleware(_Timed, watch=watch, workers=self._workers, streams=self._streams)]
-                )
-                if observed_under is not None:
-                    timed = [Middleware(_Observed, route=observed_under + at, params=params), *timed]
-                return Route(at, handler, methods=["GET"], middleware=timed)
+            case ReadRoute(_, handler, params):
+                observed = Middleware(_Observed, route=prefix + at, params=params)
+                return Route(at, handler, methods=["GET"], middleware=[observed, traced])
             case WriteRoute(_, methods, handler):
-                return Route(at, handler, methods=list(methods))
+                return Route(at, handler, methods=list(methods), middleware=[traced])
             case StreamRoute(_, handler):
                 return Route(at, handler, methods=["GET"])
 

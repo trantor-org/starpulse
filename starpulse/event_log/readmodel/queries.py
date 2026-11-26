@@ -159,9 +159,9 @@ def since(seq: int, limit: int) -> Select[Any]:
 
 
 def archived(before: float | None, limit: int, milestone: str | None = None) -> Select[Any]:
-    """The archived Tasks changed before `before` (None: any time), newest first: one range of the archive index;
-    `milestone` keeps those of that milestone."""
-    query = select(*SUMMARY).where(tasks.c.archived == true()).order_by(tasks.c.updated_at.desc(), tasks.c.id)
+    """The archived Tasks changed before `before` (None: any time), with their meta, newest first: one range of the
+    archive index; `milestone` keeps those of that milestone."""
+    query = select(*SUMMARY, tasks.c.meta).where(tasks.c.archived == true()).order_by(tasks.c.updated_at.desc(), tasks.c.id)
     if milestone is not None:
         query = query.where(tasks.c.milestone == milestone)
     return (query if before is None else query.where(tasks.c.updated_at < before)).limit(limit)

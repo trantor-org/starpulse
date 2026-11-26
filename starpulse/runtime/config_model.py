@@ -18,7 +18,6 @@ from starpulse.bridge.reach import parse_reach
 from starpulse.bridge.subjects import token
 from starpulse.bridge.subscriptions import parse_rules
 from starpulse.contracts import task_graphql
-from starpulse.contracts.reads import SLOW_READ_S
 from starpulse.runtime.nats_server import DEFAULT_RESUME
 
 #: An environment variable's name: the setting holds the name, never the value.
@@ -439,19 +438,6 @@ class ConfigFile(_Table):
         description=(
             "Where the sweeper writes each row it prunes, before it deletes the row (see Event log "
             "archive): a directory, relative to this file unless absolute."
-        ),
-    )
-    slow_read_seconds: float = Field(
-        default=SLOW_READ_S,
-        gt=0,
-        description=(
-            "The seconds a `GET /metrics`, `GET /api/task/<id>`, `GET /api/search` or `GET /api/search/similar` read may take, from accept to the last byte "
-            "written, before `serve` logs a `slow_read` line for it: `queue_s`, `compute_s` and `write_s`, the "
-            "seconds it waited for a handler thread, computed its answer and wrote it, `in_flight`, the reads of "
-            "the same route running when it began, "
-            "and `busy` and `streams`, the request workers in use (the read itself included) and the streams open "
-            "when it was accepted; a search adds `embed_s` and `sql_s`, the seconds spent getting the query's vector and "
-            "on the rest of the search. No other route is timed."
         ),
     )
     worker_memory: dict[Literal["api", "contexts"], MemoryFile] = Field(
