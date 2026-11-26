@@ -136,6 +136,7 @@ def start_delivery(
             closed=board.closed,
             archived=board.archived,
             frozen=board.frozen,
+            halted=board.halted,
             live=live,
             main_green=_main_green(config, pins),
             owner_source=config.owner_source,

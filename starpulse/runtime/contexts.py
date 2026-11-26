@@ -330,6 +330,11 @@ def default_starters(
             built = shared.peek()
             return built is not None and (built[1].is_done(task) or built[1].is_archived(task))
 
+        def frozen(task: str) -> bool:
+            built = shared.peek()
+            row = built[1].task(task, lean=True) if built else None
+            return bool(row and row.get("frozen"))
+
         def held_by(session: str) -> str | None:
             built = shared.peek()
             if built is None:
@@ -377,6 +382,7 @@ def default_starters(
                 lambda: shared()[1].roles.working,
                 closed,
                 forgotten,
+                frozen,
             ),
             forget_ended(registry, live_socket(sessions_dir(os.environ)), sessions_dir(os.environ), forgotten),
             config.bridge.incidents,

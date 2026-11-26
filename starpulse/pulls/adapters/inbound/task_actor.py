@@ -366,6 +366,7 @@ class TaskActor:
         closed: Callable[[str], None] = _ignore,
         archived: Callable[[str], None] = _ignore,
         frozen: Callable[[str], None] = _ignore,
+        halted: Callable[[str, str], None] = lambda _task, _verdict: None,
         returned: Callable[[str], None] = _ignore,
         alive: Callable[[str], bool] = lambda _task: False,
         enqueued: Callable[[str], None] = _ignore,
@@ -460,6 +461,7 @@ class TaskActor:
         self._tell = parked
         self._released = released
         self._closed = closed
+        self._halted = halted
         self._archived = archived
         self._frozen = frozen
         self._returned = returned
@@ -1704,6 +1706,8 @@ class TaskActor:
             self._refused_by(written)
         elif changes:
             self._notice(self._frozen, name, "was written but the board was not told")
+            verdict = "freeze" if changes["frozen"] else "thaw"
+            self._notice(lambda task: self._halted(task, verdict), name, f"had its session {verdict} notice fail")
 
     def _log_unready(self, agent: dict[str, Any]) -> None:
         """Log once per change the condition that keeps a working task's open pull request from being ready."""
@@ -1764,7 +1768,7 @@ class TaskActor:
                 self._unwant(name)
                 self._end_closed(name)
                 return
-            if self._idle is None:
+            if self._idle is None or agent.get("frozen"):  # a frozen task's session is halted, never idle
                 return
             if wait_ended and self._session_active(name):
                 self._memory.keep(name, resumes=None)
@@ -1872,7 +1876,7 @@ class TaskActor:
                 self._end_closed(name)
                 self._unwant(name)
                 return
-            if self._idle is None:
+            if self._idle is None or agent.get("frozen"):
                 self._unwant(name)
                 return
             if wait_ended and self._session_active(name):

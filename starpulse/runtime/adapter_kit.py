@@ -265,6 +265,7 @@ def refusing(**fields: Any) -> Board:
             "closed": _nothing,
             "archived": _nothing,
             "frozen": _nothing,
+            "halted": _nothing,
             "entered": _nothing,
             "attach": _nothing,
             **fields,
