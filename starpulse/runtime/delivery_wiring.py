@@ -28,7 +28,6 @@ from starpulse.pulls.adapters.outbound.pull_requests import PullRequests, coales
 from starpulse.pulls.adapters.outbound.unfinished import submodule_paths
 from starpulse.pulls.model.pins import LiveBuild, running_commit
 from starpulse.runtime.config import Config
-from starpulse.sessions.adapters.outbound.claude_code_notify import end_with
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.model.board_feed import BoardFeed
@@ -128,7 +127,7 @@ def start_delivery(
             parked=board.parked,
             released=board.released,
             idle=board.idle,
-            end=end_with(config.bridge.end),
+            end=config.session_harness().end_with(config.bridge.end),
             end_lanes=frozenset(config.bridge.end_lanes),
             returned=board.returned,
             alive=board.alive,

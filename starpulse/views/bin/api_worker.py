@@ -36,7 +36,6 @@ from starpulse.event_log.caught_up import CaughtUp
 from starpulse.event_log.child_cpu import STATES as CHILDREN
 from starpulse.event_log.child_cpu import metrics_of as child_cpu_metrics_of
 from starpulse.event_log.follower_wakes import metrics_of as follower_wake_metrics_of
-from starpulse.event_log.claude_sessions import entrypoint_of, sessions_dir
 from starpulse.event_log.follower_lag import metrics_of as follower_lag_metrics_of
 from starpulse.event_log.recorder_lag import metrics_of as history_lag_metrics_of
 from starpulse.event_log.wake import StopEvent
@@ -199,7 +198,7 @@ def serve_page(
         views=config.views,
         start_session=starter(config.session_start_url),
         dispatch=dispatcher(log),
-        entrypoint=entrypoint_of(sessions_dir(os.environ)),
+        entrypoint=config.session_harness().entrypoint,
         live=identity.current().live,
         events=cloudevents,
         scheduler=Remote(log),

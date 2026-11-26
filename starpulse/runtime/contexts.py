@@ -17,7 +17,6 @@ import logging
 import os
 import sys
 import threading
-import time
 import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -214,13 +213,12 @@ def default_starters(
         from starpulse.runtime.assembly import scheduler_board
         from starpulse.scheduler.bin import scheduler_worker
         from starpulse.bridge.account_room import account_room
-        from starpulse.sessions.adapters.outbound.claude_code_notify import end_with
         from starpulse.sessions.adapters.outbound.session_start import starter
 
         return scheduler_worker.start(
             config, path, base, log, own, load=load,
             worker_board=lambda *_: scheduler_board(config, base, log, own),
-            starter=starter, delivered=own_pull_merged, ender=end_with,
+            starter=starter, delivered=own_pull_merged,
             rooms=account_room,
         )  # fmt: skip
 
@@ -310,11 +308,9 @@ def default_starters(
 
     def bridge(own: threading.Event) -> Callable[[], None]:
         from starpulse.bridge import worker
-        from starpulse.event_log.claude_sessions import live_socket, sessions_dir
         from starpulse.machine_engine.model.transitions import lane_id
         from starpulse.pulls.adapters.outbound.pulls import stored_head
         from starpulse.runtime.session_delivery import exit_watcher, forget_ended, route, running
-        from starpulse.sessions.adapters.outbound import claude_code_notify as claude
         from starpulse.sessions.adapters.outbound.registry import Registry, directory
         from starpulse.sessions.adapters.outbound.wake_metrics import Wakes
         from starpulse.sessions.identity import same_session
@@ -343,13 +339,8 @@ def default_starters(
                 (row["id"] for row in built[1].open_tasks() if same_session(row.get("assignee"), session)), None
             )
 
-        notifier = claude.ClaudeCodeNotifier(
-            post=claude.post_inbox,
-            resume=claude.resume_with(config.bridge.resume),
-            alive=live_socket(sessions_dir(os.environ)),
-            now=time.monotonic,
-            delivered=Wakes(log, lane_of),
-        )
+        harness = config.session_harness()
+        notifier = harness.notifier(config.bridge.resume, Wakes(log, lane_of))
         registry = Registry(directory(base, config.bridge.sessions_dir))
         events = None
         if config.producers:
@@ -375,7 +366,7 @@ def default_starters(
             route(
                 registry,
                 notifier,
-                sessions_dir(os.environ),
+                harness,
                 config.bridge.quiet_moves,
                 lambda repo, number: stored_head(log.engine, repo, number),
                 lane_of,
@@ -384,11 +375,11 @@ def default_starters(
                 forgotten,
                 frozen,
             ),
-            forget_ended(registry, live_socket(sessions_dir(os.environ)), sessions_dir(os.environ), forgotten),
+            forget_ended(registry, harness, forgotten),
             config.bridge.incidents,
-            exit_watcher(log, registry, sessions_dir(os.environ), held_by),
+            exit_watcher(log, registry, harness, held_by),
             events,
-            running(sessions_dir(os.environ)),
+            running(harness),
         )
 
     def search(own: threading.Event) -> Callable[[], None]:

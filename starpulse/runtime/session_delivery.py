@@ -10,7 +10,7 @@ this route runs no end. The registration of a session that ended is removed by `
 
 A move to any other lane whose writer `[bridge] quiet_moves` names for that lane is acked with no line too, and a batch
 left with no line notifies nothing; `self` names the receiving session, matched through the same running-session records
-as a claude.ai URL holder.
+as a holder URL.
 
 An event the session already received is acked with no line: the server redelivers one whose ack was lost, and a
 resume wake heard again would start a turn with nothing to do.
@@ -33,18 +33,17 @@ import logging
 import re
 import time
 from collections.abc import Callable, Collection, Mapping
-from pathlib import Path
 
 from starpulse.bridge.delivery import Event, Route
 from starpulse.bridge.subjects import INCIDENT
 from starpulse.event_log import events as machine_events
-from starpulse.event_log.claude_sessions import live_process, local_id, local_ids
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.harness_telemetry.adapters.outbound.session_exit import ExitWatch, watch_registered
 from starpulse.harness_telemetry.model.harness import ended_id
 from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL
 from starpulse.sessions.adapters.outbound.registry import Registry
+from starpulse.sessions.ports.harness import SessionHarness
 from starpulse.sessions.ports.notify import Line, Notifier, Registration
 
 logger = logging.getLogger(__name__)
@@ -53,7 +52,6 @@ _FIELDS = ("event", "lane", "task")
 _UNSAFE = re.compile(r"[<>\r\n]+")
 _VALUE_MAX = 120
 _DATA_PAIRS = 20
-_URL_HOLDER = re.compile(r"https_claude_ai_code_((?:session|cse)_\w+)")
 #: An incident older than this is no news: a new consumer replays the last one of every key, so it is acked unannounced.
 INCIDENT_FRESH_S = 6 * 3600
 _FINISHED = frozenset({"done", COMPLETED, ARCHIVED})
@@ -141,7 +139,7 @@ def _moved_fields(event: Event) -> dict | None:
     return fields if isinstance(fields, dict) else None
 
 
-def _quieted(event: Event, quiet: Mapping[str, Collection[str]], own: str, sessions: Path) -> bool:
+def _quieted(event: Event, quiet: Mapping[str, Collection[str]], own: str, harness: SessionHarness) -> bool:
     fields = _moved_fields(event)
     if fields is None:
         return False
@@ -151,7 +149,7 @@ def _quieted(event: Event, quiet: Mapping[str, Collection[str]], own: str, sessi
     if fields.get("actor") in writers:
         return True
     session = str(fields.get("session") or "")
-    return SELF in writers and bool(own) and local_id(sessions, session) == own
+    return SELF in writers and bool(own) and harness.local_id(session) == own
 
 
 def _passed(event: Event, head: Callable[[str, int], str | None] | None) -> bool:
@@ -186,27 +184,15 @@ def _seen_key(event: Event) -> tuple[str, str] | None:
         return None
 
 
-def _holder_bridge(name: str) -> str:
-    url = _URL_HOLDER.fullmatch(name)
-    return url[1] if url else ""
-
-
-def _local(sessions: Path, name: str) -> str:
-    """The local session id a consumer named for a claude.ai URL holder resolves to; empty for any other name."""
-    bridge = _holder_bridge(name)
-    return local_id(sessions, f"https://claude.ai/code/{bridge}") if bridge else ""
-
-
-def running(sessions: Path) -> Callable[[str], bool]:
-    """Whether the consumer `name` names, a local session id or a claude.ai URL holder, has a running process."""
-    process_of = live_process(sessions)
-    return lambda name: process_of(_local(sessions, name) or name) is not None
+def running(harness: SessionHarness) -> Callable[[str], bool]:
+    """Whether the consumer `name` names, a local session id or a holder URL, has a running process."""
+    return lambda name: harness.process(harness.consumer_id(name) or name) is not None
 
 
 def route(
     registry: Registry,
     notifier: Notifier,
-    sessions: Path,
+    harness: SessionHarness,
     quiet: Mapping[str, Collection[str]] | None = None,
     head: Callable[[str, int], str | None] | None = None,
     lane_of: Callable[[str], str | None] | None = None,
@@ -216,7 +202,7 @@ def route(
     frozen: Callable[[str], bool] | None = None,
 ) -> Route:
     """A session with no registration has no route, so its events stay on its consumer. A consumer named for a
-    claude.ai URL holder is the running session whose record in `sessions` carries that bridge id, which registered
+    holder URL is the running session the harness resolves it to, which registered
     under its local id. `head` is the
     store's head of a repository's pull request by number, empty or None when it holds none. A consumer's event the
     session already received (the server redelivers one whose ack was lost) is acked with no line, the last
@@ -234,7 +220,7 @@ def route(
     def registered(name: str) -> tuple[str, Registration | None]:
         if found := registry.get(name):
             return name, found
-        local = _local(sessions, name)
+        local = harness.consumer_id(name)
         return local, registry.get(local) if local else None
 
     def find(name: str):
@@ -248,7 +234,7 @@ def route(
         gone.discard(key)
 
         def deliver(events: list[Event]) -> bool:
-            own = local_id(sessions, registration.session)
+            own = harness.local_id(registration.session)
             received = seen.setdefault(name, {})
             sent = [
                 event
@@ -259,7 +245,7 @@ def route(
                 and not _closed(event, closed)
                 and not _passed(event, head)
                 and not _parked(event, lane_of, working)
-                and not _quieted(event, quiet or {}, own, sessions)
+                and not _quieted(event, quiet or {}, own, harness)
             ]
             held = [event for event in sent if _held(event, frozen)]
             sent = [event for event in sent if event not in held]
@@ -288,16 +274,16 @@ def route(
 
 
 def forget_ended(
-    registry: Registry, alive: Callable[[str], str | None], sessions: Path, forgotten: set[str] | None = None
+    registry: Registry, harness: SessionHarness, forgotten: set[str] | None = None
 ) -> Callable[[Collection[str]], None]:
     """Remove the registration of every session that is neither running nor named by a consumer in `names`: nothing
     is delivered to it, and a session that returns registers again at its next prompt, by the `session_register` hook."""
 
     def forget(names: Collection[str]) -> None:
         wanted = set(names)
-        wanted |= local_ids(sessions, [bridge for name in names if (bridge := _holder_bridge(name))])
+        wanted |= harness.consumer_ids(names)
         for key in registry.keys():
-            if key not in wanted and not ((registration := registry.get(key)) and alive(registration.session)):
+            if key not in wanted and not ((registration := registry.get(key)) and harness.socket(registration.session)):
                 logger.info("registration %s removed: its session is neither named by a consumer nor running", key)
                 registry.delete(key)
                 if forgotten is not None:
@@ -307,7 +293,7 @@ def forget_ended(
 
 
 def exit_watcher(
-    log: EventLog, registry: Registry, sessions: Path, holds: Callable[[str], str | None]
+    log: EventLog, registry: Registry, harness: SessionHarness, holds: Callable[[str], str | None]
 ) -> Callable[[], None]:
     """A sync that holds a process descriptor per registered session with a running process: when one exits, a clean
     exit, kill or crash alike, `SESSION_ENDED` lands on the harness machine, under the task `holds` says the session
@@ -327,10 +313,8 @@ def exit_watcher(
         )
 
     watch = ExitWatch(ended)
-    process_of = live_process(sessions)
-
     def sync() -> None:
         registered = (registration.session for key in registry.keys() if (registration := registry.get(key)))
-        watch_registered(registered, process_of, watch.watch)
+        watch_registered(registered, harness.process, watch.watch)
 
     return sync
