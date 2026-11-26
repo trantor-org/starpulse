@@ -24,7 +24,7 @@ from starpulse.views.application.commands.guard import (
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     pass
 
-lazy from starpulse.event_log.claude_sessions import same_holder
+lazy from starpulse.sessions.identity import same_session
 
 
 #: Modes `POST /api/start` accepts; `interactive` is the Start-session default.
@@ -66,6 +66,8 @@ Dispatcher = Callable[[str, str, str], bool]
 
 #: Names the `claude_code.entrypoint` of a session's record, empty when none runs under that id.
 Entrypoint = Callable[[str], str]
+#: Whether the harness confirms the session an id names is running.
+Live = Callable[[str], bool]
 #: The entrypoint of a Remote Control child, the session of a project thread.
 REMOTE_CONTROL = "sdk-cli"
 
@@ -81,7 +83,13 @@ def remote_control_refusal(task: str, session: str, entrypoint: Entrypoint | Non
 
 
 def dispatch_task(
-    task: str, session: str, replaces: str, feed: BoardFeed, dispatch: Dispatcher | None, entrypoint: Entrypoint | None = None
+    task: str,
+    session: str,
+    replaces: str,
+    feed: BoardFeed,
+    dispatch: Dispatcher | None,
+    entrypoint: Entrypoint | None = None,
+    live: Live | None = None,
 ) -> tuple[int, dict[str, str]]:
     """Publish the dispatch of `session` to `task`, which `PUT /api/tasks/{id}` names as an `assignee` change: the HTTP
     status and JSON body.
@@ -89,12 +97,17 @@ def dispatch_task(
     The task actor pins the session and moves the lane; this writes nothing. It refuses, 409, what the actor
     would leave: a task another session holds (unless `replaces`, the `base` assignee, names that holder, whom the
     caller found dead), a session that already holds another task In Progress, and a task outside Ready, Needs
-    attention and In Progress. A dispatch the event log did not append is a 502, never a 202.
+    attention and In Progress, and a session its harness cannot confirm live. A dispatch the event log did not append is a
+    502, never a 202.
     """
     if dispatch is None:
         return 501, {"error": "this deployment publishes no dispatch events"}
     if refused := remote_control_refusal(task, session, entrypoint):
         return refused
+    if live is not None and not live(session):
+        return 409, {
+            "error": f"{session} is not a session its harness confirms live: only a running session holds {task}"
+        }
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
     roles, holder = feed.roles, str(agent.get("assignee") or "")
@@ -102,12 +115,12 @@ def dispatch_task(
         return 409, {
             "error": f"{task} is in {agent['state']}: a session is dispatched only to a Ready, Needs attention or In Progress task"
         }
-    if holder and not same_holder(holder, session) and not (replaces and same_holder(holder, replaces)):
+    if holder and not same_session(holder, session) and not (replaces and same_session(holder, replaces)):
         return 409, {"error": f"{task} is already In Progress, held by {holder}"}
     others = [
         a["id"]
         for a in feed.open_tasks()
-        if a["state"] == roles.working and same_holder(a.get("assignee"), session) and a["id"] != task
+        if a["state"] == roles.working and same_session(a.get("assignee"), session) and a["id"] != task
     ]
     if others:
         return 409, {

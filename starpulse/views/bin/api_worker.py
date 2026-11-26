@@ -55,6 +55,7 @@ from starpulse.runs.application.queries import projection as runs_projection
 from starpulse.runs.model import opt_in
 from starpulse.scheduler.adapters.exposition import autopilot_exposition
 from starpulse.scheduler.adapters.remote import Remote
+from starpulse.sessions import identity
 from starpulse.sessions.adapters.outbound.session_start import starter
 from starpulse.sessions.adapters.outbound.wake_metrics import metrics_of as wake_metrics_of
 from starpulse.sweeper.publish import metrics_of as sweeper_metrics_of
@@ -200,6 +201,7 @@ def serve_page(
         start_session=starter(config.session_start_url),
         dispatch=dispatcher(log),
         entrypoint=entrypoint_of(sessions_dir(os.environ)),
+        live=identity.current().live,
         events=cloudevents,
         scheduler=Remote(log),
         display=DisplaySettings(log),
@@ -249,8 +251,8 @@ def serve_page(
             tls=config.tls,
             stopping=lambda: snapshots.announce("restarting", {"at": time.time()}),
             drain_s=DRAIN_S,
+            serving=lambda: host.announce_ready(os.environ),
         )
-        host.announce_ready(os.environ)
         httpd.run()
     finally:
         stop.set()

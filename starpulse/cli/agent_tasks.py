@@ -24,11 +24,11 @@ from starpulse.cli.agent_keys import LIFECYCLE_KEYS
 from starpulse.event_log.claude_sessions import (
     DEFAULT_SESSIONS,
     DEFAULT_TRANSCRIPTS,
-    same_holder,
     session_activity_of,
 )
 from starpulse.event_log.lane_events import ARCHIVED
 from starpulse.machine_engine.model.transitions import lane_id
+from starpulse.sessions.identity import same_session
 lazy from starpulse.board.model.markdown import MarkdownRefusedError, imported
 lazy from starpulse.board.model.markdown import render as render_markdown
 
@@ -79,7 +79,7 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
             and (not args.type or agent.get("type", "") == args.type)
             and (not args.label or args.label in agent["labels"])
             and (not profile or agent["model"] == profile)
-            and (not session or same_holder(agent.get("assignee"), session))
+            and (not session or same_session(agent.get("assignee"), session))
         )
 
     board = board_columns(snapshot, kept, args.state)

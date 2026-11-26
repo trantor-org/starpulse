@@ -205,6 +205,7 @@ def routes(api: Api) -> list[ApiRoute]:
                     opened=opened,
                     dispatch=services.dispatch,
                     entrypoint=services.entrypoint,
+                    live=services.live,
                 ),
             ),
         ),

@@ -16,7 +16,7 @@ from starpulse.event_log.store import EventStore, StaleVersion
 from starpulse.pulls.adapters.outbound.github import GitHubAdapter
 from starpulse.views.application.commands.guard import EDIT_LOCK, RELEASED_ASSIGNEE, held_task, not_held, with_request
 
-lazy from starpulse.event_log.claude_sessions import same_holder
+lazy from starpulse.sessions.identity import same_session
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ def _holding(feed: BoardFeed, handle: str, session: str, harness: str) -> _Answe
     if (agent := held_task(feed, handle)) is None:
         return not_held(feed, handle)
     holder = str(agent.get("assignee") or "")
-    if holder and holder != RELEASED_ASSIGNEE and same_holder(holder, session):
+    if holder and holder != RELEASED_ASSIGNEE and same_session(holder, session):
         return None
     named = holder if holder and holder != RELEASED_ASSIGNEE else None
     return 403, {

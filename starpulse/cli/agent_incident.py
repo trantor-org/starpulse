@@ -16,7 +16,7 @@ from starpulse.bridge.subjects import token, wake_subject
 from starpulse.cli import agent_wire
 from starpulse.cli.agent_subscribe import bridge
 from starpulse.cli.agent_tasks import record_call, task_dispatch, task_park, writer
-from starpulse.event_log.claude_sessions import same_holder
+from starpulse.sessions.identity import same_session
 
 _TIMEOUT_S = 5.0
 
@@ -72,7 +72,7 @@ def _wait_on_owner(
     comment = f"Waiting on {owner}: {source} reaches this task; it is released when {owner} is Done."
     for agent in board_flow(snapshot)["agents"]:
         holder = agent.get("assignee") or ""
-        if agent["id"] == owner or holder in ("", "released") or same_holder(holder, session):
+        if agent["id"] == owner or holder in ("", "released") or same_session(holder, session):
             continue
         if not reach.covers(agent, roles_of(snapshot).working):
             continue
@@ -172,7 +172,7 @@ def open_incident(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
             if given is None:
                 raise agent_wire.CliError("refused", f"--owner {args.owner} is not an open task")
         owner = None if args.owner else _open_owner(snapshot, source)
-        if owner and owner.get("assignee") and not same_holder(owner["assignee"], session):
+        if owner and owner.get("assignee") and not same_session(owner["assignee"], session):
             return {"subject": source, "task": owner["id"], "holder": owner["assignee"], "published": False}
         if owner and not owner.get("assignee"):
             try:
@@ -181,7 +181,7 @@ def open_incident(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[
                 if exc.code != "refused":
                     raise
                 now = _open_owner(agent_wire.flows(args, environ), source)
-                if not (now and now.get("assignee") and not same_holder(now["assignee"], session)):
+                if not (now and now.get("assignee") and not same_session(now["assignee"], session)):
                     raise
                 return {"subject": source, "task": now["id"], "holder": now["assignee"], "published": False}
         task = given["id"] if given else owner["id"] if owner else _create_and_dispatch(args, environ, source)

@@ -67,6 +67,7 @@ CONTEXT_ENTRIES = (
     "starpulse.sessions.adapters.outbound.registry",
     "starpulse.sessions.adapters.outbound.session_start",
     "starpulse.sessions.adapters.outbound.wake_metrics",
+    "starpulse.sessions.identity",
     "starpulse.views.model.encoding",
     "starpulse.flow_metrics.adapters.outbound.session_ledger",
     "starpulse.views.adapters.outbound.signal_folds",  # `contexts` imports it late

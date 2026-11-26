@@ -100,7 +100,8 @@ layers = [
     "starpulse.views",
     "starpulse.cli",
     # producers
-    "starpulse.pulls | starpulse.scheduler | starpulse.sessions | starpulse.sweeper | starpulse.bridge",
+    "starpulse.pulls | starpulse.scheduler | starpulse.sweeper | starpulse.bridge",
+    "starpulse.sessions",
     "starpulse.runs | starpulse.harness_telemetry",
     # derived
     "starpulse.flow_metrics",

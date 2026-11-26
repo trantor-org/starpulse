@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from starpulse.board.adapters.holder_idle import follow_holder_idle, started
+from starpulse.board.adapters.task_links import TaskLinks, hold_by_link
 from starpulse.board.adapters.until_events import follow_until_events
 from starpulse.board.model.seam import (
     Board,
@@ -14,6 +15,7 @@ from starpulse.bridge.last_event import last_event_is, last_event_sha
 from starpulse.bridge.subjects import subject_for
 from starpulse.event_log import events as machine_events
 from starpulse.event_log import lane_events
+from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.start_requests import follow_admitted, follow_failed
 from starpulse.event_log.wake import StopEvent
 from starpulse.github.adapters.outbound.head_reader import GitHubReader
@@ -116,6 +118,7 @@ def start_delivery(
             config.board_repo,
             latest=lambda subject, since: last_event_is(log.engine, subject, since),
             started=lambda task: started(log.engine, task),
+            hold=lambda task, session: hold_by_link(TaskLinks(log.engine), ReadModel(log.engine))(task, session),
             latest_sha=lambda subject: last_event_sha(log.engine, subject),
             holds=board.holds,
             read=board.read,

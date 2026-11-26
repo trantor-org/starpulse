@@ -100,7 +100,7 @@ from starpulse.pulls.model.task_actor.derivation import (
 if TYPE_CHECKING:  # annotation only: the pull store and the event log open the database stack
     from starpulse.event_log.event_log import EventLog
     from starpulse.pulls.adapters.outbound.pulls import PullStore
-lazy from starpulse.event_log.claude_sessions import same_holder
+lazy from starpulse.sessions.identity import same_session
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +266,10 @@ def _written_here(name: str, drawn: Mapping[str, Any], link: Mapping[str, Any]) 
     return all(ACTOR in (writer["actor"] for writer in writers.get(event, ())) for event in link["exits"].values())
 
 
+def _unheld(_task: str, _session: str | None) -> None:
+    pass
+
+
 def _no_holds(_task: str) -> Sequence[str]:
     return ()
 
@@ -379,6 +383,7 @@ class TaskActor:
         main_green: Callable[[], str | None] | None = None,
         owner_source: str = "",
         started: Callable[[str], bool] = lambda _task: False,
+        hold: Callable[[str, str | None], None] = _unheld,
         mergeable: Callable[[str, int], str | None] = lambda _repo, _number: None,
         checks: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
@@ -400,6 +405,8 @@ class TaskActor:
         self._dispatching: dict[str, str] = {}
         #: Whether a session was ever dispatched to a task, given its id, which the start event answers.
         self._started = started
+        #: Stores the `holds` link of a session to a task, or with None removes it: the assignee renders that link.
+        self._hold = hold
         self._owner_source = owner_source
         self._read = read
         self._idle = idle
@@ -1944,7 +1951,7 @@ class TaskActor:
             if agent is None or not session or agent["state"] not in (roles.ready, roles.attention, roles.working):
                 return
             holder = str((self._read(name) or {}).get("assignee") or "")
-            if holder and not same_holder(holder, session):
+            if holder and not same_session(holder, session):
                 logger.info(
                     "task actor: %s stays with %s, which a dispatch of %s did not displace", name, holder, session
                 )
@@ -1952,6 +1959,7 @@ class TaskActor:
             self._deadlines.arm(_STARTED + name, self._wall() + _START_BOUND_S)
             moving = agent["state"] != roles.working
             if holder and not moving:
+                self._hold(name, session)  # a holder from before the link store: the dispatch adopts it
                 return
             changes = {"status": roles.working, "assignee": session} if moving else {"assignee": session}
             comment = f"Dispatched: {session} holds it."
@@ -1964,7 +1972,9 @@ class TaskActor:
             )
             if not (written.transient and name in self._lock_tries):
                 self._dispatching.pop(name, None)
-        if not written.ok:
+        if written.ok:
+            self._hold(name, session)
+        else:
             logger.warning("task actor: a dispatch of %s to %s was not pinned: %s", session, name, written.output)
 
     def _redispatch(self, name: str, session: str) -> None:
@@ -1982,10 +1992,12 @@ class TaskActor:
             if self._dispatching.get(name) == session:
                 del self._dispatching[name]
             holder = str((self._read(name) or {}).get("assignee") or "")
-            if not same_holder(holder, session):
+            if not same_session(holder, session):
                 return
             written = self._apply(name, {"assignee": ""}, "", again=lambda: self.session_ended(name, session))
-        if not written.ok:
+        if written.ok:
+            self._hold(name, None)
+        else:
             logger.warning("task actor: the lease of %s on %s was not ended: %s", session, name, written.output)
 
     def start_failed(self, only: str = "") -> None:

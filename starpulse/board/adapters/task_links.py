@@ -4,18 +4,23 @@ A link is a row of `task_links` and an event on the `task-link` stream of the sa
 a rename of the task's key moves neither. Only the task actor writes one, on the request of the session that holds the task.
 """
 
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from sqlalchemy import Connection, Engine, delete, insert, select
 from sqlalchemy.exc import IntegrityError
 
-from starpulse.event_log.store import EventStore, NewEvent
+from starpulse.event_log.readmodel.read_model import ReadModel
+from starpulse.event_log.store import EventStore, NewEvent, StaleVersion
 from starpulse.event_log.tables import task_links
 
-__all__ = ["DeliveredElsewhere", "StoredLink", "TaskLinks"]
+__all__ = ["DeliveredElsewhere", "StoredLink", "TaskLinks", "hold_by_link"]
 
 KIND = "task-link"
 WRITER = "task-actor"
+HOLDS = "holds"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -79,6 +84,14 @@ class TaskLinks:
         with self._engine.connect() as db:
             return set(db.execute(select(task_links.c.ref).where(task_links.c.task == task)).scalars())
 
+    def of(self, task: str, role: str) -> list[StoredLink]:
+        """The task's links of `role`, oldest first."""
+        with self._engine.connect() as db:
+            rows = db.execute(
+                select(task_links).where(task_links.c.task == task, task_links.c.role == role).order_by(task_links.c.at)
+            )
+        return [StoredLink(r.task, r.role, r.ref, r.requested_by, r.at, r.event_id) for r in rows]
+
     def remove(self, task: str, role: str, ref: str, requested_by: str) -> StoredLink | None:
         """Remove the link and answer it as it was, or None when the task has no such link."""
         with self._engine.begin() as db:
@@ -98,3 +111,25 @@ def _row(db: Connection, task: str, role: str, ref: str) -> StoredLink | None:
         select(task_links).where(task_links.c.task == task, task_links.c.role == role, task_links.c.ref == ref)
     ).one_or_none()
     return None if found is None else StoredLink(found.task, found.role, found.ref, found.requested_by, found.at, found.event_id)
+
+
+def hold_by_link(links: TaskLinks, tasks: ReadModel) -> Callable[[str, str | None], None]:
+    """The task actor's `hold` seam: store the session holding the task `name` as its one `holds` link, replacing any
+    other, or remove it when the session is None. A task with no UUID, or a stream that moved, is logged and skipped:
+    the next dispatch to the same session writes the link again."""
+
+    def hold(name: str, session: str | None) -> None:
+        if not (uuid := str(((tasks.task(name) or {}).get("meta") or {}).get("uuid") or "")):
+            logger.warning("no holds link for %s: the task has no uuid", name)
+            return
+        wanted = f"session:claude:{session}" if session else None
+        try:
+            for link in links.of(uuid, HOLDS):
+                if link.ref != wanted:
+                    links.remove(uuid, HOLDS, link.ref, WRITER)
+            if wanted:
+                links.put(uuid, HOLDS, wanted, WRITER)
+        except StaleVersion:
+            logger.warning("no holds link for %s: its stream moved", name)
+
+    return hold
