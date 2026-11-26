@@ -17,7 +17,7 @@ from starpulse.contracts.api._base import _Request
 from starpulse.contracts.api.dto.admin import Clock, Density, OpensOn, Scale, Theme
 from starpulse.contracts.api.dto.machine_definition import MachineDefinition, PolicyRows
 from starpulse.contracts.api.dto.scheduler import QuietHours
-from starpulse.contracts.api.dto.task_fields import Changes, DocLink, EditBase
+from starpulse.contracts.api.dto.task_fields import Changes, DocLink, EditBase, MemberKindSize
 from starpulse.contracts.tiers import TIERS
 
 #: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
@@ -188,6 +188,7 @@ class CreateSpec(_Request):
     references: list[str] | None = None
     documentation: list[DocLink] | None = None
     definitionOfDone: list[str] | None = None
+    members: dict[str, MemberKindSize] | None = None
 
     @field_validator(*CREATE_TEXT)
     @classmethod

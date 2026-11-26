@@ -145,7 +145,7 @@ def put_link(
         }
     except StaleVersion:
         return 409, {"error": f"{handle}'s links moved while this was written: send it again"}
-    if written and (tasks.task(token) or {}).get("meta", {}).get("frozen"):
+    if written and (read(handle) or {}).get("frozen"):  # the file, not the read model, which lags a committed freeze
         try:
             frozen(handle)
         except Exception:

@@ -48,6 +48,8 @@ SENT_BACK = "Sent back for operator feedback:"
 #: The opening of the comment a holder records once the feedback it was sent back for is addressed: what changed, or why
 #: nothing did. It is the reply that releases the hold.
 ADDRESSED = "Feedback addressed:"
+#: The `sent_back` memory of a send-back whose reply count could not be read: held until the actor reads it.
+UNREAD = "unread"
 #: The pull request states that end a pull request.
 TERMINAL = ("MERGED", "CLOSED")
 #: A Waiting task's service level expectation: seconds from entering Waiting, or past its latest `expect_by`.
@@ -192,6 +194,9 @@ def feedback_held(facts: TaskFacts, agent: Agent) -> bool:
     """Whether the task was sent back from Review and its holder has not replied since: the reply count its send-back
     recorded still stands. A comment read that fails holds."""
     replied = facts.memory(agent["id"]).get("sent_back")
+    if replied == UNREAD:  # the baseline is still to be read: no reply counts against it yet
+        facts.unsettled()
+        return True
     legacy = isinstance(replied, Mapping) and bool(replied)
     if not legacy and not isinstance(replied, int):
         return False

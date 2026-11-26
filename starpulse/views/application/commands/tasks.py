@@ -317,6 +317,8 @@ def _create_details(request: CreateSpec) -> dict[str, Any]:
     """The filled details of a create, as the board's writer takes them."""
     fields = {field: getattr(request, field) for field in (*CREATE_TEXT, *CREATE_LISTS)}
     details = {field: value for field, value in fields.items() if value}
+    if request.members:
+        details["members"] = request.members
     if "definitionOfDone" in details:
         details["definitionOfDone"] = [{"text": item, "checked": False} for item in details["definitionOfDone"]]
     return details

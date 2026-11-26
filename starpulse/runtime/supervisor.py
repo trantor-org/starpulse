@@ -256,7 +256,10 @@ class Supervisor:
                 limit.soft_mb,
             )
             if self._beside(name):  # the old one runs until the new one is about to serve or take over
-                self._launch_beside(name, child, old)
+                try:
+                    self._launch_beside(name, child, old)
+                except ReloadError as exc:  # the old one is kept; the next sample past the limit tries again
+                    logger.warning("worker %s not replaced: %s", name, exc)
             else:  # a worker holds ports and leases the next one needs: it starts once the old one has freed them
                 self._end([old])
                 self._launch(name, child, now)
@@ -414,9 +417,12 @@ class Supervisor:
         `old`, so the old one keeps answering while the new one starts.
 
         A standby child (`standby`) is handed a go pipe too and prepares read-only until `serve` closes it, which it does
-        once `old` has ended: its writer and leases are never held beside the old one's."""
+        once `old` has ended: its writer and leases are never held beside the old one's.
+
+        Raises `ReloadError`, keeping `old` as the child, when the new one exited before it was serving."""
         read_end, write_end = os.pipe()
         go_read, go_write = os.pipe() if name in self._standby else (None, None)
+        before = (child.started, child.sampled, child.launches)
         try:
             self._launch(name, child, time.monotonic(), write_end, go_read)
             os.close(write_end)
@@ -442,6 +448,10 @@ class Supervisor:
                 if fd is not None and fd >= 0:
                     os.close(fd)
         try:
+            if (code := child.proc.poll()) is not None:
+                logger.error("worker %s replacement exited with %s before it was serving; keeping the old one", name, code)
+                child.proc, (child.started, child.sampled, child.launches) = old, before
+                raise ReloadError(f"{name}: the replacement exited with {code} before it was serving")
             self._end([old])
         finally:
             if go_write is not None:

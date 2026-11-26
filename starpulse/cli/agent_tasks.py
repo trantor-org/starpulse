@@ -57,6 +57,7 @@ _TASK_EDIT_FIELDS = {
     "plan": "plan",
     "notes": "notes",
     "final_summary": "finalSummary",
+    "members": "members",
 }
 #: The checklists `task edit` changes: each record field's flag key (`--ac`, `--reword-ac`, ...) and the name a refusal gives it.
 _CHECKLISTS = {"acceptanceCriteria": ("ac", "Acceptance Criteria"), "definitionOfDone": ("dod", "Definition of Done")}
@@ -204,7 +205,8 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
             ],
         }
     (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
-    return _described(_keyed(_active(view, snapshot), reply if record else {}), agent["description"], base)
+    shown = _described(_keyed(_active(view, snapshot), reply if record else {}), agent["description"], base)
+    return {**shown, "members": record.get("members") or {}}
 
 
 def _without_done_dependencies(

@@ -55,9 +55,10 @@ def schema_of(model: type[BaseModel], mode: typing.Literal["validation", "serial
     return _bounded(found)
 
 
-def _ref(models: list[type[BaseModel]], union: str = "oneOf") -> dict[str, Any]:
+def _ref(models: list[type[BaseModel]]) -> dict[str, Any]:
+    # `anyOf`: answers such as `Restored` and `Retired` share a shape, so `oneOf` would match several branches
     refs = [{"$ref": REF.format(model=model.__name__)} for model in models]
-    return refs[0] if len(refs) == 1 else {union: refs}
+    return refs[0] if len(refs) == 1 else {"anyOf": refs}
 
 
 #: The refusals a write route answers under each status, which every write route declares beside its `4XX` union.
@@ -88,11 +89,11 @@ def _answers(op: Op, is_write: bool) -> dict[str, Any]:
         for status, bodies in _REFUSED.items() if is_write else ():
             answers[status] = {
                 "description": "A refusal",
-                "content": {"application/json": {"schema": _ref([m for m in failed if m in bodies], "anyOf")}},
+                "content": {"application/json": {"schema": _ref([m for m in failed if m in bodies])}},
             }
         answers["4XX"] = {
             "description": "A refusal",
-            "content": {"application/json": {"schema": _ref(failed, "anyOf")}},
+            "content": {"application/json": {"schema": _ref(failed)}},
         }
     return answers
 

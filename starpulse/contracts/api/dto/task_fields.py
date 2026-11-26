@@ -34,6 +34,14 @@ class FrozenEdit(TypedDict, total=False):
     reason: str | None
 
 
+class MemberKindSize(TypedDict):
+    """One batch member's kind and size, each without its label prefix."""
+
+    __pydantic_config__ = ConfigDict(extra="forbid")  # type: ignore[misc]
+    kind: str
+    size: str
+
+
 class _Fields(TypedDict, total=False):
     description: str
     plan: str
@@ -63,6 +71,7 @@ class _Fields(TypedDict, total=False):
     acceptanceCriteria: list[ChecklistItem]
     definitionOfDone: list[ChecklistItem]
     actorMemory: dict[str, JsonValue]
+    members: dict[str, MemberKindSize]
     frozen: FrozenEdit
 
 
