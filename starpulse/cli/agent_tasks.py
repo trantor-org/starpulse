@@ -250,7 +250,11 @@ def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, A
     agent = cold_agent(record["id"], record, state, document.get("entered"))
     (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
     described = _described(_keyed(view, document), agent["description"], base)
-    return {**described, "final_summary": linkify(record.get("finalSummary", ""), base, view["prs"])}
+    return {
+        **described,
+        "final_summary": linkify(record.get("finalSummary", ""), base, view["prs"]),
+        "members": record.get("members") or {},
+    }
 
 
 def moves(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
