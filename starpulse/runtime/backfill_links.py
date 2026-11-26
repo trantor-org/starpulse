@@ -45,9 +45,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = load(path)
     except (ConfigError, OSError, ValueError) as exc:
         parser.error(f"{path}: {exc}")
-    _, machines, *_ = declared(config, path.parent if path else Path.cwd())
+    board, machines, *_ = declared(config, path.parent if path else Path.cwd())
+    keys = board.keys or native_keys()
     engine = history_store(config, path.parent if path else Path.cwd(), machines).engine
-    forge, links, pulls = GitHubAdapter(keys=native_keys()), TaskLinks(engine), PullStore(engine)
+    forge, links, pulls = GitHubAdapter(keys=keys), TaskLinks(engine), PullStore(engine)
     report: dict = {"tasks": 0, "pull_requests": 0, "written": 0, "unchanged": 0, "delivers": 0, "cites": 0, "unmapped": [], "mismatched": []}
     events = EventStore(engine)
     for task in sorted(events.heads(KIND)):
@@ -72,7 +73,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if ref in held:
                 report["unchanged"] += 1
                 continue
-            role = "delivers" if delivers(pulls, url, task) else "cites"
+            role = "delivers" if delivers(pulls, url, task, keys) else "cites"
             try:
                 links.put(uuid, role, ref, REQUESTED_BY)
             except DeliveredElsewhere:

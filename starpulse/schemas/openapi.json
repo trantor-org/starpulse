@@ -76,7 +76,7 @@
             "content": {
               "text/event-stream": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Snapshot"
                     },
@@ -1373,7 +1373,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Created"
                     },
@@ -1390,7 +1390,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Created"
                     },
@@ -1500,7 +1500,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Edited"
                     },
@@ -1538,7 +1538,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Edited"
                     },
@@ -3805,6 +3805,12 @@
             },
             "type": "object"
           },
+          "members": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MemberKindSize"
+            },
+            "type": "object"
+          },
           "frozen": {
             "$ref": "#/components/schemas/FrozenEdit"
           },
@@ -4320,6 +4326,20 @@
             ],
             "default": null
           },
+          "members": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/MemberKindSize"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "actor": {
             "anyOf": [
               {
@@ -4692,6 +4712,20 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "members": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/MemberKindSize"
+                },
+                "type": "object"
               },
               {
                 "type": "null"
@@ -5647,6 +5681,12 @@
           "actorMemory": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object"
+          },
+          "members": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MemberKindSize"
             },
             "type": "object"
           },
@@ -8045,6 +8085,24 @@
           "machines"
         ],
         "title": "Machines",
+        "type": "object"
+      },
+      "MemberKindSize": {
+        "additionalProperties": false,
+        "description": "One batch member's kind and size, each without its label prefix.",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "size": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "size"
+        ],
+        "title": "MemberKindSize",
         "type": "object"
       },
       "MergeStrip": {

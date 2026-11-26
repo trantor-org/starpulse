@@ -69,6 +69,7 @@ _META = (
     "follows",
     "dependencyNeeds",
     "actorMemory",
+    "members",
     "createdBy",
     "aliases",
     "uuid",

@@ -150,6 +150,17 @@ _STREAM_TIMEOUT_S = 45.0
 Verb = Callable[[argparse.Namespace, Mapping[str, str]], dict[str, Any] | Iterator[dict[str, Any]]]
 
 
+def _json_object(text: str) -> dict[str, Any]:
+    """A flag's JSON object, refused by argparse when `text` is anything else."""
+    try:
+        value = json.loads(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"not JSON: {exc}") from exc
+    if not isinstance(value, dict):
+        raise argparse.ArgumentTypeError("must be a JSON object")
+    return value
+
+
 def _later(module: str, name: str) -> Verb:
     """A verb's handler, imported when it runs: the parser lists every verb, yet one run pays for only its own module."""
 
@@ -815,6 +826,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     edit.add_argument("--notes", help="the Implementation Notes section")
     edit.add_argument("--final-summary", dest="final_summary", help="the Final Summary section")
+    edit.add_argument(
+        "--members",
+        type=_json_object,
+        help='a batch umbrella\'s members as JSON, `{"M1": {"kind": "execute", "size": "3"}}`; `{}` clears',
+    )
     edit.add_argument(
         "--append-notes",
         action="append",

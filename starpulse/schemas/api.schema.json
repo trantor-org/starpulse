@@ -675,6 +675,12 @@
           },
           "type": "array"
         },
+        "members": {
+          "additionalProperties": {
+            "$ref": "#/$defs/MemberKindSize"
+          },
+          "type": "object"
+        },
         "milestone": {
           "type": "string"
         },
@@ -1071,6 +1077,20 @@
           ],
           "default": null
         },
+        "members": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/MemberKindSize"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "milestone": {
           "anyOf": [
             {
@@ -1429,6 +1449,20 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "members": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/MemberKindSize"
+              },
+              "type": "object"
             },
             {
               "type": "null"
@@ -2554,6 +2588,12 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "members": {
+          "additionalProperties": {
+            "$ref": "#/$defs/MemberKindSize"
+          },
+          "type": "object"
         },
         "milestone": {
           "type": "string"
@@ -4948,6 +4988,24 @@
         "machines"
       ],
       "title": "Machines",
+      "type": "object"
+    },
+    "MemberKindSize": {
+      "additionalProperties": false,
+      "description": "One batch member's kind and size, each without its label prefix.",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "size": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "size"
+      ],
+      "title": "MemberKindSize",
       "type": "object"
     },
     "MergeStrip": {

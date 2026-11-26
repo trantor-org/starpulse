@@ -1130,7 +1130,7 @@ class TaskActor:
                     own = self._memory.has(name, "own_send_back")
                     held = self._memory.of(name).get("sent_back")  # the baseline the actor's feedback move recorded
                     kept |= {
-                        "sent_back": None if own else held if isinstance(held, int) else self._replies(agent),
+                        "sent_back": None if own else held if isinstance(held, int) else self._baseline(agent),
                         "own_send_back": None,
                     }
                 elif before is not None or now[0] != working:
@@ -1515,9 +1515,12 @@ class TaskActor:
         records = {url: self._record(url) for url in self._own_prs(agent)}
         return {url: record["headRefOid"] for url, record in records.items() if record}
 
+    def _baseline(self, agent: dict[str, Any]) -> int | str:
+        return derivation.UNREAD if (count := self._replies(agent)) is None else count
+
     def _replies(self, agent: dict[str, Any]) -> int | None:
         """How many holder replies the task's comments already hold: the send-back holds the task until one more. None
-        when the comments cannot be read, a baseline of no replies no one counted."""
+        when the comments cannot be read."""
         return None if (texts := self._comments(agent)) is None else derivation.replies(texts)
 
     def touch(self, events: Iterable[TaskTouched], observed: float | None = None) -> set[str]:
@@ -1564,6 +1567,11 @@ class TaskActor:
             return False
         digest = self._digest(agent)
         self._hooked = self._unsettled = False
+        if self._memory.of(name).get("sent_back") == derivation.UNREAD:  # a send-back whose baseline the move could not read
+            if (count := self._replies(agent)) is None:
+                self._unsettled = True
+            else:
+                self._memory.keep(name, sent_back=count)
         started = self._clock()
         try:
             moved = self._derive_waits(name, agent, observed, digest)
@@ -1703,7 +1711,11 @@ class TaskActor:
         written = self._apply(name, changes, text)
         if not written.ok:
             logger.warning("task actor: the %s of %s was not written: %s", fact, name, written.output)
-            self._refused_by(written)
+            if written.transient:  # not a refusal: the next pass carries the request out
+                self._unsettled = True
+                self._tried.pop(name, None)
+            else:
+                self._refused_by(written)
         elif changes:
             self._notice(self._frozen, name, "was written but the board was not told")
             verdict = "freeze" if changes["frozen"] else "thaw"

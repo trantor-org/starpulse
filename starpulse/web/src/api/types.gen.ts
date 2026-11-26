@@ -2034,6 +2034,9 @@ export interface CreateRequest {
   harness?: string | null;
   impact?: string | null;
   labels?: string[] | null;
+  members?: {
+    [k: string]: MemberKindSize;
+  } | null;
   milestone?: string | null;
   notes?: string | null;
   priority?: string | null;
@@ -2057,6 +2060,13 @@ export interface CreateRequest {
   urgency?: string | null;
 }
 /**
+ * One batch member's kind and size, each without its label prefix.
+ */
+export interface MemberKindSize {
+  kind: string;
+  size: string;
+}
+/**
  * One task a create files: its `title` and details, and an optional `ref` that a sibling in the same batch names
  * as `ref:<label>` in its `dependencies`.
  *
@@ -2076,6 +2086,9 @@ export interface CreateSpec {
   follows?: string | null;
   impact?: string | null;
   labels?: string[] | null;
+  members?: {
+    [k: string]: MemberKindSize;
+  } | null;
   milestone?: string | null;
   notes?: string | null;
   priority?: string | null;
@@ -2147,6 +2160,9 @@ export interface EditBase {
   frozen?: FrozenEdit;
   impact?: string;
   labels?: string[];
+  members?: {
+    [k: string]: MemberKindSize;
+  };
   milestone?: string;
   modifiedFiles?: string[];
   needsAttention?: string;
@@ -2203,6 +2219,9 @@ export interface Changes {
   frozen?: FrozenEdit;
   impact?: string;
   labels?: string[];
+  members?: {
+    [k: string]: MemberKindSize;
+  };
   milestone?: string;
   modifiedFiles?: string[];
   needsAttention?: string;

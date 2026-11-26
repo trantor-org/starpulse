@@ -605,6 +605,7 @@ def _record_of(text: str) -> dict[str, Any]:
         "dependencies": list(_strings(frontmatter.get("dependencies"))),
         "dependencyNeeds": list(_strings(frontmatter.get("dependency_needs"))),
         "actorMemory": dict(frontmatter.get("actor_memory") or {}),
+        "members": dict(frontmatter.get("members") or {}),
         "frozen": dict(frontmatter.get("frozen") or {}),
         "references": list(_strings(frontmatter.get("references"))),
         "documentation": list(_strings(frontmatter.get("documentation"))),
@@ -773,6 +774,12 @@ def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, 
         frontmatter["actor_memory"] = value
         if not value:
             del frontmatter["actor_memory"]
+    elif field == "members":
+        if not isinstance(value, dict):
+            raise ValueError(f"{field} must be a mapping")
+        frontmatter["members"] = value
+        if not value:
+            del frontmatter["members"]
     elif field == "frozen":
         if not isinstance(value, dict):
             raise ValueError(f"{field} must be a mapping")
@@ -853,6 +860,7 @@ def _record_from(row: Mapping[str, Any], spelled: Mapping[str, str]) -> dict[str
         "dependencies": list(row["dependencies"]),
         "dependencyNeeds": list(meta.get("dependencyNeeds") or []),
         "actorMemory": dict(meta.get("actorMemory") or {}),
+        "members": dict(meta.get("members") or {}),
         "frozen": dict(meta.get("frozen") or {}),
         "references": list(row["references"]),
         "documentation": list(row["documentation"]),
@@ -883,7 +891,7 @@ def _file_of(record: Mapping[str, Any]) -> tuple[dict, str]:
     if record.get("uuids"):
         frontmatter["uuids"] = record["uuids"]
     spelled = {lane_id(record["status"]): record["status"]}
-    for field in (*_SCALARS, "profile", "status", "actorMemory", "frozen", *_LISTS):
+    for field in (*_SCALARS, "profile", "status", "actorMemory", "members", "frozen", *_LISTS):
         if record.get(field):
             _set_front(frontmatter, field, record[field], spelled)
     frontmatter |= {
