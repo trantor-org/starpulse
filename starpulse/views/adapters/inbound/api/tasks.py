@@ -53,9 +53,9 @@ if TYPE_CHECKING:  # annotation only
 
 
 def _stored_record(api: Api, name: str) -> tuple[int, dict[str, Any]]:
-    """The task `name` as the board stores it, with the pull requests its references cite attached."""
+    """The task `name` as the board stores it, with the pull requests its links name attached."""
     status, body = task_record(api.feed, api.board.read, name, api.board.read_archived)
-    if status == 200 and (cited := cited_pulls(api.services.pulls, body["record"].get("references", []))):
+    if status == 200 and (cited := cited_pulls(api.services.pulls, api.feed.cited(name))):
         body["record"]["pulls"] = cited
     return status, body
 

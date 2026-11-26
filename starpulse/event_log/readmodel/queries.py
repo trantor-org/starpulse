@@ -7,10 +7,11 @@ predicate the partial indexes carry, so the cost of a read follows the live boar
 from collections.abc import Collection
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, String, and_, cast, column, exists, false, func, or_, select, true
+from sqlalchemy import ColumnElement, Select, and_, column, exists, false, func, or_, select, true
 
 from starpulse.event_log.lane_events import done_lanes
 from starpulse.event_log.readmodel.tables import criteria, tasks
+from starpulse.event_log.tables import task_links
 
 SUMMARY = (
     tasks.c.id,
@@ -59,12 +60,24 @@ def held_done(done: str) -> Select[Any]:
     return select(tasks.c.id).where(tasks.c.archived == false(), lane.in_(done_lanes(done))).order_by(tasks.c.id)
 
 
-def citing(url: str) -> Select[Any]:
-    """The unarchived Tasks whose references hold the link `url`, with or without a trailing slash, in id order: a walk
-    of the live index, bounded by the live board."""
-    references = cast(tasks.c.references, String)
-    cited = or_(references.contains(f'"{url}"', autoescape=True), references.contains(f'"{url}/"', autoescape=True))
-    return select(tasks.c.id).where(tasks.c.archived == false(), cited).order_by(tasks.c.id)
+def linked(uuids: Collection[str], roles: Collection[str]) -> Select[Any]:
+    """The task, role and reference of each link of `roles` that the tasks of these UUIDs hold, oldest first: one seek of the
+    links' primary key for each task."""
+    return (
+        select(task_links.c.task, task_links.c.role, task_links.c.ref)
+        .where(task_links.c.task.in_(uuids), task_links.c.role.in_(roles))
+        .order_by(task_links.c.at, task_links.c.ref)
+    )
+
+
+def citing(ref: str) -> Select[Any]:
+    """The unarchived Tasks with a `delivers` or `cites` link to the change `ref`, in id order: a seek of the links' reference."""
+    return (
+        select(tasks.c.id)
+        .join(task_links, task_links.c.task == tasks.c.uuid)
+        .where(tasks.c.archived == false(), task_links.c.ref == ref, task_links.c.role.in_(("delivers", "cites")))
+        .order_by(tasks.c.id)
+    )
 
 
 def _cold(done: str, since: float) -> ColumnElement[bool]:

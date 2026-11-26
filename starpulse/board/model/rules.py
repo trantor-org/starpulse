@@ -52,6 +52,9 @@ class Record:
     matrix: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     #: The lenses whose verdict the task's latest qa round recorded; the `qa_verdict` primitive reads it.
     qa_lenses: Callable[[str], frozenset[str]] = lambda _task: frozenset()
+    #: The pull requests the task of a UUID has links to, as `(role, repository, number)`: `delivers` the one it ships
+    #: through, `cites` any other it names. The `pull_proof` and `pulls_*` primitives find a task's pull requests only here.
+    linked: Callable[[str], Sequence[tuple[str, str, int]]] = lambda _uuid: ()
 
     @property
     def state(self) -> str:
@@ -74,9 +77,6 @@ _CHECKLISTS = ("acceptance_criteria", "definition_of_done")
 _UNCHECKED = re.compile(r"^- \[ \] #\d+ ", re.M)
 _ITEM = re.compile(r"^- \[[ xX]\]", re.M)
 _CHECKED = re.compile(r"^- \[[xX]\] .*$", re.M)
-_PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
-#: A task id, its prefix then its number: a pull request whose head branch names the prefix with another number is that task's.
-_TASK_ID = re.compile(r"([A-Za-z][A-Za-z_]*)-(\d+)")
 _RULE_KEYS = {"on", "require", "reason", "skill", "unless_actor"}
 _ON_KEYS = {"to", "from", "while", "write", "create"}
 
@@ -494,12 +494,12 @@ def _pull_proof(spec: Mapping[str, Any], where: str) -> Primitive:
         return any(re.search(text, line, re.I) for text in spelled)
 
     def holds(record: Record) -> bool:
-        links = [link for url in _values(record.front.get("references")) if (link := _PULL_URL.fullmatch(url))]
+        links = [(repo, str(number)) for _, repo, number in _linked(record)]
         inside = bounds.search(record.body)
         proof = [line for line in (inside.group(1) if inside else "").splitlines() if selects.search(line)]
         return all(
             any(
-                named(line, link[1], link[2], alone=all(other[1] == link[1] for other in links if other[2] == link[2]))
+                named(line, link[0], link[1], alone=all(other[0] == link[0] for other in links if other[1] == link[1]))
                 for line in proof
             )
             for link in links
@@ -583,22 +583,20 @@ def _qa_verdict(spec: Mapping[str, Any], where: str) -> Primitive:
     return lambda record: bool(task := str(record.front.get("id") or "")) and lens in record.qa_lenses(task)
 
 
-def _pulls(record: Record, settle: str | None = None) -> list[Mapping[str, Any] | None]:
-    """The stored pull request of each URL in the task's `references`, None for one the store does not hold; `settle`
+def _linked(record: Record, roles: Collection[str] = ("delivers", "cites")) -> list[tuple[str, str, int]]:
+    """The pull requests the task has a link of one of `roles` to, as `(role, repository, number)`."""
+    return [link for link in record.linked(str(record.front.get("uuid") or "")) if link[0] in roles]
+
+
+def _pulls(record: Record, settle: str | None = None, roles: Collection[str] = ("delivers", "cites")) -> list[Mapping[str, Any] | None]:
+    """The stored pull request of each pull request the task links, None for one the store does not hold; `settle`
     names the stored field (`mergeable` or `files`) the lookup corrects from GitHub."""
-    links = [_PULL_URL.fullmatch(url) for url in _values(record.front.get("references"))]
-    return [record.pull_of(link[1], int(link[2]), settle) for link in links if link]
+    return [record.pull_of(repo, number, settle) for _, repo, number in _linked(record, roles)]
 
 
 def _counted(pulls: list[Mapping[str, Any] | None]) -> list[Mapping[str, Any] | None]:
     """The cited pull requests a gate judges: the closed ones are skipped while another is not closed."""
     return [pull for pull in pulls if pull is None or pull["state"] != "CLOSED"] or pulls
-
-
-def _another_tasks(record: Record, pull: Mapping[str, Any]) -> bool:
-    own = _TASK_ID.fullmatch(str(record.front.get("id") or ""))
-    named = own and re.search(rf"(?i)(?:^|/){re.escape(own[1])}-(\d+)(?=-|$)", pull.get("head_ref") or "")
-    return bool(named) and int(named[1]) != int(own[2])
 
 
 def _pulls_ready(spec: Mapping[str, Any], where: str) -> Primitive:
@@ -675,12 +673,9 @@ class _PullsChanged:
         found = self._criteria.search(record.body)
         if found and any(self._wanted.search(line) for line in _CHECKED.findall(found.group(1))):
             return []  # a checked criterion is evidence whatever the delivery changed, so unknown files cannot fail it closed
-        pulls = _pulls(record, settle="files")
+        pulls = _pulls(record, settle="files", roles=("delivers",))  # a cited pull request is another task's to evidence
         if any(pull is None for pull in pulls):
             return None  # the store holds no such pull request: the rule cannot clear, so it fails closed
-        pulls = [
-            pull for pull in pulls if not _another_tasks(record, pull)
-        ]  # another task's delivery is its own to evidence
         declared = _values(record.front.get("modified_files"))  # stands for a record no read of GitHub listed files for
         if not declared and any(pull["files"] is None for pull in pulls):
             return None  # no file list to match for a pull request: the rule cannot clear, so it fails closed
@@ -919,12 +914,18 @@ def standing_verdict(
     def unread_pull(repo: str, number: int, _settle: str | None) -> None:
         read.append(f"{repo}#{number}")
 
+    def unread_links(uuid: str) -> list[tuple[str, str, int]]:
+        read.append(uuid)
+        return []
+
     def unread_qa(task: str) -> frozenset[str]:
         read.append(task)
         return frozenset()
 
-    before = Record(front, body, unread, pull_of=unread_pull, qa_lenses=unread_qa)
-    after = Record(enter({**front, "status": lane}), body, unread, before, unread_pull, qa_lenses=unread_qa)
+    before = Record(front, body, unread, pull_of=unread_pull, qa_lenses=unread_qa, linked=unread_links)
+    after = Record(
+        enter({**front, "status": lane}), body, unread, before, unread_pull, qa_lenses=unread_qa, linked=unread_links
+    )
     broken = []
     for rule in rules:
         read.clear()

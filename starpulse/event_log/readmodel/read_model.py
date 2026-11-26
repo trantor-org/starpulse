@@ -106,9 +106,19 @@ class ReadModel:
             raise KeyError(name)
         return self._ids(queries.with_field(field.column, value))
 
-    def citing(self, url: str) -> list[str]:
-        """The ids of unarchived Tasks whose references hold the link `url`, in id order."""
-        return self._ids(queries.citing(url))
+    def linked(self, uuids: Collection[str], roles: Collection[str]) -> dict[str, list[tuple[str, str]]]:
+        """The `(role, reference)` of each link of `roles` that each task holds, oldest first, by the task's UUID; a task with none is absent."""
+        found: dict[str, list[tuple[str, str]]] = {}
+        if not uuids:
+            return found
+        with self._reading() as db:
+            for task, role, ref in db.execute(queries.linked(uuids, roles)):
+                found.setdefault(task, []).append((role, ref))
+        return found
+
+    def citing(self, ref: str) -> list[str]:
+        """The ids of unarchived Tasks with a `delivers` or `cites` link to the change `ref`, in id order."""
+        return self._ids(queries.citing(ref))
 
     def held_states(self) -> set[str]:
         """The states unarchived Tasks hold, Done ones of any age included."""

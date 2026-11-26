@@ -37,6 +37,7 @@ TASK_KEYS = (
     "lane",
     "phase",
     "substate",
+    "unlinked",
     "skill",
     "interactive",
     "done_at",

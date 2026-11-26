@@ -2,14 +2,14 @@
 
 import re
 import time
-from collections.abc import Collection, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
 from starpulse.board.model.feed.shared import (
+    DELIVERS,
     done_dot,
     local_midnight,
-    pull_links,
     read_model_detail,
     summary_agent,
 )
@@ -102,7 +102,7 @@ class ReadMethods:
         ready = bool(self._read_model.ready(row["state"], self._roles.done, task_id))
         moves = self._read_model_moves(row)
         agent = summary_agent(row, ready, moves if lean else self._guarded(task_id, moves), self._default_profiles)
-        agent = agent | read_model_detail(row, self._roles.attention) | {"final_summary": row["final_summary"]}
+        agent = agent | read_model_detail(row, self._roles.attention, self._pull_links([row]).get(task_id, ())) | {"final_summary": row["final_summary"]}
         return agent if lean else agent | self._read_model_readable(row)
 
     def follow_read_model(self, limit: int = 1000) -> int:
@@ -144,9 +144,29 @@ class ReadMethods:
         return row is not None and not row["archived"]
 
     def cited(self, task_id: str) -> list[str]:
-        """The pull request links the task cites, open or settled; none for a task the Board does not hold."""
+        """The pages of the pull requests the task has a `delivers` or `cites` link to, open or settled; none for a task the Board does not hold."""
+        return [url for _, url in self._links(task_id)]
+
+    def delivered(self, task_id: str) -> list[str]:
+        """The pages of the pull requests the task has a `delivers` link to: the ones it ships through."""
+        return [url for role, url in self._links(task_id) if role in DELIVERS]
+
+    def _links(self, task_id: str) -> list[tuple[str, str]]:
         row = self._found(task_id)[1]
-        return [] if row is None else pull_links(row["references"])
+        return [] if row is None else self._pull_links([row]).get(str(row["id"]), [])
+
+    def relinked(self, task_id: str) -> None:
+        """Tell the feed a link of the task was written or removed, which moves no task row: the next `open_tasks` is rebuilt and the page gets the task again."""
+        with self._build_lock:
+            self._built = None
+        if (agent := self.held(task_id)) is not None and agent["state"] != self._roles.done:
+            self._publish("task", {"id": agent["id"], "agent": self._active(agent), "settled": None, "archived_today": None})
+        for listener in self._relink_listeners:
+            listener(task_id)
+
+    def on_relinked(self, listener: Callable[[str], None]) -> None:
+        """Call `listener` with the task's id after each `relinked`: the pull request projection and the task actor read a task's pull requests from its links."""
+        self._relink_listeners.append(listener)
 
     def open_tasks(self) -> list[dict]:
         """Every open Board task as the page draws it. Within this thread's `one_read` it is the list that read built.

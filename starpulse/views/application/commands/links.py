@@ -150,6 +150,8 @@ def put_link(
             frozen(handle)
         except Exception:
             logger.exception("the frozen hook for %s failed after its link %s was stored", handle, ref)
+    if written:
+        feed.relinked(handle)
     return (201 if written else 200), _link(link, handle, forges)
 
 
@@ -170,4 +172,5 @@ def delete_link(
         return 409, {"error": f"{handle}'s links moved while this was removed: send it again"}
     if link is None:
         return 404, {"error": f"{handle} has no {request.role} link to {request.ref}"}
+    feed.relinked(handle)
     return 200, _link(link, handle, forges)

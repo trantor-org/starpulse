@@ -141,6 +141,16 @@ def _lane(agent: dict[str, Any], phase: str | None) -> str:
     return "waiting" if agent["state"] == "in_progress" and phase == "parked" else agent["state"]
 
 
+#: The Deliver substates a pull request is open in, past the one that opens it; `review_fix` is every phase after.
+_OPENED = ("pr_opened", "ci_green", "pr_ready")
+
+
+def _unlinked(agent: dict[str, Any], phase: str | None, substate: str | None) -> str:
+    """What a task read says of an In Progress task whose holder ran deliver and that has no `delivers` link: its pull request is on no task read."""
+    ran = phase == "review_fix" or (phase == "deliver" and substate in _OPENED)
+    return "" if not ran or agent.get("delivered") else f"{agent['id']} ran deliver and has no `delivers` link: its pull request is on no task until a link is written."
+
+
 def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | None = None) -> dict[str, Any]:
     """A Board task as a verb reports it. It waits on each dependency not in `done`, read from `snapshot` when absent:
     a caller viewing many tasks passes it once rather than rescanning the board per task. A Done task of the snapshot
@@ -172,6 +182,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
         "criteria": agent.get("criteria", []),
         "pause_reason": agent.get("pause_reason", ""),
         "readable": agent.get("readable", ""),
+        "unlinked": _unlinked(agent, phase, substate),
         "source": agent.get("source", ""),
         "prs": [pulls.get(url, {"url": url}) for url in agent.get("prs", [])],
         "moves": _review_held(_agent_moves(agent, snapshot), pulls.values(), roles_of(snapshot).review),

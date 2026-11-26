@@ -95,7 +95,8 @@ class RawTask(_Api):
     )
     labels: list[str] | None = None
     dependencies: list[str] | None = Field(default=None, description="A task's dependencies, as task ids.")
-    prs: list[str] | None = Field(default=None, description="A task's pull requests: the PR URLs among its references.")
+    prs: list[str] | None = Field(default=None, description="A task's pull requests: the pages of the changes it has a `delivers` or `cites` link to.")
+    delivered: list[str] | None = Field(default=None, description="A task's pull requests it has a `delivers` link to.")
     runs: list[TaskRun] | None = Field(
         default=None, description="A task's scheduler runs: those whose run id names it (`dag-run-task-<N>-<ts>`)."
     )

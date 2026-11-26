@@ -40,6 +40,8 @@ class Guard:
     matrix: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     #: The lenses whose verdict a task's latest qa round recorded (`rules.Record.qa_lenses`), none when the board has no store.
     qa_lenses: Callable[[str], frozenset[str]] = lambda _task: frozenset()
+    #: The pull requests a task of a UUID has links to (`rules.Record.linked`), none when the board has no store.
+    linked: Callable[[str], Sequence[tuple[str, str, int]]] = lambda _uuid: ()
     #: What entering a lane does to the task, whichever writer moves it (`[[board.entry]]`).
     effects: tuple[entry.Effect, ...] = ()
     #: The actors a lane rule they break warns instead of refusing (`warn_actors`); the rules that judge every write still refuse them.
@@ -132,6 +134,7 @@ class Guard:
                 dependencies_of=self.dependencies_of,
                 matrix=self.matrix,
                 qa_lenses=self.qa_lenses,
+                linked=self.linked,
             )
             verdict = rules.evaluate(self.rules, earlier, after, actor, self.warn_actors)
             if verdict.refused:

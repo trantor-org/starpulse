@@ -84,7 +84,7 @@ from starpulse.contracts.doc_links import doc_link
 from starpulse.contracts.tiers import TIERS, implied_tier
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.event_log.store import StaleVersion
-from starpulse.event_log.tables import pull_requests, retired_tasks
+from starpulse.event_log.tables import pull_requests, retired_tasks, task_links
 from starpulse.github.adapters.outbound.rest import connect, get, pull_mergeable
 from starpulse.machine_engine.model.state_roles import StateRoles
 lazy from starpulse.machine_engine.adapters.machine_loader import read_document
@@ -236,7 +236,7 @@ def _github_files(repo: str, number: int) -> list[str] | None:
 
 
 def _pull_of(retired: _Retired) -> Callable[[str, int, str | None], dict[str, Any] | None]:
-    """A lookup of the stored pull request `(repository, number)` as `{state, draft, checks, threads, mergeable, body, files, head_ref}`,
+    """A lookup of the stored pull request `(repository, number)` as `{state, draft, checks, threads, mergeable, body, files}`,
     None when the store holds none; `files` is None for a record saved before the store kept them. A board that has not started has no store.
     With `settle="mergeable"`, an open pull request whose stored `mergeable` is not `MERGEABLE` reads GitHub's answer instead: GitHub sends no
     event when a push clears a conflict, so the stored flag can outlive it. With `settle="files"`, a pull request whose `files` is None
@@ -256,7 +256,6 @@ def _pull_of(retired: _Retired) -> Callable[[str, int, str | None], dict[str, An
             pull_requests.c.mergeable,
             pull_requests.c.body,
             pull_requests.c.detail,
-            pull_requests.c.head_ref,
         )
         query = select(*columns).where(pull_requests.c.repo == repo, pull_requests.c.number == number)
         with retired.engine.connect() as db:
@@ -278,8 +277,30 @@ def _pull_of(retired: _Retired) -> Callable[[str, int, str | None], dict[str, An
             "mergeable": mergeable,
             "body": row.body,
             "files": files,
-            "head_ref": row.head_ref,
         }
+
+    return read
+
+
+_CHANGE = re.compile(r"change:[^:]+:([^:]+/[^:]+):(\d+)")
+
+
+def _linked(retired: _Retired) -> Callable[[str], list[tuple[str, str, int]]]:
+    """A lookup of the pull requests the task of a UUID links, oldest first, as `(role, repository, number)`; a board that has not
+    started has no store, so one it cannot read (repository `""`)."""
+
+    def read(uuid: str) -> list[tuple[str, str, int]]:
+        if not uuid:
+            return []
+        if retired.engine is None:  # no store to read: not that none is linked, so one unreadable pull request holds ready back
+            return [("delivers", "", 0)]
+        with retired.engine.connect() as db:
+            rows = db.execute(
+                select(task_links.c.role, task_links.c.ref)
+                .where(task_links.c.task == uuid, task_links.c.role.in_(("delivers", "cites")))
+                .order_by(task_links.c.at)
+            ).all()
+        return [(role, found[1], int(found[2])) for role, ref in rows if (found := _CHANGE.fullmatch(ref))]
 
     return read
 
@@ -1966,6 +1987,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         _hook(settings.get("validate")),
         _state_from(view, _state_of(root, retired)),
         pull_of=_pull_of(retired),
+        linked=_linked(retired),
         types=_types(settings),
         effects=entry.load(settings.get("entry"), profile_matrix(rows)),
         warn_actors=_warn_actors(settings),

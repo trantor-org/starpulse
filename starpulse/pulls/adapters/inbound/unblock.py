@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.pulls.adapters.outbound.pin_reader import GitHub
-from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL, delivers
+from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo, link
 
 if TYPE_CHECKING:  # annotation only: the pull store opens the database stack
@@ -46,18 +46,16 @@ class PinGate:
 
     def waiting_on(self, agent: dict[str, Any]) -> str | None:
         """Why a dependency's merged change is not in the parent's pin, or the running build, yet; None when it is.
-        Only a pull request that can be the dependency's own delivery counts: one naming another task is a reference."""
+        Only a pull request the dependency has a `delivers` link to counts."""
         merges: list[dict] | None = None  # read once, and only for a task that needs the evidence
         for dependency in agent["dependencies"]:
-            for url in self._feed.cited(dependency):
+            for url in self._feed.delivered(dependency):
                 found = PULL_URL.fullmatch(url)
                 if found is None:
                     continue
                 name = found[1].partition("/")[2]
                 path = self._pinned.get(name)
                 if path is None and (self._live is None or self._live.repo != name):
-                    continue
-                if not delivers(self._store, url, dependency, self._feed.keys):
                     continue
                 records = self._store.find(repo=found[1], number=int(found[2]))
                 if not records:
