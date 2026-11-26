@@ -12,7 +12,8 @@ has, per phase, a `phase_norm_wte`, the median `wte` of that phase over the cell
 profile cell is under `MIN_N` falls back to the mixed kind x size cell, and its `norm_profile` says which cell it
 took (its own profile, `mixed`, or null with no norm). A phase over `FLAG_RATIO` times it is `phase_above_norm`. A task's `norm_wte` sums the norms of the phases it ran, so a qa round
 is weighed against peers' qa, and a task over `FLAG_RATIO` times it is `above_norm`. A `batch-umbrella` task is in no
-norm cell: its size counts the members it folds in, so its spend neither takes a norm nor skews its size's.
+norm cell, so its fixed size label never skews its size's norms; its phase norm is the sum of its members' kind x size
+phase norms (the kind and size each member's record keeps), and it has none while a member's cell has no norm.
 
 A row's `profile` is the `<model>-<effort>` of its first main-thread step, so a subagent's model does not stand for
 the session's; a row of subagent steps alone takes its first step's.
@@ -27,7 +28,7 @@ from collections.abc import Iterable, Mapping
 from statistics import median
 from typing import Any
 
-from starpulse.flow_metrics.model.cells import MIN_N, cell_of, profile_of
+from starpulse.flow_metrics.model.cells import MIN_N, cell_of, is_umbrella, norm_cells, profile_of
 
 __all__ = ["FLAG_RATIO", "combine_spend", "named", "phase_rows", "task_spend"]
 
@@ -159,32 +160,32 @@ def _flagged(
         key: (row["profile"], row["wte"]) for key, row in rows.items()
     }
     cells = {task: cell_of(tasks, task) or (None, None) for task, _ in weighed}
-    peers = {
-        task: (None, None) if "batch-umbrella" in (tasks.get(task, {}).get("labels") or ()) else cell
-        for task, cell in cells.items()
-    }
+    peers = {task: (None, None) if is_umbrella(tasks, task) else cell for task, cell in cells.items()}
     own: dict[tuple[Any, str, str], list[float]] = defaultdict(list)
     mixed: dict[tuple[Any, str], list[float]] = defaultdict(list)
     for (task, phase), (profile, wte) in weighed.items():
         own[(peers[task], phase, profile)].append(wte)
         mixed[(peers[task], phase)].append(wte)
 
-    def norm_of(task: str, phase: str) -> tuple[float | None, str | None]:
-        cell = peers[task]
-        if cell[0] is None:
+    def in_cell(cell: tuple[str, int] | None, phase: str, profile: str) -> tuple[float | None, str | None]:
+        if cell is None:
             return None, None
-        for values, used in (
-            (own[(cell, phase, rows[(task, phase)]["profile"])], rows[(task, phase)]["profile"]),
-            (mixed[(cell, phase)], "mixed"),
-        ):
+        for values, used in ((own[(cell, phase, profile)], profile), (mixed[(cell, phase)], "mixed")):
             if len(values) >= MIN_N:
                 return median(values), used
         return None, None
 
+    def norm_of(task: str, phase: str) -> tuple[float | None, str | None]:
+        found = [in_cell(cell, phase, rows[(task, phase)]["profile"]) for cell in norm_cells(tasks, task)]
+        if not found or any(value is None for value, _ in found):
+            return None, None
+        used = {profile for _, profile in found}
+        return sum(value for value, _ in found if value is not None), used.pop() if len(used) == 1 else "mixed"
+
     def why_none(task: str) -> str:
-        if cells[task][0] is None:
-            return "no kind or size"
-        return "batch umbrella" if peers[task][0] is None else f"under {MIN_N} peers in kind × size"
+        if is_umbrella(tasks, task):
+            return "a member has no norm" if tasks[task].get("members") else "no members record"
+        return "no kind or size" if cells[task][0] is None else f"under {MIN_N} peers in kind × size"
 
     norm = {key: norm_of(*key) for key in rows}
     phase_norms: dict[str, list[float | None]] = defaultdict(list)

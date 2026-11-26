@@ -113,9 +113,11 @@ folded history or the instance receives no telemetry. Its columns:
 
 Blind spot: `starting-task` stays in force through the build, so the skill alone cannot split `claim` from `implement`;
 the first edit does, and a task worked by hand with no skill loaded is still placed by it. A task with no labels has
-no norm, and neither has a `batch-umbrella` task: its size counts the members it folds in, so it takes no norm and
-leaves its size's norm to the tasks that do one job (90 of 116 size 8 execute tasks in 192 hours, median 1.29 M WTE
-against 3.81 M for the other 26, above size 5's 2.72 M).
+no norm. A `batch-umbrella` task is in no norm cell, so its fixed size-8 label leaves size 8's norm to the tasks that do
+one job (90 of 116 size 8 execute tasks in 192 hours, median 1.29 M WTE against 3.81 M for the other 26, above size 5's
+2.72 M). Its own norm is per phase the sum of its members' kind × size phase norms, read from the kind and size its
+`members` record keeps for each; one member whose cell has no norm leaves it null (`no_norm_reason` "a member has no
+norm").
 ## Group recurring work
 
 The same signals say what each session did, not only how long it took. A tool call is lifted to *activities* with no
