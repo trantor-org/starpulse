@@ -193,7 +193,8 @@ class HistoryStore:
         """Write one machine event; one the store already holds is a no-op.
 
         `cursor`, the event's id in the log, is saved in the same transaction, so the store never holds an event
-        its cursor has not passed or a cursor past an event it lacks.
+        its cursor has not passed or a cursor past an event it lacks. An event timed before `EARLIEST_TIME` is a
+        fixture's, not a run: it is not written, and its cursor still passes.
         """
         row = {
             "event_id": fields.get("event_id") or entry_id,
@@ -206,8 +207,11 @@ class HistoryStore:
             "sha": (fields.get("data") or {}).get("sha"),
         }
         with self.engine.begin() as db:
-            insert = self._insert(_machine_events).values(row | {"task_uuid": task_uuid.of(row["task"])}).on_conflict_do_nothing()
-            db.execute(insert)
+            if row["occurred_at"] < machine_events.EARLIEST_TIME:
+                logger.warning("history: machine event %s timed %s is before %s, not recorded", row["event_id"], row["occurred_at"], machine_events.EARLIEST_TIME)
+            else:
+                insert = self._insert(_machine_events).values(row | {"task_uuid": task_uuid.of(row["task"])}).on_conflict_do_nothing()
+                db.execute(insert)
             if cursor is not None:
                 self.checkpoints.save(machine_events.STREAM, cursor, conn=db)
 
