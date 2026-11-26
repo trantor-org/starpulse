@@ -193,7 +193,7 @@ the server's own snapshot, config and log and held for a minute; the page draws 
 server with no contract to read answers `{ok: true, checks: []}`.
 
 `GET /api/health` answers 200 when the server can serve the board and 503 when it cannot, with the same body:
-`{ready, components: {<name>: {ready, detail}}}`. The components are `store` (the event log is at the schema head),
+`{ready, components: {<name>: {ready, detail}}}`. The components are `store` (the event log opened at the schema head; a store a deploy's migrate moved ahead since stays ready),
 `board` (the Board is assembled), `writer` (the Board context, which dates the lanes and sweeps the claims, has started) and
 `contexts` (every other supervised context has started in this boot). `doctor` adds a `ready` check that fails naming
 each component that is not ready.
