@@ -140,6 +140,11 @@ class EventStore:
 
     def read(self, subject_kind: str, subject_id: str, after: int = 0) -> list[StoredEvent]:
         """The stream's Events after version `after`, in order, at their newest schema version."""
+        with self._engine.connect() as db:
+            return self.read_in(db, subject_kind, subject_id, after)
+
+    def read_in(self, db: Connection, subject_kind: str, subject_id: str, after: int = 0) -> list[StoredEvent]:
+        """`read` inside the caller's transaction `db`."""
         query = (
             select(stream_events)
             .where(
@@ -149,8 +154,7 @@ class EventStore:
             )
             .order_by(stream_events.c.version)
         )
-        with self._engine.connect() as db:
-            return [self._upcasters.apply(_stored(row)) for row in db.execute(query).mappings()]
+        return [self._upcasters.apply(_stored(row)) for row in db.execute(query).mappings()]
 
     def read_after(self, subject_kind: str, position: int, limit: int = 1000) -> list[StoredEvent]:
         """Up to `limit` Events of every `subject_kind` stream after `position`, in the order they were appended."""

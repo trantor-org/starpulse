@@ -50,11 +50,14 @@ class StoreNotMigrated(RuntimeError):
     """The store is not at the schema revision the chain declares; `starpulse migrate` brings it there."""
 
 
-def alembic_config(db: Connection, migrations: Path = _MIGRATIONS) -> AlembicConfig:
-    """The configuration of the chain in `migrations` (the event log's by default); its environment runs on `db`."""
+def alembic_config(db: Connection, migrations: Path = _MIGRATIONS, *, board: str | None = None) -> AlembicConfig:
+    """The configuration of the chain in `migrations` (the event log's by default); its environment runs on `db`.
+
+    `board` is the board's name, which a revision that derives a UUID from it reads as `config.attributes["board"]`."""
     config = AlembicConfig()
     config.set_main_option("script_location", str(migrations))
     config.attributes["connection"] = db
+    config.attributes["board"] = board
     return config
 
 
@@ -104,8 +107,9 @@ def _recorded(db: Connection, version_table: str = VERSION_TABLE) -> str | None:
     return db.execute(text(f"SELECT version_num FROM {version_table}")).scalar()
 
 
-def migrate(engine: Engine) -> None:
-    """Bring the SQLite store `engine` opens to the chain's head, building it."""
+def migrate(engine: Engine, board: str | None = None) -> None:
+    """Bring the SQLite store `engine` opens to the chain's head, building it. `board` names the board the store's Tasks
+    belong to, which revision 0074 needs when a Task has no UUID (`starpulse migrate` passes the config's)."""
     with _RUNNING, engine.connect() as db:
         if _settled(db):
             return
@@ -118,7 +122,7 @@ def migrate(engine: Engine) -> None:
             for table in _RETIRED:
                 db.exec_driver_sql(f"DROP TABLE IF EXISTS {table}")
             db.execute(text(f"UPDATE {VERSION_TABLE} SET version_num = :base"), {"base": ScriptDirectory(str(_MIGRATIONS)).get_base()})
-        command.upgrade(alembic_config(db), "head")
+        command.upgrade(alembic_config(db, board=board), "head")
         db.commit()
 
 

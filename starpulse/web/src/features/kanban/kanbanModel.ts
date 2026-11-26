@@ -3,7 +3,7 @@ import { descend, type Sky } from "../../render/sky";
 import { skillOf } from "../../render/skills";
 import type { TaskRecord } from "./taskViewModel";
 import type { Option } from "../../shared/ChoiceMenu";
-import type { ClaimRelease, MachineState, Move, Pull, Roles, TrailStep } from "../../api";
+import type { ClaimRelease, Frozen, MachineState, Move, Pull, Roles, TrailStep } from "../../api";
 import { ago } from "../../shared/clock";
 import { sessionNickname } from "./nickname";
 
@@ -56,6 +56,8 @@ export interface KanbanTask {
   readable?: string;
   /** Ready again after waiting: its last Board move was out of Waiting, so a machine state from before it no longer describes the card. */
   released: boolean;
+  /** The freeze the task actor holds the task in, who asked and why; absent or null when the task runs free. */
+  frozen?: Frozen | null;
   /** The claim the sweeper released from the task, which left it unheld; absent or null when none ended the claim. */
   release?: ClaimRelease | null;
   /** What the holder session is doing, from the snapshot; absent unless the task is held and working. */
@@ -410,7 +412,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.assignee ?? "", profile: a.profile ?? "", dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs, runs: a.runs ?? [], description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.flow === "ci" ? ciState(latest.state, prs) : latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source, skill: skillOf(sky.flows, latest.flow) } : null,
-      released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, sessionActivity: a.session_activity ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
+      released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, frozen: a.frozen ?? null, sessionActivity: a.session_activity ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
       phase: climb(sky, a.id),
       ...(a.readable ? { readable: a.readable } : {}),

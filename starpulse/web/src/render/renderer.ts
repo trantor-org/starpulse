@@ -26,7 +26,7 @@ import { type Hits } from "../features/level/ledgerRows";
 import { dragMove, dragStart, keyScroll, wheelScroll } from "../features/level/ledgerScroll";
 import { spotIn, type Target } from "../features/level/search";
 import {
-  RAMP, TAU, bez, build, curveDist, curveOf, edgePaths, nearestWithin, stateR, turnPage, type BEdge, type Body, type Curve, type GNode, type Hop, type Planet, type Pt, type Scene, type Pager, type Star,
+  RAMP, TAU, bez, build, curveDist, curveOf, edgePaths, nearestWithin, orbitAngle, stateR, turnPage, type BEdge, type Body, type Curve, type GNode, type Hop, type Planet, type Pt, type Scene, type Pager, type Star,
 } from "./scene";
 import { SIM_PERIOD } from "./mockSky";
 import { Moves, PULSE, TRAVEL, hosted, merge, stateCount, withLedgers, type Move, type Sky } from "./sky";
@@ -48,6 +48,7 @@ import { esc, fanList, queueCell, runner, taskLink, taskPanel } from "./panels";
 import { emptyFan, fanRows, queueRow, stepRuns, track, type Fan } from "../features/fanout/fan";
 import { ADMIN_DEFAULTS, type AdminPrefs } from "../features/admin/adminPrefs";
 import { clockHm, stamp } from "../shared/clock";
+import { frozenNote } from "../shared/frozen";
 import { sizes as ledgerSizes } from "../features/level/machineLedger";
 import { firstOpened, rowMeta } from "../features/level/machineRows";
 import { dragTo, inputGoal, revealGoal, type ScrollInput } from "../features/level/machineScroll";
@@ -601,7 +602,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     for (const l of [...sc.hops, ...sc.entries, ...sc.exits]) l.busy = false; // a path glows while a task travels it
     hotEdge = new Set(EVENTS().filter((e) => e.from && e.at <= T && T - e.at < TRAVEL).map((e) => `${e.machine}:${e.from}>${e.to}`));
     for (const k of sc.tasks) {
-      const a = k.a0 + k.w * t, R = k.R;
+      const a = orbitAngle(k, t), R = k.R;
       k.ang = a;
       k.x = k.host.x + Math.cos(a) * R;
       k.y = k.host.y + Math.sin(a) * R;
@@ -640,7 +641,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
 
   // where an orbiting task was at page time tt
   const orbitAt = (k: Body, tt: number): Pt => {
-    const a = k.a0 + k.w * tt, R = k.R;
+    const a = orbitAngle(k, tt), R = k.R;
     return { x: k.host.x + Math.cos(a) * R, y: k.host.y + Math.sin(a) * R };
   };
   function ride(k: Body, p0: Pt, p1: Pt, u: number, via: string) {
@@ -872,7 +873,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const sky = S!;
     switch (h.kind) {
       case "task": {
-        const o = h.o, at = subjectOf(h)!, kind = `task · ${stateName(o.state)}${o.today ? " today" : ""}${o.host.states ? ` · orbiting ${(o.host as Planet).title || o.host.name}` : ""}${taskTraits(o.model, liveTasks.has(o.id))} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
+        const o = h.o, at = subjectOf(h)!, kind = `task · ${stateName(o.state)}${o.today ? " today" : ""}${o.host.states ? ` · orbiting ${(o.host as Planet).title || o.host.name}` : ""}${taskTraits(o.model, liveTasks.has(o.id))}${o.frozen ? ` · ${frozenNote(o.frozen)}` : ""} · click ${pinnable(at) ? "to pin its path" : "for details"}`;
         return traceCard({ kind, id: o.id, title: o.title, goal: goalOf(sky.board.machine) }, runFor(at), prefs().clock);
       }
       case "mtask": {
