@@ -192,6 +192,12 @@ def _local(sessions: Path, name: str) -> str:
     return local_id(sessions, f"https://claude.ai/code/{bridge}") if bridge else ""
 
 
+def running(sessions: Path) -> Callable[[str], bool]:
+    """Whether the consumer `name` names, a local session id or a claude.ai URL holder, has a running process."""
+    process_of = live_process(sessions)
+    return lambda name: process_of(_local(sessions, name) or name) is not None
+
+
 def route(
     registry: Registry,
     notifier: Notifier,
@@ -201,6 +207,7 @@ def route(
     lane_of: Callable[[str], str | None] | None = None,
     working: Callable[[], str] = lambda: "in_progress",
     closed: Callable[[str], bool] | None = None,
+    forgotten: set[str] | None = None,
 ) -> Route:
     """A session with no registration has no route, so its events stay on its consumer. A consumer named for a
     claude.ai URL holder is the running session whose record in `sessions` carries that bridge id, which registered
@@ -210,19 +217,26 @@ def route(
     `_SEEN_MAX` of each consumer being remembered. `lane_of` is a task's lane now: a `holder_resume` or
     `review_refused` for a task not In Progress (a restart redelivers a resume whose ack was lost after the task
     parked; a refusal queued behind a busy holder is moot once the repaired task moved to review) is acked with no
-    line; `working` is the lane the board's machine works a task in, `in_progress` unless it names another."""
+    line; `forgotten` is the keys `forget_ended` removed, so a routed registration gone for any other cause is logged once. `working` is the lane the board's machine works a task in, `in_progress` unless it names another."""
     seen: dict[str, dict[tuple[str, str], None]] = {}
+    routed: dict[str, str] = {}
+    gone = forgotten if forgotten is not None else set()
 
-    def registered(name: str) -> Registration | None:
+    def registered(name: str) -> tuple[str, Registration | None]:
         if found := registry.get(name):
-            return found
+            return name, found
         local = _local(sessions, name)
-        return registry.get(local) if local else None
+        return local, registry.get(local) if local else None
 
     def find(name: str):
-        registration = registered(name)
+        key, registration = registered(name)
         if registration is None:
+            if (last := routed.pop(name, None)) is not None and last not in gone:
+                logger.warning("registration %s was routed before and is gone: nothing in this process removed it", last)
+            gone.discard(last)
             return None
+        routed[name] = key
+        gone.discard(key)
 
         def deliver(events: list[Event]) -> bool:
             own = local_id(sessions, registration.session)
@@ -254,7 +268,7 @@ def route(
 
 
 def forget_ended(
-    registry: Registry, alive: Callable[[str], str | None], sessions: Path
+    registry: Registry, alive: Callable[[str], str | None], sessions: Path, forgotten: set[str] | None = None
 ) -> Callable[[Collection[str]], None]:
     """Remove the registration of every session that is neither running nor named by a consumer in `names`: nothing
     is delivered to it, and a session that returns registers again at its next prompt, by the `session_register` hook."""
@@ -266,6 +280,8 @@ def forget_ended(
             if key not in wanted and not ((registration := registry.get(key)) and alive(registration.session)):
                 logger.info("registration %s removed: its session is neither named by a consumer nor running", key)
                 registry.delete(key)
+                if forgotten is not None:
+                    forgotten.add(key)
 
     return forget
 

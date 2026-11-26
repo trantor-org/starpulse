@@ -8,7 +8,7 @@ import { SpendRail, SpendRows, compactWte, fetchSpend, forgetSpend, phasesOf } f
 const phase = (over: Partial<SpendPhase>): SpendPhase => ({
   task: "TASK-1", phase: "implement", steps: 3, side_steps: 0, input: 0, output: 0, cache_read: 0, cache_write: 0, wte: 1000,
   peak_context: 0, compactions: 0, models: ["claude-sonnet-5-5"], first_at: 0, last_at: 0, kind: "execute", size: 3,
-  task_wte: 2500, norm_wte: null, above_norm: false, phase_norm_wte: null, norm_profile: null, phase_above_norm: false, ...over,
+  task_wte: 2500, norm_wte: null, above_norm: false, phase_norm_wte: null, norm_profile: null, no_norm_reason: null, phase_above_norm: false, ...over,
 });
 const answer = (spend: SpendPhase[]) => vi.fn(async () => ({ ok: true, json: async () => ({ data: { task: { spend } } }) }) as unknown as Response);
 
@@ -86,6 +86,14 @@ describe("spend", () => {
     expect(text).toContain("4.5× norm (20.0K)");
     expect(text).toContain("1 step");
     expect(text).toContain("3 steps · 2 compactions · sonnet-5-5");
+  });
+
+  it("says why a task has no norm, in the reason the report gives", async () => {
+    for (const reason of ["batch umbrella", "under 5 peers in kind × size"]) {
+      const text = await draw(<SpendRows rows={[phase({ no_norm_reason: reason })]} />);
+      expect(text).toContain(`no norm: ${reason}`);
+    }
+    expect(await draw(<SpendRows rows={[phase({ norm_wte: 2000 })]} />)).not.toContain("no norm");
   });
 
   it("shows the norm without a flag under 3x, and an empty state for a task with no spend", async () => {

@@ -36,8 +36,8 @@ Client = Callable[[str, str, str | None], Reply]
 class GitHubError(OSError):
     """GitHub answered a read with a status other than 200."""
 
-    def __init__(self, status: int, path: str) -> None:
-        super().__init__(f"GitHub answered HTTP {status} for {path}")
+    def __init__(self, status: int, path: str, message: str | None = None) -> None:
+        super().__init__(message or f"GitHub answered HTTP {status} for {path}")
         self.status = status
 
 
@@ -45,7 +45,8 @@ class RateLimited(GitHubError):
     """GitHub refused a read because the quota is spent; `until` is the epoch second it resets."""
 
     def __init__(self, status: int, path: str, until: float) -> None:
-        super().__init__(status, path)
+        reset = time.strftime("%H:%M:%S UTC", time.gmtime(until))
+        super().__init__(status, path, f"GitHub rate limit spent until {reset} (HTTP {status} for {path})")
         self.until = until
 
 

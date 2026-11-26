@@ -6,6 +6,7 @@ become in a served board, and the Projector folds them into the rows the feed re
 import shutil
 import tempfile
 import threading
+import uuid
 import weakref
 from collections.abc import Mapping
 from pathlib import Path
@@ -47,15 +48,15 @@ def placed_events(task: BoardTask, held: Mapping[str, Any] | None) -> list[tuple
     }
     meta = {key: value for key in _META if (value := getattr(task, key))}
     if held is None:
-        events = [("TaskCreated", {**columns, "meta": meta, "assignee": task.assignee})]
+        stamp = str(uuid.uuid5(uuid.NAMESPACE_URL, f"starpulse:placed:{task.id.upper()}"))  # the board stamps each task it creates
+        events = [("TaskCreated", {**columns, "meta": {**meta, "uuid": stamp}, "assignee": task.assignee})]
     else:
         changes = {name: value for name, value in columns.items() if name != "state" and held[name] != value}
         edited: dict[str, Any] = {}
         if changes:
             edited["changes"] = changes
-        if changed := {
-            key: meta.get(key) for key in (*meta.keys(), *held["meta"]) if held["meta"].get(key) != meta.get(key)
-        }:
+        kept = {key: value for key, value in held["meta"].items() if key != "uuid"}  # a stamp the record never carries
+        if changed := {key: meta.get(key) for key in (*meta.keys(), *kept) if kept.get(key) != meta.get(key)}:
             edited["meta"] = changed
         events = [("FieldsEdited", edited)] if edited else []
         if held["state"] != task.lane:

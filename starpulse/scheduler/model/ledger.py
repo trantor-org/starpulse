@@ -52,7 +52,7 @@ class Ledger:
         """Every recorded run, oldest first, or only `task`'s. Raises when the store cannot be read."""
         query = select(scheduler_runs).order_by(scheduler_runs.c.id)
         if task is not None:
-            query = query.where(scheduler_runs.c.task == task)
+            query = query.where(scheduler_runs.c.task_uuid == task_uuid.of(task))
         with self.log.engine.connect() as db:
             return [
                 RunRecord(row.task, row.tier, row.points, row.outcome, row.duration_s, row.peak)

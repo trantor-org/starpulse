@@ -11,8 +11,15 @@ from typing import Any
 from pydantic import BaseModel
 from pydantic.json_schema import models_json_schema
 
-from starpulse.contracts.api.dto.errors import ApiError
-from starpulse.contracts.api.registry import ROUTES, Op
+from starpulse.contracts.api.dto.errors import (
+    ApiError,
+    DeliveredElsewhere,
+    NotHolder,
+    SkillRefusal,
+    StaleEdit,
+    UnrecognisedUrl,
+)
+from starpulse.contracts.api.registry import ROUTES, Op, writes
 from starpulse.contracts.api.schema import _Generator
 
 #: Where the document is written, beside `api.schema.json`.
@@ -53,7 +60,15 @@ def _ref(models: list[type[BaseModel]], union: str = "oneOf") -> dict[str, Any]:
     return refs[0] if len(refs) == 1 else {union: refs}
 
 
-def _answers(op: Op) -> dict[str, Any]:
+#: The refusals a write route answers under each status, which every write route declares beside its `4XX` union.
+_REFUSED: dict[str, tuple[type[ApiError], ...]] = {
+    "400": (ApiError, SkillRefusal, UnrecognisedUrl),
+    "403": (ApiError, NotHolder),
+    "409": (ApiError, SkillRefusal, StaleEdit, DeliveredElsewhere),
+}
+
+
+def _answers(op: Op, is_write: bool) -> dict[str, Any]:
     models = models_of(op.body)
     failed = [m for m in models if issubclass(m, ApiError)]
     passed = [m for m in models if m not in failed]
@@ -70,6 +85,11 @@ def _answers(op: Op) -> dict[str, Any]:
         answer = answers.setdefault(status, {"description": description, "content": {}})
         answer["content"][media] = {"schema": {"type": "string"} if media == "text/event-stream" else schema}
     if failed:  # each refusal extends `ApiError`, so a rich body also matches it: `anyOf`, never `oneOf`
+        for status, bodies in _REFUSED.items() if is_write else ():
+            answers[status] = {
+                "description": "A refusal",
+                "content": {"application/json": {"schema": _ref([m for m in failed if m in bodies], "anyOf")}},
+            }
         answers["4XX"] = {
             "description": "A refusal",
             "content": {"application/json": {"schema": _ref(failed, "anyOf")}},
@@ -114,10 +134,20 @@ def _tag(path: str) -> str:
     return _SEGMENT_TAG[path.split("/")[2 if path.startswith("/api/") else 1]]
 
 
+_TASK_ID = "The task's key, an alias it carries or its UUID."
+
+
+def _path_parameter(name: str, path: str) -> dict[str, Any]:
+    parameter: dict[str, Any] = {"name": name, "in": "path", "required": True, "schema": {"type": "string"}}
+    if path.startswith(("/api/task/", "/api/tasks/")):
+        parameter["description"] = _TASK_ID
+    return parameter
+
+
 def _operation(method: str, path: str, op: Op) -> dict[str, Any]:
     names = re.findall(r"\{(\w+)\}", path)
     parameters = (
-        [{"name": n, "in": "path", "required": True, "schema": {"type": "string"}} for n in names]
+        [_path_parameter(n, path) for n in names]
         + [{"name": n, "in": "query", "required": n in op.required, "schema": {"type": "string"}} for n in op.query]
         + [{"name": n, "in": "header", "required": True, "schema": {"type": "string"}} for n in op.headers]
     )
@@ -132,7 +162,7 @@ def _operation(method: str, path: str, op: Op) -> dict[str, Any]:
         operation["requestBody"] = {"required": True, "content": {op.request: {"schema": {"type": "object"}}}}
     elif op.request is not None:
         operation["requestBody"] = {"required": True, "content": {"application/json": {"schema": _ref([op.request])}}}
-    return {**operation, "responses": _answers(op)}
+    return {**operation, "responses": _answers(op, writes(method, path))}
 
 
 @cache

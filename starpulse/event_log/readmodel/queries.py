@@ -48,9 +48,9 @@ def held_states() -> Select[Any]:
     return select(tasks.c.state).where(tasks.c.archived == false()).distinct()
 
 
-def live_ids(done: str, since: float) -> Select[Any]:
-    """The ids of the live Tasks (`live`)."""
-    return select(tasks.c.id).where(live(done, since))
+def live_uuids(done: str, since: float) -> Select[Any]:
+    """The UUIDs of the live Tasks (`live`)."""
+    return select(tasks.c.uuid).where(live(done, since))
 
 
 def held_done(done: str) -> Select[Any]:
@@ -99,12 +99,12 @@ def snapshot(done: str, since: float, only: str | None = None) -> Select[Any]:
 def live_criteria(done: str, since: float, only: str | None = None) -> Select[Any]:
     """The live Tasks' Acceptance Criteria, in task and number order; `only` limits them to one Task's."""
     query = (
-        select(criteria.c.task_id, criteria.c.kind, criteria.c.text, criteria.c.checked)
-        .join(tasks, tasks.c.id == criteria.c.task_id)
+        select(tasks.c.id.label("task_id"), criteria.c.kind, criteria.c.text, criteria.c.checked)
+        .join(tasks, tasks.c.uuid == criteria.c.task_uuid)
         .where(live(done, since), criteria.c.kind == "ac")
-        .order_by(criteria.c.task_id, criteria.c.n)
+        .order_by(tasks.c.id, criteria.c.n)
     )
-    return query if only is None else query.where(criteria.c.task_id == only)
+    return query if only is None else query.where(tasks.c.id == only)
 
 
 def with_field(field_column: str, value: object) -> Select[Any]:

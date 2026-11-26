@@ -10,6 +10,7 @@ from pathlib import Path
 from sqlalchemy import Engine, select
 
 from starpulse.board.adapters.project_machines import DIRECTORY
+from starpulse.event_log.readmodel import task_uuid
 from starpulse.event_log.tables import machine_events
 from starpulse.machine_engine.model.transitions import Table
 
@@ -56,7 +57,7 @@ def lenses_of(engine: Callable[[], Engine | None], base: Path) -> Callable[[str]
         if held is None or bound is None:
             return frozenset()
         c = machine_events.c
-        rows = select(c.event).where(c.task == task, c.machine == MACHINE).order_by(c.occurred_at, c.id)
+        rows = select(c.event).where(c.task_uuid == task_uuid.of(task), c.machine == MACHINE).order_by(c.occurred_at, c.id)
         with bound.connect() as db:
             return verdict_lenses(held, [row.event for row in db.execute(rows)])
 

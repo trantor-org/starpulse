@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, JsonValue, model_validator
 
 from starpulse.contracts.api._base import _Api, _Request
 
@@ -12,7 +12,7 @@ class GraphqlRequest(_Request):
 
     query: str = Field(description="The GraphQL document: a fragment and the named queries a view stores.")
     operationName: str | None = Field(None, description="The operation of the document to run.")
-    variables: dict[str, Any] | None = Field(None, description="The values of the operation's variables.")
+    variables: dict[str, JsonValue] | None = Field(None, description="The values of the operation's variables.")
 
 
 class GraphqlError(_Api):
@@ -29,6 +29,12 @@ class GraphqlResponse(_Api):
 
     data: dict[str, Any] | None = None
     errors: list[GraphqlError] | None = None
+
+    @model_validator(mode="after")
+    def _answers(self) -> GraphqlResponse:
+        if not self.model_fields_set:
+            raise ValueError("a GraphQL response names data, errors or both")
+        return self
 
 
 class ViewShown(_Api):

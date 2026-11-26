@@ -1,5 +1,7 @@
 /* Generated from starpulse/schemas/api.schema.json by pnpm run gen:types; edit starpulse/contracts/api/, not this file. */
 
+export type JsonValue = unknown;
+
 /**
  * The root of `api.schema.json`: every body as a property, so the generated types name each one.
  */
@@ -336,24 +338,44 @@ export interface Theme {
   [k: string]: unknown;
 }
 /**
- * A background an operator imported; `n` is the page's own neutrals shape.
+ * A background an operator imported; `n` is its neutral colors by name.
  */
 export interface SavedBg {
   id: string;
   n: {
-    [k: string]: unknown;
+    [k: string]: string;
   };
   name: string;
   [k: string]: unknown;
 }
 /**
- * A color pack an operator imported; `pack` is the page's own pack shape.
+ * A color pack an operator imported.
  */
 export interface SavedPack {
   id: string;
-  pack: {
-    [k: string]: unknown;
+  pack: Pack;
+  [k: string]: unknown;
+}
+/**
+ * A color pack as the page builds it: `c` the role colors, `r` each role's derivation (a color, or a mix of two derivations), `x` any extra tokens.
+ */
+export interface Pack {
+  c: {
+    [k: string]: string;
   };
+  name: string;
+  r: {
+    [k: string]: JsonValue;
+  };
+  src?: PackSource | null;
+  vibe?: string | null;
+  x?: {
+    [k: string]: string;
+  } | null;
+  [k: string]: unknown;
+}
+export interface PackSource {
+  label: string;
   [k: string]: unknown;
 }
 /**
@@ -2087,9 +2109,7 @@ export interface CreateSpec {
 export interface TaskPutRequest {
   actor?: string | null;
   archived?: false | null;
-  base?: {
-    [k: string]: unknown;
-  };
+  base?: EditBase;
   breakGlass?: boolean;
   changes?: Changes;
   comment?: string | null;
@@ -2105,11 +2125,99 @@ export interface TaskPutRequest {
   unfreeze?: true | null;
 }
 /**
- * An edit's fields by name: any field the board takes, with each `documentation` entry a link.
+ * The value each changed field had when the caller read it, a field the record holds as it holds it: a field the
+ * edit does not change may be named or left out.
+ */
+export interface EditBase {
+  acceptanceCriteria?: ChecklistItem[];
+  actorMemory?: {
+    [k: string]: JsonValue;
+  };
+  adrNeeded?: string;
+  assignee?: string;
+  definitionOfDone?: ChecklistItem[];
+  dependencies?: string[];
+  dependencyNeeds?: string[];
+  description?: string;
+  documentation?: string[];
+  duplicateResolution?: string;
+  duplicateSearch?: string;
+  finalSummary?: string;
+  follows?: string;
+  frozen?: FrozenEdit;
+  impact?: string;
+  labels?: string[];
+  milestone?: string;
+  modifiedFiles?: string[];
+  needsAttention?: string;
+  notes?: string;
+  plan?: string;
+  priority?: string;
+  profile?: string;
+  references?: string[];
+  source?: string;
+  status?: string;
+  tier?: string;
+  title?: string;
+  type?: string;
+  urgency?: string;
+  [k: string]: unknown;
+}
+/**
+ * One acceptance criterion or definition-of-done item; an item without `n` is numbered after the highest given.
+ */
+export interface ChecklistItem {
+  checked: boolean;
+  n?: number;
+  text: string;
+}
+/**
+ * Who froze the task, when and why.
+ */
+export interface FrozenEdit {
+  at?: string | number | null;
+  by?: string | null;
+  reason?: string | null;
+}
+/**
+ * An edit's fields by name, each as the board's writer takes it. `documentation` entries are links; `appendNotes`
+ * adds to the notes as they are when the write lands, and `planReason` is why the plan changes: neither has a base.
  */
 export interface Changes {
+  acceptanceCriteria?: ChecklistItem[];
+  actorMemory?: {
+    [k: string]: JsonValue;
+  };
+  adrNeeded?: string;
+  appendNotes?: string;
+  assignee?: string;
+  definitionOfDone?: ChecklistItem[];
+  dependencies?: string[];
+  dependencyNeeds?: string[];
+  description?: string;
   documentation?: string[] | null;
-  [k: string]: unknown;
+  duplicateResolution?: string;
+  duplicateSearch?: string;
+  finalSummary?: string;
+  follows?: string;
+  frozen?: FrozenEdit;
+  impact?: string;
+  labels?: string[];
+  milestone?: string;
+  modifiedFiles?: string[];
+  needsAttention?: string;
+  notes?: string;
+  plan?: string;
+  planReason?: string;
+  priority?: string;
+  profile?: string;
+  references?: string[];
+  source?: string;
+  status?: string;
+  tier?: string;
+  title?: string;
+  type?: string;
+  urgency?: string;
 }
 /**
  * Pause the task on exactly one reason, which picks the lane: `untilTask` (tasks that must reach Done, or
@@ -2135,9 +2243,134 @@ export interface MilestoneCreateRequest {
  * `PUT /api/machines`: create a machine from `definition`, a machine document, when no active machine has its name.
  */
 export interface MachineCreateRequest {
-  definition: {
-    [k: string]: unknown;
+  definition: MachineDefinition;
+}
+/**
+ * A machine document: its states, the events that move a task between them, and what it declares around them.
+ */
+export interface MachineDefinition {
+  bindings?: {
+    [k: string]: string;
+  } | null;
+  cues?: [MachineCue, ...MachineCue[]] | null;
+  events: {
+    /**
+     * @minItems 1
+     *
+     * This interface was referenced by `undefined`'s JSON-Schema definition
+     * via the `patternProperty` "^[A-Za-z][A-Za-z0-9_]*$".
+     */
+    [k: string]: [MachineTransition, ...MachineTransition[]];
   };
+  launches?: {
+    [k: string]: MachineLaunch;
+  } | null;
+  main_line?: [string, ...string[]] | null;
+  migrations?: {
+    /**
+     * This interface was referenced by `undefined`'s JSON-Schema definition
+     * via the `patternProperty` "^[a-z][a-z0-9_]*$".
+     */
+    [k: string]: string;
+  } | null;
+  name: string;
+  next?: MachineNext | null;
+  parents?: string[] | null;
+  rests?: [string, ...string[]] | null;
+  source?: string | null;
+  states: {
+    [k: string]: MachineState1;
+  };
+  submachines?: [MachineSubmachine, ...MachineSubmachine[]] | null;
+  tiers?: [[string, ...string[]], ...[string, ...string[]][]] | null;
+  type?: ("machine" | "phase machine" | "sub-machine") | null;
+  writers?: {
+    /**
+     * @minItems 1
+     *
+     * This interface was referenced by `undefined`'s JSON-Schema definition
+     * via the `patternProperty` "^[A-Za-z][A-Za-z0-9_]*$".
+     */
+    [k: string]: [MachineWriter, ...MachineWriter[]];
+  } | null;
+}
+export interface MachineCue {
+  dag: string;
+  event: string;
+  grace?: number | null;
+  on: string;
+  resolves: "forced" | "next";
+}
+export interface MachineTransition {
+  cite?: MachineCite | null;
+  from: string | [string, ...string[]];
+  if?: MachineGuard | null;
+  to: string;
+  unless?: MachineGuard | null;
+}
+export interface MachineCite {
+  quote: string;
+  skill: string;
+}
+export interface MachineGuard {
+  when: {
+    [k: string]: EventMatch;
+  };
+}
+/**
+ * How one event field is matched: exactly one of `equals`, `in` and `exists`.
+ *
+ * This interface was referenced by `undefined`'s JSON-Schema definition
+ * via the `patternProperty` "^[A-Za-z_][A-Za-z0-9_]*$".
+ */
+export interface EventMatch {
+  equals?: boolean | number | number | string | null;
+  exists?: boolean | null;
+  in?: [boolean | number | number | string, ...(boolean | number | number | string)[]] | null;
+}
+export interface MachineLaunch {
+  machine?: string | null;
+  skill: string;
+}
+export interface MachineNext {
+  kind: "skill" | "operation";
+  name: string;
+}
+/**
+ * This interface was referenced by `undefined`'s JSON-Schema definition
+ * via the `patternProperty` "^[a-z][a-z0-9_]*$".
+ */
+export interface MachineState1 {
+  aliases?: string[] | null;
+  final?: boolean | null;
+  initial?: boolean | null;
+  label?: string | null;
+  priority?: number | null;
+  role?: ("resting" | "waiting_on_fact" | "waiting_on_person") | null;
+}
+export interface MachineSubmachine {
+  exits: {
+    /**
+     * This interface was referenced by `undefined`'s JSON-Schema definition
+     * via the `patternProperty` "^[a-z][a-z0-9_]*$".
+     */
+    [k: string]: string;
+  };
+  machine: string;
+  routes?: {
+    /**
+     * This interface was referenced by `undefined`'s JSON-Schema definition
+     * via the `patternProperty` "^[a-z][a-z0-9_]*$".
+     */
+    [k: string]: string;
+  } | null;
+  skill?: string | null;
+  state: string;
+  when?: string | null;
+}
+export interface MachineWriter {
+  actor: string;
+  trigger: string;
 }
 /**
  * `POST /api/jobs`: list the workflows the runs adapters report. It takes no field.
@@ -2154,12 +2387,73 @@ export interface MachineListRequest {}
  */
 export interface MachinePutRequest {
   base: string;
-  definition: {
-    [k: string]: unknown;
-  };
-  policy?: {
-    [k: string]: unknown;
+  definition: MachineDefinition;
+  policy?: PolicyRows | null;
+}
+/**
+ * The table rows of the whole board policy; a table left out holds no row.
+ */
+export interface PolicyRows {
+  exits?: PolicyExit[];
+  lanes?: PolicyLane[];
+  profiles?: PolicyProfile[];
+  routes?: PolicyRoute[];
+  rules?: PolicyRule[];
+  tools?: PolicyTool[];
+  vocabularies?: PolicyVocabulary[];
+  watches?: PolicyWatch[];
+}
+export interface PolicyExit {
+  actor: string;
+  event: string;
+  trigger: string;
+}
+export interface PolicyLane {
+  label?: string | null;
+  name: string;
+  position: number;
+  role: string | null;
+  skill?: string | null;
+}
+export interface PolicyProfile {
+  kind: string;
+  profile: string;
+  size: number;
+}
+export interface PolicyRoute {
+  condition?: {
+    [k: string]: JsonValue;
   } | null;
+  event: string;
+  source: string;
+  target: string;
+}
+export interface PolicyRule {
+  on: {
+    [k: string]: JsonValue;
+  };
+  position: number;
+  reason: string;
+  require: {
+    [k: string]: JsonValue;
+  };
+  skill: string;
+  unless_actor: string[];
+}
+export interface PolicyTool {
+  lane: string;
+  tool: string;
+}
+export interface PolicyVocabulary {
+  name: string;
+  position: number;
+  value: string;
+}
+export interface PolicyWatch {
+  event: string;
+  fact: string;
+  lane: string;
+  position: number;
 }
 /**
  * `POST /api/milestones`: list the open milestones. It takes no field.
@@ -2227,7 +2521,7 @@ export interface GraphqlRequest {
    * The values of the operation's variables.
    */
   variables?: {
-    [k: string]: unknown;
+    [k: string]: JsonValue;
   } | null;
 }
 /**
@@ -2569,6 +2863,10 @@ export interface SpendPhase {
   kind: string | null;
   last_at: number;
   models: string[];
+  /**
+   * Why `phase_norm_wte` is null: `batch umbrella`, `no kind or size`, or `under 5 peers in kind × size`; null when there is a norm.
+   */
+  no_norm_reason: string | null;
   /**
    * The `profile` of the cell `phase_norm_wte` came from, or `mixed` for the kind and size cell pooling every profile; null when there is no norm.
    */

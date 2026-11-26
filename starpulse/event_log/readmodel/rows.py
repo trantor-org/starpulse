@@ -27,7 +27,7 @@ def load_at(db: Connection, task_id: str) -> tuple[Row | None, int]:
     if found is None:
         return None, 0
     items = db.execute(
-        select(criteria).where(criteria.c.task_id == task_id).order_by(criteria.c.kind, criteria.c.n)
+        select(criteria).where(criteria.c.task_uuid == found["uuid"]).order_by(criteria.c.kind, criteria.c.n)
     ).mappings()
     row = {key: value for key, value in found.items() if key not in ("seq", "uuid")} | {
         "criteria": [{key: value for key, value in item.items() if key not in ("task_id", "task_uuid")} for item in items]

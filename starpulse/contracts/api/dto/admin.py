@@ -1,8 +1,8 @@
 """`/api/admin`: the scheduler's status with the display and theme choices every device shares."""
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, StrictInt
+from pydantic import Field, JsonValue, StrictInt
 
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.scheduler import SchedulerStatus
@@ -26,19 +26,34 @@ class Display(_Api):
     clock: Clock = "24"
 
 
+class PackSource(_Api):
+    label: str
+
+
+class Pack(_Api):
+    """A color pack as the page builds it: `c` the role colors, `r` each role's derivation (a color, or a mix of two derivations), `x` any extra tokens."""
+
+    name: str
+    vibe: str | None = None
+    src: PackSource | None = None
+    c: dict[str, str]
+    r: dict[str, JsonValue]
+    x: dict[str, str] | None = None
+
+
 class SavedPack(_Api):
-    """A color pack an operator imported; `pack` is the page's own pack shape."""
+    """A color pack an operator imported."""
 
     id: str
-    pack: dict[str, Any]
+    pack: Pack
 
 
 class SavedBg(_Api):
-    """A background an operator imported; `n` is the page's own neutrals shape."""
+    """A background an operator imported; `n` is its neutral colors by name."""
 
     id: str
     name: str
-    n: dict[str, Any]
+    n: dict[str, str]
 
 
 class Theme(_Api):

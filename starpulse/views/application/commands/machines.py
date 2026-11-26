@@ -70,7 +70,7 @@ def machine_record(
 
 
 def _refusal(error: Exception) -> tuple[int, dict[str, str]]:
-    """The status a refused machine write answers: 409 for a change the store's state refuses, 404 for a machine it lacks, 422 for a definition or policy that is not valid."""
+    """The status a refused machine write answers: 409 for a change the store's state refuses, 404 for a machine it lacks, 422 for a definition that does not compile."""
     if isinstance(error, MissingMachine):
         return 404, {"error": f"{error} is not a machine here"}
     if isinstance(error, StrandedTasks | StaleBase | RefusedRetire | StaleVersion):
@@ -85,26 +85,24 @@ def create_machine(request: MachineCreateRequest, store: MachineStore | None) ->
     if store is None:
         return _NO_STORE
     try:
-        digest = store.create(request.definition)
+        digest = store.create(request.definition.document())
     except (MachineDefinitionError, StaleVersion) as error:
         return _refusal(error)
-    return 201, {"machine": request.definition["name"], "hash": digest}
+    return 201, {"machine": request.definition.name, "hash": digest}
 
 
 @with_request(MachinePutRequest, "Changing a machine")
 def put_machine(request: MachinePutRequest, name: str, store: MachineStore | None) -> tuple[int, dict[str, Any]]:
     """Make the definition `request` carries the version of `name` that follows `base`, with its `policy` rows written in
     the same transaction: 200 with `machine` and `hash`, 404 for a machine the store lacks, 409 for a stale `base` or a
-    change that strands a live task, 422 for a definition or policy rows that are not valid."""
+    change that strands a live task, 422 for a definition that does not compile. A document or policy rows the request
+    models refuse never reach here: 400."""
     if store is None:
         return _NO_STORE
-    try:
-        policy = None if request.policy is None else policy_of(request.policy)
-    except (TypeError, KeyError, ValueError) as error:
-        return 422, {"error": f"policy: {error}"}
+    policy = None if request.policy is None else policy_of(request.policy.model_dump())
     within = None if policy is None else lambda db: policy_store.write(db, policy)
     try:
-        digest = store.put(name, request.definition, request.base, within)
+        digest = store.put(name, request.definition.document(), request.base, within)
     except (MachineDefinitionError, MissingMachine, StaleVersion) as error:
         return _refusal(error)
     return 200, {"machine": name, "hash": digest}

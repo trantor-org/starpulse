@@ -188,6 +188,8 @@ type SpendPhase {
   above_norm: Boolean!
   phase_norm_wte: Float
   norm_profile: String
+  """Why `phase_norm_wte` is null: `batch umbrella`, `no kind or size`, or `under 5 peers in kind × size`; null when there is a norm."""
+  no_norm_reason: String
   """`wte` is over three times `phase_norm_wte`."""
   phase_above_norm: Boolean!
 }
