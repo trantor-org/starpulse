@@ -290,6 +290,8 @@ def _sequences(raw: dict[str, list[str]] | None) -> dict[str, tuple[str, ...]]:
 
 def _project(raw: object) -> Project:
     """The `[project]` table, or the empty one when the config has none; a refusal is a `ConfigError`."""
+    if raw is None:
+        return Project()
     try:
         return parse_project(raw)
     except ProjectError as exc:

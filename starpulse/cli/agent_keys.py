@@ -54,6 +54,7 @@ TASK_KEYS = (
     "pause_reason",
     "readable",
     "source",
+    "follows",
     "prs",
     "moves",
     "released",

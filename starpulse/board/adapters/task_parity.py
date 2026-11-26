@@ -20,7 +20,7 @@ from starpulse.board.model.markdown import render
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore
 
-__all__ = ["Filed", "Parity", "check", "filed", "import_missing", "scanned"]
+__all__ = ["Filed", "Parity", "backfill_answers", "check", "filed", "import_missing", "scanned"]
 
 Record = Mapping[str, Any]
 _SHOWN = 6
@@ -114,3 +114,10 @@ def import_missing(items: Iterable[Filed], engine: Engine) -> list[str]:
     history = TaskHistory()
     history.attach(engine)
     return [item.task for item in items if history.imported(item.task, item.record, item.archived)]
+
+
+def backfill_answers(items: Iterable[Filed], engine: Engine) -> list[str]:
+    """Give each of `items` with a History the creation answers its file holds and the History lacks; the tasks that got them."""
+    history = TaskHistory()
+    history.attach(engine)
+    return [item.task for item in items if history.backfilled(item.task, item.record)]

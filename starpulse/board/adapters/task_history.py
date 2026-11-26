@@ -57,6 +57,8 @@ _OWN = {
     "modifiedFiles": "modified_files",
 }
 _LISTS = ("labels", "dependencies", "references", "documentation", "modifiedFiles")
+#: The creation answers a task's History holds in `meta`.
+ANSWERS = ("adrNeeded", "duplicateSearch", "duplicateResolution")
 #: The record's keys the fold keeps in `meta`.
 _META = (
     "profile",
@@ -67,6 +69,7 @@ _META = (
     "source",
     "needsAttention",
     "follows",
+    *ANSWERS,
     "dependencyNeeds",
     "actorMemory",
     "members",
@@ -337,6 +340,18 @@ class TaskHistory:
         if archived:
             events.append(self._new("Archived", {}, OPERATOR))
         store.append(KIND, task, 0, events)
+        return True
+
+    def backfilled(self, task: str, record: Record) -> bool:
+        """Append a `FieldsEdited` of each creation answer `record` holds and `task`'s History lacks; whether it did."""
+        store = self._store
+        head = store.head(KIND, task) if store else 0
+        if store is None or not head:
+            return False
+        held = replay(store.read(KIND, task))["meta"]
+        if not (meta := {key: record[key] for key in ANSWERS if record.get(key) and not held.get(key)}):
+            return False
+        store.append(KIND, task, head, [self._new("FieldsEdited", {"meta": meta}, OPERATOR)])
         return True
 
     def settle(self, task: str, archived: bool) -> bool:

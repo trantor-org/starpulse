@@ -91,6 +91,7 @@ def summary_agent(
         "urgency": meta.get("urgency", ""),
         "tier": meta.get("tier") or DEFAULT_TIER,
         "source": meta.get("source", ""),
+        "follows": meta.get("follows", ""),
         "frozen": dict(meta["frozen"]) if meta.get("frozen") else None,
         "assignee": summary["assignee"],
         "released": summary["released"],
@@ -111,7 +112,7 @@ def summary_agent(
     }
 
 
-_DONE_DOT = ("id", "title", "state", "model", "labels", "milestone", "type", "created", "entered")
+_DONE_DOT = ("id", "title", "state", "model", "labels", "milestone", "type", "follows", "created", "entered")
 
 
 def done_dot(agent: dict) -> dict:
@@ -157,6 +158,7 @@ def _cold_stub(summary: Mapping[str, Any]) -> dict:
         "labels": list(summary["labels"]),
         "milestone": summary["milestone"],
         "type": summary["type"],
+        "follows": (summary.get("meta") or {}).get("follows", ""),
     }
     return {"id": summary["id"], "state": lane_id(summary["state"]), "entered": summary["updated_at"], "record": record}
 

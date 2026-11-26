@@ -47,9 +47,7 @@ def _argv(name: str, raw: object) -> tuple[str, ...]:
 
 
 def parse_project(raw: object) -> Project:
-    """The `[project]` table, or the empty one when the config has none."""
-    if raw is None:
-        return Project()
+    """The `[project]` table a config has; the caller passes none for a config without one."""
     if not isinstance(raw, dict):
         raise ProjectError("project: must be a table")
     if unknown := sorted(raw.keys() - _KEYS):
