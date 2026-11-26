@@ -271,7 +271,7 @@ def default_starters(
 
         board, feed = shared()
         search = SearchIndex.open(log.engine, config.search) if config.search.embeddings_url else None
-        followers.start(feed, board, log, own, vectors=search.embed_missing if search is not None else None)
+        followers.start(feed, log, own, vectors=search.embed_missing if search is not None else None)
         return lambda: logger.info("lane-metrics: the board config is read at start; restart to apply a change")
 
     def conformance(own: threading.Event) -> Callable[[], None]:

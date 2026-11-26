@@ -111,6 +111,8 @@ class ReadMethods:
         changed = self._read_model.since(self._followed, limit)
         archived_today = self._read_model.archived_since(local_midnight(self._clock())) if changed else None
         for summary in changed:
+            for alias in (summary["meta"] or {}).get("aliases") or []:
+                self.alias(alias, summary["id"])
             agent = None if summary["archived"] else self._read_model_agent(summary["id"])
             if agent and agent["state"] == self._roles.done:
                 agent = done_dot(agent)

@@ -141,8 +141,8 @@ def ready(state: str, done: str, only: str | None = None) -> Select[Any]:
 
 
 def since(seq: int, limit: int) -> Select[Any]:
-    """The Tasks changed after stream position `seq`, archived ones included, oldest change first."""
-    return select(*SUMMARY).where(tasks.c.seq > seq).order_by(tasks.c.seq).limit(limit)
+    """The Tasks changed after stream position `seq`, archived ones included, with their meta, oldest change first."""
+    return select(*SUMMARY, tasks.c.meta).where(tasks.c.seq > seq).order_by(tasks.c.seq).limit(limit)
 
 
 def archived(before: float | None, limit: int, milestone: str | None = None) -> Select[Any]:

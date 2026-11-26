@@ -251,12 +251,6 @@ class Board:
     """Reads the retired tasks through a projection of each text."""
     retired_page: RetiredPager
     """Reads the retired tasks a page at a time, newest first."""
-    files: Callable[[], Iterable[tuple[str, list[str]]]]
-    """Lists each open task file's id and the aliases it answers to."""
-    done_files: Callable[[], Iterable[tuple[str, list[str]]]]
-    """Lists each done task file's id and the aliases it answers to, which the board keeps answering."""
-    rescan: Callable[[], int]
-    """Reads every file the directory watch has not placed and says how many it read."""
     create: TaskCreator
     """Creates a task in the first lane when the page asks for a new one."""
     milestones: MilestoneLister
