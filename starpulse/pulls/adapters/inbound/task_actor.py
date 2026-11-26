@@ -2298,6 +2298,7 @@ class TaskActor:
                 self._tried.pop(name, None)  # no baseline, no send-back: judged anew on the next pass
                 return False
             self._memory.keep(name, sent_back=replied)  # before the move, so a reply sent after it is a new one
+            refusal = self._judged(name, changes, comment)  # the memory write changed the file the first judge read
         begun = self._clock()
         written = refusal if not refusal.ok else self._apply(name, changes, comment, refusal.version)
         if feedback and not written.ok:
