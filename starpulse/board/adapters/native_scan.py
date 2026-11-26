@@ -31,7 +31,7 @@ from starpulse.board.model.markdown import needs_attention_reason
 from starpulse.board.model.policy import Policy, waits_of
 from starpulse.contracts.task_keys import TaskKeys
 from starpulse.contracts.tiers import DEFAULT_TIER, TIERS
-from starpulse.event_log.watch import DirectoryWatch, open_directory_watch
+from starpulse.event_log.watch import open_directory_watch
 from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_machine, board_moves, lane_id
 
@@ -249,9 +249,6 @@ class NativeScan:
         self._stop = threading.Event()
         self._wake: socket.socket | None = None
         self._scanning = threading.RLock()  # the poll thread and `settle()` both scan
-        self._watch: DirectoryWatch | None = None
-        self._draining = threading.Lock()  # the watch thread and `rescan` both drain the watch
-        self._named: set[str] = set()  # drained by the watch thread, not yet read
 
     def scan(self) -> int:
         """Publish every task file that is new or changed since the last scan, and retract a task whose file is gone;
@@ -261,40 +258,6 @@ class NativeScan:
         Scans are serialized, so two callers never forget the same file twice."""
         with self._scanning:
             return len(self._scan())
-
-    def rescan(self) -> int:
-        """The sweeper's scan: how many files it read or forgot that the watch did not name, each a change no push carried.
-
-        A file the watch names by the time the scan ends is a push still in flight (a write the watch thread has not
-        drained or read yet): a write precedes its event, so every file this scan read for a change has its event by then.
-        All of it is a correction only when the watch is absent or lost events."""
-        with self._scanning:
-            touched = self._scan()
-        drained = self._drain()
-        if drained is None:
-            return len(touched)
-        fresh, outstanding = drained
-        self._read(fresh)
-        if missed := touched - outstanding:
-            logger.warning("NativeScan: the rescan read files the watch never named: %s", ", ".join(sorted(missed)))
-        return len(missed)
-
-    def _drain(self) -> tuple[set[str], set[str]] | None:
-        """The paths the watch has named since its last drain, and every path named and not yet read; None when there is
-        no watch or it lost events."""
-        with self._draining:
-            if self._watch is None:
-                return None
-            paths = self._watch.drain()
-            if self._watch.sync() or paths is None:
-                return None
-            self._named |= paths
-            return paths, set(self._named)
-
-    def _read(self, paths: set[str]) -> None:
-        self.scan_paths(paths)
-        with self._draining:
-            self._named -= paths
 
     def _scan(self) -> set[str]:
         present: set[str] = set()
@@ -490,12 +453,12 @@ class NativeScan:
         self._wake = wake
 
         def run() -> None:
-            watch = self._watch = open_directory_watch(self.root / folder for folder, _ in _FOLDERS)
+            watch = open_directory_watch(self.root / folder for folder, _ in _FOLDERS)
             try:
                 self.scan()
                 scanned()
                 if watch is None:
-                    logger.warning("NativeScan: no file watch on %s; the sweeper corrects its tasks", self.root)
+                    logger.warning("NativeScan: no file watch on %s; its task files are read at start only", self.root)
                     self._stop.wait()
                     return
                 with selectors.DefaultSelector() as selector:
@@ -504,13 +467,12 @@ class NativeScan:
                     while not self._stop.is_set():
                         if watch.fileno() not in {key.fd for key, _ in selector.select()}:
                             continue
-                        if (drained := self._drain()) is None:
+                        paths = watch.drain()
+                        if watch.sync() or paths is None:
                             self.scan()
                         else:
-                            self._read(drained[0])
+                            self.scan_paths(paths)
             finally:
-                with self._draining:
-                    self._watch = None
                 if watch is not None:
                     watch.close()
                 wake.close()
@@ -632,6 +594,5 @@ def project_board(
         waits=compiled.waits if compiled else {},
         roles=roles,
         source=str(root),
-        rescan=lambda: sum(scan.rescan() for scan in scans),
         **writers(config, roles),
     )

@@ -6,7 +6,7 @@ write and writes no file; a Task with no History refuses every write."""
 
 import json
 from collections import Counter
-from collections.abc import Callable, Collection, Iterable, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -325,11 +325,6 @@ class TaskHistory:
                 _write.reset(token)
 
         return run
-
-    def import_retired(self, rows: Iterable[tuple[str, str]], parse: Callable[[str], Record]) -> None:
-        """Give each retired `(task, text)` row without History its `TaskImported` of `parse(text)` and an `Archived`."""
-        for task, text in rows:
-            self.imported(task, parse(text), True)
 
     def imported(self, task: str, record: Record, archived: bool) -> bool:
         """Give `task` without History its `TaskImported` of `record`, and an `Archived` when it has left the lanes; whether it got them."""

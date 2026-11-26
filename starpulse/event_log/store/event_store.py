@@ -6,20 +6,10 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from sqlalchemy import ColumnElement, Connection, Engine, func, insert, select
+from sqlalchemy import Connection, Engine, func, insert, select
 from sqlalchemy.exc import IntegrityError
 
 from starpulse.event_log.store.tables import stream_events
-
-
-def lacks_history(subject_kind: str, subject_id: ColumnElement[str]) -> ColumnElement[bool]:
-    """A filter keeping the rows whose `subject_id` has no Event of `subject_kind`; one `NOT EXISTS`, so a query reads the
-    subjects without a stream and none other."""
-    return ~select(stream_events.c.id).where(
-        stream_events.c.subject_kind == subject_kind,
-        stream_events.c.subject_id == subject_id,
-        stream_events.c.version == 1,
-    ).exists()
 
 
 class StaleVersion(Exception):

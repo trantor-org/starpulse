@@ -6,7 +6,6 @@ from starpulse.event_log.store.event_store import (
     StaleVersion,
     StoredEvent,
     Upcasters,
-    lacks_history,
 )
 from starpulse.event_log.store.tables import NEWEST_EVENT, metadata
 
@@ -18,5 +17,4 @@ __all__ = [
     "StaleVersion",
     "StoredEvent",
     "Upcasters",
-    "lacks_history",
 ]

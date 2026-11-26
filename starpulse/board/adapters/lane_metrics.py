@@ -1,5 +1,4 @@
-"""The lane followers' metrics across the event log: the contexts worker runs the unattributed count and the board-files
-pass, the conformance worker the monitor; each keeps its exposition, the Page API relays both on `/metrics`."""
+"""The lane followers' metrics across the event log: the contexts worker runs the unattributed count, the conformance worker the monitor; each keeps its exposition, the Page API relays both on `/metrics`."""
 
 import logging
 import threading
@@ -7,7 +6,7 @@ import time
 from collections.abc import Callable, Collection, Mapping
 from typing import Any
 
-from starpulse.board.adapters.board_files import BoardFiles
+from starpulse.board.adapters.board_files import embedding
 from starpulse.event_log import lane_events
 from starpulse.event_log.conformance_monitor import Conformance, stalled_exposition
 from starpulse.event_log.event_log import EventLog
@@ -23,12 +22,10 @@ STALLS = "lanes.stalls"
 PROGRESS_S = 10.0
 
 
-def start(feed: Any, board: Any, log: EventLog, stop: StopEvent, vectors: Callable[[], tuple[int, int]] | None = None) -> None:
-    """Run the unattributed-lane count until `stop`, register the `board-files` pass over `feed` and `board` for the
-    sweeper (`vectors` embeds the tasks that hold none), and keep their exposition in `log` once at start and after each
-    entry or pass that changed it."""
+def start(feed: Any, log: EventLog, stop: StopEvent, vectors: Callable[[], tuple[int, int]] | None = None) -> None:
+    """Run the unattributed-lane count until `stop`, register the `board-files` pass for the sweeper (`vectors` embeds
+    the tasks that hold none), and keep the count's exposition in `log` once at start and after each entry that changed it."""
     unattributed = lane_events.Unattributed()
-    files = BoardFiles(feed, board, vectors=vectors)
     written: str | None = None
     guard = threading.Lock()
 
@@ -36,21 +33,15 @@ def start(feed: Any, board: Any, log: EventLog, stop: StopEvent, vectors: Callab
         nonlocal written
         with guard:
             try:
-                found = unattributed.exposition() + files.exposition()
+                found = unattributed.exposition()
                 if found != written:
                     log.put_state(METRICS, found)
                     written = found
             except Exception:
                 logger.warning("lane-metrics: the metrics were not kept", exc_info=True)
 
-    def sweep() -> tuple[int, int]:
-        try:
-            return files.run()
-        finally:
-            keep()
-
     unattributed.follow(log, stop, keep)
-    feed.reconcilers["board-files"] = sweep
+    feed.reconcilers["board-files"] = embedding(vectors)
     keep()
 
 

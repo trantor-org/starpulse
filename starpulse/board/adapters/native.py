@@ -49,12 +49,11 @@ from starpulse.board.adapters.native_scan import (
     _strings,
     lane_id,
     project_board,
-    read_config,
 )
 from starpulse.board.adapters.native_scan import (
     _profile as _profile_of,
 )
-from starpulse.board.adapters.task_history import KIND, TaskHistory, appended, revises_plan
+from starpulse.board.adapters.task_history import TaskHistory, appended, revises_plan
 from starpulse.board.adapters.task_view import TaskView
 from starpulse.board.model import criteria, entry, rules, write_steps
 from starpulse.board.model.claims import assignee_of
@@ -84,7 +83,7 @@ from starpulse.board.model.seam import (
 from starpulse.contracts.doc_links import doc_link
 from starpulse.contracts.tiers import TIERS, implied_tier
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
-from starpulse.event_log.store import StaleVersion, lacks_history
+from starpulse.event_log.store import StaleVersion
 from starpulse.event_log.tables import pull_requests, retired_tasks
 from starpulse.github.adapters.outbound.rest import connect, get, pull_mergeable
 from starpulse.machine_engine.model.state_roles import StateRoles
@@ -1044,23 +1043,6 @@ def _open_tasks(root: Path, done: str | None, mentioning: Iterable[str] = ()) ->
             yield str(frontmatter.get("id") or path.stem).strip(), frontmatter
 
 
-def _done_tasks(root: Path, done: str | None) -> Iterator[tuple[str, dict]]:
-    """The id and front matter of each task under `tasks/` that is Done, then each under `completed/`, in file order, that lists aliases."""
-    for folder in ("tasks", "completed"):
-        for path in sorted((root / folder).glob("*.md")):
-            try:
-                text = path.read_text()
-            except OSError:
-                continue  # moved or removed while looking
-            if "\naliases:" not in text:
-                continue  # the only reader asks for aliases: skip the YAML parse of the rest
-            frontmatter, _ = _split(text)
-            if isinstance(frontmatter, dict) and (
-                folder == "completed" or lane_id(str(frontmatter.get("status") or "")) == done
-            ):
-                yield str(frontmatter.get("id") or path.stem).strip(), frontmatter
-
-
 def _done_in_tasks(root: Path, done: str | None) -> list[str]:
     """Ids of the tasks under `tasks/` that are Done, in file order."""
     return [
@@ -1290,9 +1272,8 @@ class _Retired:
         """Every retired task's text, by id, a page of rows at a time, so no more than a page is held at once."""
         return (text for _, text in self.pairs())
 
-    def pairs(self, *, without_history: bool = False) -> Iterator[tuple[str, str]]:
-        """Every retired `(task, text)`, by id, a page of rows at a time; `without_history` keeps those whose task has no
-        Event, which the store alone decides, so a start reads the text of none that has one."""
+    def pairs(self) -> Iterator[tuple[str, str]]:
+        """Every retired `(task, text)`, by id, a page of rows at a time."""
         after = ""
         while self.engine is not None:
             query = (
@@ -1301,8 +1282,6 @@ class _Retired:
                 .order_by(retired_tasks.c.task)
                 .limit(_RETIRED_PAGE)
             )
-            if without_history:
-                query = query.where(lacks_history(KIND, retired_tasks.c.task))
             with self.engine.connect() as db:
                 page = db.execute(query).all()
             yield from ((row.task, row.text) for row in page)
@@ -2060,10 +2039,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     def attach(log: EventLog) -> None:
         retired.engine = log.engine  # the retired tasks live in the view's history store
         history.attach(log.engine)
-        prefix = read_config(root).prefix
-        history.import_retired(
-            ((canonical_key(prefix, task), text) for task, text in retired.pairs(without_history=True)), _record_of
-        )
         if settings.get("complete_done"):
             _uncompleted(root, settings.get("complete_keep_labels"), lambda task: history.settle(task, False))
             for done_task in _done_in_tasks(root, made.roles.done):
@@ -2072,6 +2047,9 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 
     def start(feed: BoardFeed, group: str, log: EventLog) -> None:
         attach(log)
+        for task, aliases in view.listed():
+            for alias in aliases:
+                feed.alias(alias, task)
         made.start(feed, group, log)
 
     complete = history.recorded(made.complete)
@@ -2108,16 +2086,6 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         "complete": complete,
         "retire": history.recorded(made.retire),
         "create": history.recorded(made.create),
-        "files": lambda: (
-            view.listed()
-            if view.attached
-            else [(task, _aliases(frontmatter)) for task, frontmatter in _open_tasks(root, made.roles.done)]
-        ),
-        "done_files": lambda: (
-            []
-            if view.attached
-            else [(task, _aliases(frontmatter)) for task, frontmatter in _done_tasks(root, made.roles.done)]
-        ),
     }
     final = Board(
         **{

@@ -2595,7 +2595,7 @@ class TaskActor:
         again: Callable[[], None] | None = None,
         session: str = "",
     ) -> Written:
-        # the board-files pass finds the lane recorded under the actor; no other task's write holds this one up
+        # the lane is recorded under the actor; no other task's write holds this one up
         with self._feed.recording_of(name):
             written = self._edit_retrying(name, changes, comment, over, again)
             if written.ok and written.lane:
