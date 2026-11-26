@@ -200,12 +200,14 @@ def default_starters(
     def board(own: threading.Event) -> Callable[[], None]:
         from starpulse.board.bin import board_worker
         from starpulse.event_log.readmodel.snapshot_store import SnapshotStore
+        from starpulse.runtime.store_refold import spawn
         from starpulse.runtime.writer_followers import feed_followers
         from starpulse.views.model.encoding import encode_snapshot
 
         return board_worker.start(
             config, path, base, log, own, load=load, assemble=assemble, history_store=history_store, follow=follow,
-            followers=feed_followers(adapters), ready=shared.publish, snapshots=SnapshotStore(log.engine, encode_snapshot), go=go,
+            followers=feed_followers(adapters), refold=spawn, ready=shared.publish,
+            snapshots=SnapshotStore(log.engine, encode_snapshot), go=go,
         )  # fmt: skip
 
     def scheduler(own: threading.Event) -> Callable[[], None]:

@@ -34,6 +34,7 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "github": _lazy("starpulse.cli.github_inbox"),
     "worker": _lazy("starpulse.runtime.worker"),
     "migrate": _lazy("starpulse.runtime.store_migrate"),
+    "refold": _lazy("starpulse.runtime.store_refold"),
     "parity": _lazy("starpulse.runtime.parity"),
     "rehearse": _lazy("starpulse.runtime.rehearse"),
     "import-history": _lazy("starpulse.runtime.history_import"),

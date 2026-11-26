@@ -13,7 +13,7 @@ from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.readmodel import rows, task_uuid
 from starpulse.event_log.readmodel.fold import Row, apply
 from starpulse.event_log.readmodel.machine_fold import Placer, event_of
-from starpulse.event_log.readmodel.tables import READ_MODEL_TABLES, machine_tasks
+from starpulse.event_log.readmodel.tables import MACHINE_TABLES, TASK_TABLES, machine_tasks
 from starpulse.event_log.store import EventStore, StoredEvent
 from starpulse.event_log.table_registry import definition, is_stamped, stamp_of, swap, write_stamp
 
@@ -30,11 +30,19 @@ SEARCH_CHECKPOINT = "read-model:search-comments"
 #: The states in which a task has finished, as the search index dates it.
 _FINISHED = frozenset({"done", "archived"})
 BATCH = 500
+#: The two table families, each with its own stamp, so a change to one refolds only that one.
 FAMILY = "read_model"
-#: What folds an event into a row: an edit to any of these sources refolds the read model.
-CODE_HASH = hashlib.sha256(
-    b"".join((Path(__file__).parent / name).read_bytes() for name in ("fold.py", "machine_fold.py", "projector.py", "rows.py"))
-).hexdigest()
+MACHINE_FAMILY = "read_model_machines"
+_CHECKPOINTS = {FAMILY: CHECKPOINT, MACHINE_FAMILY: MACHINE_CHECKPOINT}
+
+
+def _hash(*names: str) -> str:
+    return hashlib.sha256(b"".join((Path(__file__).parent / name).read_bytes() for name in names)).hexdigest()
+
+
+#: What folds an event into a task row, and into a machine row: an edit to any of these sources refolds that family.
+CODE_HASH = _hash("fold.py", "projector.py", "rows.py")
+MACHINE_CODE_HASH = _hash("machine_fold.py", "projector.py")
 
 
 class SearchIndex(Protocol):
@@ -100,37 +108,62 @@ class Projector:
             self._index_changed()
 
     def stamp(self) -> str:
-        """The stamp of the read model: its table definitions, the fold's code and what places a machine event."""
+        """The stamp of the whole read model, which the stored snapshots follow."""
+        return stamp_of(*self._stamps().values())
+
+    def _stamps(self) -> dict[str, str]:
+        """Each family's stamp: its table definitions, the code that folds into it and, for machine rows, what places an event."""
         placed = self._placer.fingerprint() if self._placer else ""
-        return stamp_of(definition(READ_MODEL_TABLES), CODE_HASH, placed)
+        return {
+            FAMILY: stamp_of(definition(TASK_TABLES), CODE_HASH),
+            MACHINE_FAMILY: stamp_of(definition(MACHINE_TABLES), MACHINE_CODE_HASH, placed),
+        }
+
+    def stale(self) -> list[str]:
+        """The families whose tables were folded under another stamp than this code's."""
+        with self._engine.connect() as db:
+            return [family for family, stamp in self._stamps().items() if not is_stamped(db, family, stamp)]
 
     def build(self) -> int:
-        """Rebuild the read model when it was not folded under this stamp, else fold what is new; the number of Events
-        folded. A store that predates the stamp, or one opened under edited machines or fold code, is rebuilt; a second
-        call under the same stamp changes nothing."""
-        with self._engine.connect() as db:
-            folded = is_stamped(db, FAMILY, self.stamp())
-        return self.catch_up() if folded else self.rebuild()
+        """Fold what is new, first replacing each family the store never folded; the number of Events folded.
 
-    def rebuild(self) -> int:
-        """Replace the read model with one folded from the whole History; the number of Events folded.
+        A family folded under another stamp is left as it is, serving, for `refold` to replace: a deploy's migration
+        waits on no replay of the History.
+        """
+        never = [family for family in self.stale() if self._checkpoints.load(_CHECKPOINTS[family])[0] is None]
+        return self.rebuild(never) if never else self.catch_up()
+
+    def refold(self, only: Sequence[str] | None = None) -> list[str]:
+        """Replace each family (of `only`, when given) folded under another stamp, the old rows serving until the swap;
+        the families replaced."""
+        stale = [family for family in self.stale() if only is None or family in only]
+        if stale:
+            self.rebuild(stale)
+        return stale
+
+    def rebuild(self, families: Sequence[str] = (FAMILY, MACHINE_FAMILY)) -> int:
+        """Replace `families` with tables folded from the whole History; the number of Task Events folded.
 
         The rows are folded in memory while writers carry on. The write lock is taken only to swap them in, with the
         tables created again from their metadata, the fold cursors at the end of the fold and the stamp, so a reader sees
         the old rows or the new, never an empty or missing table. A stop inside the fold changes nothing; the Events
         recorded meanwhile are folded after the swap. Consumer cursors keep their place.
         """
-        tasks_held, position, folded = self._replay_tasks()
-        machines_held, last = self._replay_machines()
-        stamp = self.stamp()
+        tasks_held, position, folded = self._replay_tasks() if FAMILY in families else ({}, 0, 0)
+        machines_held, last = self._replay_machines() if MACHINE_FAMILY in families else ({}, 0)
+        stamps = self._stamps()
         with self._engine.begin() as db:
-            swap(db, FAMILY, READ_MODEL_TABLES)
-            rows.save_all(db, tasks_held.values())
-            self._save_machines(db, machines_held)
-            self._checkpoints.save(CHECKPOINT, position, conn=db)
-            self._checkpoints.save(MACHINE_CHECKPOINT, last, conn=db)
-            self._checkpoints.save(SEARCH_CHECKPOINT, 0, conn=db)
-            write_stamp(db, FAMILY, stamp)
+            if FAMILY in families:
+                swap(db, FAMILY, TASK_TABLES)
+                rows.save_all(db, tasks_held.values())
+                self._checkpoints.save(CHECKPOINT, position, conn=db)
+                self._checkpoints.save(SEARCH_CHECKPOINT, 0, conn=db)
+                write_stamp(db, FAMILY, stamps[FAMILY])
+            if MACHINE_FAMILY in families:
+                swap(db, MACHINE_FAMILY, MACHINE_TABLES)
+                self._save_machines(db, machines_held)
+                self._checkpoints.save(MACHINE_CHECKPOINT, last, conn=db)
+                write_stamp(db, MACHINE_FAMILY, stamps[MACHINE_FAMILY])
         self.catch_up()
         return folded
 

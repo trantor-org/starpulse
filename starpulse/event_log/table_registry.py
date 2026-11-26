@@ -30,7 +30,8 @@ def _t(*names: str) -> tuple[str, ...]:
 
 
 FAMILIES: dict[str, Family] = {
-    "read_model": Family(_t("tasks", "task_criteria", "machine_tasks", "board_keys"), _t("events", "machine_events")),
+    "read_model": Family(_t("tasks", "task_criteria", "board_keys"), _t("events")),
+    "read_model_machines": Family(_t("machine_tasks"), _t("machine_events")),
     "snapshots": Family(_t("snapshots", "snapshot_deltas"), _t("tasks")),
     "task_spend": Family(_t("task_sessions", "task_phase_spend"), _t("signal_folds")),
 }

@@ -181,12 +181,13 @@ def main(argv: list[str] | None = None) -> None:
         from starpulse.board.bin import board_worker
         from starpulse.runtime.assembly import assemble
         from starpulse.runtime.read_model_follow import follow
+        from starpulse.runtime.store_refold import spawn
         from starpulse.runtime.wiring import run_adapters
         from starpulse.runtime.writer_followers import feed_followers
 
         return board_worker.main(
             argv, parser, **loader, assemble=assemble, history_store=history_store, follow=follow,
-            followers=lambda parser, config: feed_followers(run_adapters(parser, config)), hold=hold,
+            followers=lambda parser, config: feed_followers(run_adapters(parser, config)), hold=hold, refold=spawn,
         )  # fmt: skip
     from starpulse.event_log.child_cpu import keep_process
     from starpulse.pulls.bin import pulls_worker

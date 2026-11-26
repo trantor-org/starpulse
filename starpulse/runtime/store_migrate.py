@@ -98,8 +98,9 @@ def maintain(
 
     With a `base` (the config's directory) it also imports the operator files found there, and in `state_dir` under it.
     With `fold` (the `starpulse migrate` run, the only writer besides the Board child) it folds the Task History and the
-    `machine:events` the store holds into the read model, placing machine tasks with `keys`; the read model and the
-    stored snapshot, and the summaries, are rebuilt first when their stamp differs.
+    `machine:events` the store holds into the read model, placing machine tasks with `keys`; a family never folded is
+    built first, and a family stamped under other code is left to the Board writer's `starpulse refold`. The stored
+    snapshot and the summaries are rebuilt when their stamp differs.
     """
     engine = store_engine(url)
     try:

@@ -70,6 +70,8 @@ class Upcasters:
 
     def apply(self, event: StoredEvent) -> StoredEvent:
         """`event` read at the newest schema version the registered steps reach."""
+        if (event.type, event.schema_version) not in self._steps:
+            return event
         version, payload = event.schema_version, dict(event.payload)
         while (step := self._steps.get((event.type, version))) is not None:
             payload, version = step(payload), version + 1

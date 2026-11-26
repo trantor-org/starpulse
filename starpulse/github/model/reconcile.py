@@ -30,7 +30,7 @@ def epoch(stamp: str) -> float:
     return datetime.fromisoformat(stamp).timestamp()
 
 
-def redeliveries(attempts: Iterable[dict[str, Any]], held: set[str]) -> list[int]:
+def redeliveries(attempts: Iterable[dict[str, Any]], held: set[str]) -> list[dict[str, Any]]:
     """The attempt to redeliver for each GUID in `attempts` that is not in `held`: its newest, unless one of its attempts
     was answered 2xx, which the listener gives only to a delivery it saved or chose to ignore. A failed redelivery is
     asked again: it is a new attempt past the pass's cursor, so the GUID is asked again each pass until one attempt is
@@ -39,7 +39,7 @@ def redeliveries(attempts: Iterable[dict[str, Any]], held: set[str]) -> list[int
     for attempt in attempts:
         by_guid.setdefault(attempt["guid"], []).append(attempt)
     return [
-        max(tries, key=lambda attempt: epoch(attempt["delivered_at"]))["id"]
+        max(tries, key=lambda attempt: epoch(attempt["delivered_at"]))
         for guid, tries in by_guid.items()
         if guid not in held and not any(200 <= attempt["status_code"] < 300 for attempt in tries)
     ]
