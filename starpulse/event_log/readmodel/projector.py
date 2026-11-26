@@ -200,13 +200,15 @@ class Projector:
         position = position or 0
         folded = 0
         while batch := self._store.read_after("task", position, BATCH):
-            position = batch[-1].position
-            folded += len(batch)
             folded_rows: dict[str, tuple[Row | None, int]] = {}
             with self._engine.begin() as db:
+                if (self._checkpoints.load(CHECKPOINT, conn=db)[0] or 0) != position:
+                    break  # a refold swapped the rows since this batch was read: the next pass folds from the swap's cursor
                 self._fold(batch, folded_rows, lambda task: rows.load_at(db, task))
                 rows.save_all(db, folded_rows.values())
+                position = batch[-1].position
                 self._checkpoints.save(CHECKPOINT, position, conn=db)
+            folded += len(batch)
         return folded
 
     def fold_machines(self) -> None:

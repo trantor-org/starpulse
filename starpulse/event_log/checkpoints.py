@@ -19,12 +19,17 @@ class Checkpoints:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
 
-    def load(self, name: str, model: type[BaseModel] | None = None) -> tuple[int | None, BaseModel | None]:
+    def load(
+        self, name: str, model: type[BaseModel] | None = None, *, conn: Connection | None = None
+    ) -> tuple[int | None, BaseModel | None]:
         """The position last saved for `name` and, when `model` is given and the saved state is one it can read, the
-        snapshot; (None, None) when nothing was saved. Raises when the database does."""
+        snapshot; (None, None) when nothing was saved. `conn` reads inside the caller's transaction. Raises when the
+        database does."""
         c = checkpoints.c
-        with self.engine.connect() as db:
-            row = db.execute(select(c.position, c.state).where(c.name == name)).first()
+        if conn is None:
+            with self.engine.connect() as db:
+                return self.load(name, model, conn=db)
+        row = conn.execute(select(c.position, c.state).where(c.name == name)).first()
         if row is None:
             return None, None
         if model is None or row.state is None:
