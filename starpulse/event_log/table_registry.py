@@ -96,13 +96,17 @@ def write_stamp(db: Connection, family: str, stamp: str) -> None:
     db.execute(insert(settings).values(key=_key(family), value=stamp, updated_at=time.time()))
 
 
+def stamped(engine: Engine, family: str, tables: Sequence[Table], *inputs: str) -> bool:
+    """Whether the family holds the stamp of the definition of `tables` and `inputs`."""
+    with engine.connect() as db:
+        return is_stamped(db, family, stamp_of(definition(tables), *inputs))
+
+
 def empty_unless_stamped(engine: Engine, family: str, tables: Sequence[Table], *inputs: str) -> None:
     """Create `tables` again, empty, unless the family holds the stamp of their definition and `inputs`: a family whose
     owner fills it again as it runs. A family stamped so is left as it is."""
-    stamp = stamp_of(definition(tables), *inputs)
-    with engine.connect() as db:
-        if is_stamped(db, family, stamp):
-            return
+    if stamped(engine, family, tables, *inputs):
+        return
     with engine.begin() as db:
         swap(db, family, tables)
-        write_stamp(db, family, stamp)
+        write_stamp(db, family, stamp_of(definition(tables), *inputs))

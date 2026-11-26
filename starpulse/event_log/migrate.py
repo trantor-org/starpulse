@@ -30,6 +30,7 @@ __all__ = [
     "migrate",
     "migrate_chain",
     "require_migrated",
+    "settled",
 ]
 
 #: Resolved at import: a release switch moving `current` under a running worker never changes the chain it checks.
@@ -87,6 +88,12 @@ def _ahead(recorded: str | None) -> bool:
 def _settled(db: Connection) -> bool:
     """Whether `migrate` has nothing to do: the store is at the head and holds no reader floor table."""
     return _recorded(db) == _head() and not inspect(db).has_table(_FLOOR_TABLE)
+
+
+def settled(engine: Engine) -> bool:
+    """Whether `migrate` would change nothing on the store `engine` opens, which it reads without writing."""
+    with engine.connect() as db:
+        return _settled(db)
 
 
 def _refusal(engine: Engine, recorded: str | None) -> StoreNotMigrated:

@@ -25,10 +25,11 @@ lazy from sqlalchemy.engine import make_url
 
 lazy from starpulse.board.adapters import history_window
 lazy from starpulse.event_log.event_log import EventLog, store_engine
-lazy from starpulse.event_log.migrate import migrate
+lazy from starpulse.event_log.migrate import migrate, settled as at_head
 lazy from starpulse.event_log.opening import database_url
 lazy from starpulse.event_log.readmodel.projector import Projector
 lazy from starpulse.event_log.readmodel.snapshot_store import build as build_snapshots
+lazy from starpulse.event_log.readmodel.snapshot_store import built as snapshots_built
 lazy from starpulse.event_log.store import EventStore
 lazy from starpulse.event_log.tables import scheduler_runs
 lazy from starpulse.github.adapters.outbound.carry_over import carry_over
@@ -36,7 +37,7 @@ lazy from starpulse.runtime.assembly import declared
 lazy from starpulse.runtime.config import ConfigError, discover, load
 lazy from starpulse.scheduler.model import ledger, toggle
 
-__all__ = ["RETIRED_SUFFIX", "main", "maintain"]
+__all__ = ["RETIRED_SUFFIX", "main", "maintain", "settled"]
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +48,14 @@ INBOX_CARRIED = "github_inbox_carried"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Migrate the store the config names, import its old files and build its summaries; 0 once it is at the head."""
+    """Migrate the store the config names, import its old files and build its summaries; 0 once it is at the head.
+
+    With `--check` it migrates nothing and exits 0 when `settled`, else 1.
+    """
     parser = argparse.ArgumentParser(prog="starpulse migrate", description="bring the store to its current schema")
     parser.add_argument("--config", type=Path, help="the TOML config the server runs with (default starpulse.toml)")
+    parser.add_argument("--check", action="store_true", help="migrate nothing: exit 0 when the store needs no migrate, else 1")
     args = parser.parse_args(argv)
-
 
     logging.basicConfig(level=logging.INFO)
     path = discover(args.config)
@@ -65,6 +69,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, ValueError) as exc:
         parser.error(f"the board does not assemble: {exc}")
     url = database_url(config.database_url, base)
+    shown = make_url(url).render_as_string(hide_password=True)
+    if args.check:
+        done = settled(url, machines, keys=board.keys)
+        print(json.dumps({"store": shown, "settled": done}))
+        return 0 if done else 1
     maintain(
         url,
         machines,
@@ -75,8 +84,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         fold=True,
         inbox_files=config.github.inbox_files if config.github else None,
     )
-    print(json.dumps({"store": make_url(url).render_as_string(hide_password=True)}))
+    print(json.dumps({"store": shown}))
     return 0
+
+
+def settled(url: str, machines: Mapping[str, dict], *, keys: TaskKeys | None = None) -> bool:
+    """Whether `maintain` has nothing to change: the store is at the chain's head and every read-model family and the
+    stored snapshot hold the stamp of this code and these machines. It writes nothing, and reads no stamp of a store
+    behind the head, which may hold none of the tables."""
+    engine = store_engine(url)
+    try:
+        if not at_head(engine):
+            return False
+        projector = Projector(engine, EventStore(engine), drawn=machines, keys=keys)
+        return not projector.stale() and snapshots_built(engine, projector.stamp())
+    finally:
+        engine.dispose()
 
 
 def maintain(

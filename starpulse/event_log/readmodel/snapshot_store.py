@@ -11,7 +11,7 @@ from sqlalchemy import Connection, Engine, delete, func, insert, select, update
 
 from starpulse.event_log.event_log import unpooled_engine
 from starpulse.event_log.readmodel.tables import SNAPSHOT_TABLES, snapshot_deltas, snapshots
-from starpulse.event_log.table_registry import empty_unless_stamped
+from starpulse.event_log.table_registry import empty_unless_stamped, stamped
 
 #: The deltas kept behind the stored sequence, so a page that read the snapshot a moment ago still replays what followed;
 #: a cursor older than that reads a fresh snapshot.
@@ -69,6 +69,11 @@ def build(engine: Engine, read_model: str) -> None:
     """Empty the stored snapshot and its deltas when they were not stored under this definition and read-model stamp: the
     Board writer stores a snapshot again at its start. One stored under them is left as it is."""
     empty_unless_stamped(engine, "snapshots", SNAPSHOT_TABLES, read_model)
+
+
+def built(engine: Engine, read_model: str) -> bool:
+    """Whether the stored snapshot is the one `build` leaves: stored under this definition and read-model stamp."""
+    return stamped(engine, "snapshots", SNAPSHOT_TABLES, read_model)
 
 
 class SnapshotStore:
