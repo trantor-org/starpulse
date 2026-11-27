@@ -52,6 +52,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
+from starpulse.harness_telemetry.model.harness import WOKE
 from starpulse.board.adapters.holder_idle import DISPATCHED, HARNESS_MACHINE, HolderInGrace, HolderUnreachable
 from starpulse.board.model import criteria
 from starpulse.board.model.acceptance import open_criteria, resolved
@@ -441,6 +442,8 @@ class TaskActor:
         self._wall = wall
         #: When each holder's last nudge was sent, so a settle that came before it is not nudged again.
         self._nudged: dict[str, float] = {}
+        #: The holders the raw tail last saw at work, never the read model, whose fold can lag a settle the tail reads.
+        self._awake: set[str] = set()
         #: The lanes that wait on the service level expectation.
         self._timed_lanes = {lane for lane, facts in waits.items() if "overdue" in facts}
         #: When each timed task's deadline falls, if still ahead; a fired one derives its task again.
@@ -1745,6 +1748,11 @@ class TaskActor:
         with self._lock:
             return self._nudged.get(name, 0.0) >= at
 
+    def session_moved(self, name: str, event: str) -> None:
+        """The tail read harness `event` for `name`'s session: it is at work after a wake and until it stops, settles or ends."""
+        with self._lock:
+            (self._awake.add if event in WOKE else self._awake.discard)(name)
+
     def holder_settled(self, name: str, wait_ended: bool = False) -> None:
         """A session settled. A holder whose task has an open criterion (neither checked nor struck through) is nudged by
         `_nudge`, pull request or not. Any other In Progress task, a no-pull-request one included, whose holder is not busy (`confirm`) and that no event is awaited on
@@ -1770,7 +1778,7 @@ class TaskActor:
                 return
             if self._idle is None or agent.get("frozen"):  # a frozen task's session is halted, never idle
                 return
-            if wait_ended and self._session_active(name):
+            if wait_ended and name in self._awake:
                 self._memory.keep(name, resumes=None)
                 return
             if self._awaits(agent):
@@ -1879,7 +1887,7 @@ class TaskActor:
             if self._idle is None or agent.get("frozen"):
                 self._unwant(name)
                 return
-            if wait_ended and self._session_active(name):
+            if wait_ended and name in self._awake:
                 return
             items = agent.get("criteria", ())
             opened = open_criteria(items)
@@ -2099,10 +2107,6 @@ class TaskActor:
         with self._lock:
             self._memory.keep(name, resumes=self._memory.tally(progress, _ONE_TRY))
 
-    def _session_active(self, name: str) -> bool:
-        placed = self._feed.machine_task(HARNESS_MACHINE, name)
-        return bool(placed) and placed["state"] == "active"
-
     def _confirmed(self, name: str) -> bool:
         try:
             self._idle(name, "confirm")
@@ -2114,7 +2118,8 @@ class TaskActor:
                     self._deadlines.arm(_GRACE + name, self._wall() + _GRACE_S)
             return False
         with self._lock:
-            return not self._session_active(name)  # a settle read after the session woke again: its next settle comes
+            # a deferred settle (busy, grace, admission, an ended wait) run after the session woke again: its next settle comes
+            return name not in self._awake
 
     def _nudge_sent(self, name: str) -> bool:
         """Send the holder's nudge, once: one that fails is the holder's loss, which `_nudge_failed` answers, since a

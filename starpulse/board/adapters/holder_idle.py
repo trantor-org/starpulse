@@ -101,11 +101,12 @@ def follow_holder_idle(
     closed: Callable[[], list[str]] = list,
     covered: Callable[[str, float], bool] = lambda _task, _at: False,
     parked: Callable[[], list[str]] = list,
+    session: Callable[[str, str], None] = lambda _task, _event: None,
 ) -> threading.Thread:
     """Call `settled` with the task of each session that settles, and `entered` (`settled` when none) with each task
     moved from a parked lane to In Progress, after this call, within the event's own latency; call `ended` with the task
     of each session whose process ends, `lease_ended` first with that task and the session, `dispatched` with the task and
-    session of each dispatch, and `moved` with each task and the lane it entered. The mover may not be the holder, which settled when it
+    session of each dispatch, `session` with the task and event of each harness event first, in the tail's order (and with each looked-up task's newest one), and `moved` with each task and the lane it entered. The mover may not be the holder, which settled when it
     parked the task and settles no more, so the move is the only event that tells it. A task parked before this call
     and moved after a server restart is seen when `parked` names it: the lane map starts with those tasks in a parked lane.
 
@@ -131,7 +132,10 @@ def follow_holder_idle(
                 (entered or settled)(task)
             lanes[task] = lane
             moved(task, lane)
-        elif task := _task_of(entry, SETTLED):
+            return
+        if task := _task_of(entry, entry.fields.get("event")):
+            session(task, entry.fields["event"])
+        if task := _task_of(entry, SETTLED):
             if not covered(task, entry.at):
                 settled(task)
         elif task := _task_of(entry, DISPATCHED):
@@ -156,6 +160,8 @@ def follow_holder_idle(
             for task in parked():
                 lanes.setdefault(task, "needs_attention")
             newest = {task: _newest(log.engine, task, started) or ("", {}) for task in [*tasks, *shut, *unstarted()]}
+            for task, (event, _) in newest.items():
+                session(task, event)  # a session at work before this call reads awake until its next harness event
             for task in [task for task in tasks if newest[task][0] == SETTLED]:
                 settled(task)
             for task in [task for task in shut if newest[task][0] not in ("", ENDED)]:
