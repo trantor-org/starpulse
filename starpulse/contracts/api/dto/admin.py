@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue, StrictInt
 
-from starpulse.contracts.api._base import _Api
+from starpulse.contracts.api._base import _Api, _Request
 from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 
 Scale = Annotated[
@@ -26,11 +26,11 @@ class Display(_Api):
     clock: Clock = "24"
 
 
-class PackSource(_Api):
+class PackSource(_Request):
     label: str
 
 
-class Pack(_Api):
+class Pack(_Request):
     """A color pack as the page builds it: `c` the role colors, `r` each role's derivation (a color, or a mix of two derivations), `x` any extra tokens."""
 
     name: str
@@ -41,14 +41,14 @@ class Pack(_Api):
     x: dict[str, str] | None = None
 
 
-class SavedPack(_Api):
+class SavedPack(_Request):
     """A color pack an operator imported."""
 
     id: str
     pack: Pack
 
 
-class SavedBg(_Api):
+class SavedBg(_Request):
     """A background an operator imported; `n` is its neutral colors by name."""
 
     id: str
@@ -56,7 +56,7 @@ class SavedBg(_Api):
     n: dict[str, str]
 
 
-class Theme(_Api):
+class Theme(_Request):
     """The color pack and background every device draws in, built in or imported; a write replaces the whole theme."""
 
     pack: str = Field(default="starpulse", description="The id of a built-in pack or of one in `packs`.")

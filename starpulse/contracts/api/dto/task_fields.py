@@ -3,7 +3,7 @@
 import re
 from typing import Annotated, NotRequired, TypedDict
 
-from pydantic import AfterValidator, ConfigDict, JsonValue, StrictBool, StringConstraints, WithJsonSchema
+from pydantic import AfterValidator, ConfigDict, JsonValue, StrictBool, StringConstraints, ValidationInfo, WithJsonSchema
 
 from starpulse.contracts.api.dto.brief import Brief
 from starpulse.contracts.doc_links import PATTERN, doc_link
@@ -18,15 +18,23 @@ DocLink = Annotated[
 ]
 
 
-def _title(value: str) -> str:
-    if re.search(r"\bTASK-\d+\b", value):
-        raise ValueError("names no TASK-N: link a related task with a dependency")
+#: The task key a title may not name when the validation context gives no board's `keys`: a native board's default.
+_DEFAULT_KEY = re.compile(r"task-\d+(?:\.\d+)*", re.I)
+
+
+def _title(value: str, info: ValidationInfo) -> str:
+    keys = (info.context or {}).get("keys")
+    key = keys.key if keys is not None else _DEFAULT_KEY
+    if match := re.search(rf"\b(?:{key.pattern})\b", value, key.flags):
+        named = match.group().rsplit("-", 1)[0].upper()
+        raise ValueError(f"names no {named}-N: link a related task with a dependency")
     if re.search(r"<[\w -]+>", value):
         raise ValueError("keeps no <placeholder>: name the outcome")
     return value
 
 
-#: A task title: one to 80 characters naming the outcome, with no `TASK-N` and no `<placeholder>`.
+#: A task title: one to 80 characters naming the outcome, with no key of the board's tasks (`TASK-N` on a native board,
+#: else the prefix of the `keys` the validation context names) and no `<placeholder>`.
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80), AfterValidator(_title)]
 
 

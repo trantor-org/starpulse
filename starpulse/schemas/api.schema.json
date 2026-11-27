@@ -5606,6 +5606,7 @@
       "type": "object"
     },
     "Pack": {
+      "additionalProperties": false,
       "description": "A color pack as the page builds it: `c` the role colors, `r` each role's derivation (a color, or a mix of two derivations), `x` any extra tokens.",
       "properties": {
         "c": {
@@ -5669,6 +5670,7 @@
       "type": "object"
     },
     "PackSource": {
+      "additionalProperties": false,
       "properties": {
         "label": {
           "type": "string"
@@ -6176,6 +6178,7 @@
       "type": "object"
     },
     "QuietHours": {
+      "additionalProperties": false,
       "description": "A daily window in which the scheduler admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before\n`start` runs past midnight.",
       "properties": {
         "end": {
@@ -7350,6 +7353,7 @@
       "type": "object"
     },
     "SavedBg": {
+      "additionalProperties": false,
       "description": "A background an operator imported; `n` is its neutral colors by name.",
       "properties": {
         "id": {
@@ -7374,6 +7378,7 @@
       "type": "object"
     },
     "SavedPack": {
+      "additionalProperties": false,
       "description": "A color pack an operator imported.",
       "properties": {
         "id": {
@@ -9008,6 +9013,7 @@
       "type": "object"
     },
     "Theme": {
+      "additionalProperties": false,
       "description": "The color pack and background every device draws in, built in or imported; a write replaces the whole theme.",
       "properties": {
         "bg": {

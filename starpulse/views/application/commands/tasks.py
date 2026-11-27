@@ -4,7 +4,7 @@ import contextlib
 import logging
 import re
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from sqlalchemy.exc import OperationalError
 
@@ -59,9 +59,6 @@ from starpulse.views.application.commands.moves import (
     started_refusal,
 )
 from starpulse.views.application.commands.replays import Replays
-
-if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -434,7 +431,7 @@ def _create(
     return 201, {"task": written.output, **({"unblocked": unblocked} if unblocked else {})}
 
 
-@with_request(CreateRequest, "Creating a task")
+@with_request(CreateRequest, "Creating a task", context=lambda create, feed=None, duplicates=None, board=None: {"keys": getattr(board, "keys", None)})
 def create_task(
     request: CreateRequest,
     create: TaskCreator,
@@ -480,7 +477,7 @@ def _created(
     return 200, {"results": results}
 
 
-@with_request(TaskPutRequest, "Writing a task")
+@with_request(TaskPutRequest, "Writing a task", context=lambda task, feed, board, *_, **__: {"keys": getattr(board, "keys", None)})
 def put_task(
     request: TaskPutRequest,
     task: str,
@@ -521,16 +518,19 @@ def put_task(
         return _taken_over(task, take_over, feed)
     if "assignee" in request.changes:
         return _dispatched(task, request, feed, dispatch, entrypoint, live)
-    edit = EditRequest(
-        task=task,
-        base=request.base,
-        changes=request.changes,
-        comment=request.comment,
-        breakGlass=request.break_glass,
-        request_key=request.request_key,
-        actor=request.actor,
-        session=request.session,
-        harness=request.harness,
+    edit = EditRequest.model_validate(
+        {
+            "task": task,
+            "base": request.base,
+            "changes": request.changes,
+            "comment": request.comment,
+            "breakGlass": request.break_glass,
+            "request_key": request.request_key,
+            "actor": request.actor,
+            "session": request.session,
+            "harness": request.harness,
+        },
+        context={"keys": getattr(board, "keys", None)},
     )
     return _REPLAYS.run(request.request_key, lambda: _edited(edit, feed, board.read, board.edit, started=started, entrypoint=entrypoint))
 

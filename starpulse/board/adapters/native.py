@@ -670,6 +670,12 @@ def _text(field: str, value: Any) -> str:
     return value.strip()
 
 
+def _texts(field: str, value: Any) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{field} must be a list of text")
+    return value
+
+
 def _marked(body: str, marker: str, heading: str, inner: str, *, after: str = "") -> str:
     """`body` with the section between `marker`'s comments holding `inner`, which a body without the section gets appended."""
     section = re.compile(rf"(<!-- {marker}:BEGIN -->).*?(<!-- {marker}:END -->)", re.S)
@@ -779,8 +785,7 @@ def _set_front(frontmatter: dict, field: str, value: Any, spelled: Mapping[str, 
         if not frozen:
             del frontmatter["frozen"]
     elif field in _LISTS:
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise ValueError(f"{field} must be a list of text")
+        _texts(field, value)
         key = _LISTS[field]
         items = [item.strip() for item in value if item.strip()]
         frontmatter[key] = list(dict.fromkeys(items)) if key == "references" else items  # a task cites a reference once
@@ -1454,6 +1459,17 @@ _NEW_TASK_DETAILS = {
 }
 
 
+#: The details `_new_task` writes as lists of text; each other detail it writes is text.
+_NEW_TASK_LISTS = {"labels", "dependencies", "acceptanceCriteria"}
+
+
+def _check_new_task(details: Mapping[str, Any]) -> None:
+    for field in _NEW_TASK_DETAILS & details.keys():
+        if (value := details[field]) is None:
+            continue
+        (_text if field not in _NEW_TASK_LISTS else _texts)(field, value)
+
+
 def _new_task(task: str, title: str, status: str, details: Mapping[str, Any]) -> str:
     """A new task file as Backlog.md writes one: its front matter, then its Description and Acceptance Criteria."""
     frontmatter: dict[str, Any] = {"id": task, "uuid": item_uuid.mint(), "title": title, "status": status}
@@ -1515,9 +1531,10 @@ def _creator(
             write_steps.step("lock")
             task = _next_id(shelf.view, config.prefix, retired)
             write_steps.step("allocate")
-            frontmatter, body = _split(_new_task(task, title, config.statuses[0], details))
             rest = {field: value for field, value in details.items() if field not in _NEW_TASK_DETAILS}
             try:
+                _check_new_task(details)
+                frontmatter, body = _split(_new_task(task, title, config.statuses[0], details))
                 body = _apply(task, frontmatter, body, link(rest), spelled)
                 write_steps.step("apply")
                 landed = _land(shelf, task, None, 0, _stamped(shelf, frontmatter, created=True), body, guard, actor)

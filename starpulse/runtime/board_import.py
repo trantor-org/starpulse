@@ -6,8 +6,9 @@ Each Task the store's lane history names becomes `TaskImported` of the board's r
 `Transitioned` Events; each recorded run entry becomes an Event of its run's stream (`starpulse.board.adapters.board_import`).
 It prints one JSON line, the verification report: `tasks`, `imported`, `equal`, `differing` (task to the fields whose
 replay differs), `gaps` (tasks whose lane history ends elsewhere than the board does, imported as the board shows them),
-`reconciled` (tasks whose History fell behind their file, given one `FieldsEdited` that catches it up),
-`runs`, `runs_imported` and `verified`. The exit code is 0 when every Task replays to its record, 1 when one does not,
+`reconciled` (tasks whose History fell behind their file, given one `FieldsEdited` that catches it up), `refused`
+(tasks whose record holds an unknown field or a wrong-typed one, with why, imported not at all),
+`runs`, `runs_imported` and `verified`. The exit code is 0 when every Task replays to its record, 1 when one does not or is refused,
 and 2 for a config that cannot be read or a board that does not assemble. A second run imports nothing and verifies again.
 `--dry-run` imports into a scratch store and leaves the real one untouched. Stop `serve` first for a real run.
 """

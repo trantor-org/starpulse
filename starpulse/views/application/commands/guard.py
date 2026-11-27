@@ -135,10 +135,11 @@ type _Answer = tuple[int, Any]
 
 
 def with_request[R: BaseModel, **P](
-    model: type[R], what: str
+    model: type[R], what: str, context: Callable[..., dict[str, Any]] | None = None
 ) -> Callable[[Callable[Concatenate[R, P], _Answer]], Callable[Concatenate[str, bytes, P], _Answer]]:
     """Make a handler of a parsed `model` into a write route's: `what` is refused 403 from beyond the LAN, a body
-    `model` refuses is the one 400 `_invalid` words, and the handler takes the parsed request in the body's place."""
+    `model` refuses is the one 400 `_invalid` words, and the handler takes the parsed request in the body's place.
+    `context` reads the validation context (the board's task `keys`) from the handler's own arguments."""
 
     def decorate(handler: Callable[Concatenate[R, P], _Answer]) -> Callable[Concatenate[str, bytes, P], _Answer]:
         @functools.wraps(handler)
@@ -146,7 +147,8 @@ def with_request[R: BaseModel, **P](
             if not on_lan(source):
                 return lan_refusal(what)
             try:
-                request = model.model_validate_json(raw, strict=True)
+                read = context(*args, **kwargs) if context is not None else None
+                request = model.model_validate_json(raw, strict=True, context=read)
             except ValidationError as error:
                 return _invalid(error, model)
             return handler(request, *args, **kwargs)

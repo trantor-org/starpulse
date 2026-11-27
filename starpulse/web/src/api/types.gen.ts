@@ -291,7 +291,6 @@ export interface QuietHours {
    * The IANA zone the window's times are read in, such as America/Phoenix.
    */
   timezone: string;
-  [k: string]: unknown;
 }
 /**
  * The session cap the selected harness runs under and where it comes from.
@@ -331,7 +330,6 @@ export interface Theme {
    */
   pack?: string;
   packs?: SavedPack[];
-  [k: string]: unknown;
 }
 /**
  * A background an operator imported; `n` is its neutral colors by name.
@@ -342,7 +340,6 @@ export interface SavedBg {
     [k: string]: string;
   };
   name: string;
-  [k: string]: unknown;
 }
 /**
  * A color pack an operator imported.
@@ -350,7 +347,6 @@ export interface SavedBg {
 export interface SavedPack {
   id: string;
   pack: Pack;
-  [k: string]: unknown;
 }
 /**
  * A color pack as the page builds it: `c` the role colors, `r` each role's derivation (a color, or a mix of two derivations), `x` any extra tokens.
@@ -368,11 +364,9 @@ export interface Pack {
   x?: {
     [k: string]: string;
   } | null;
-  [k: string]: unknown;
 }
 export interface PackSource {
   label: string;
-  [k: string]: unknown;
 }
 /**
  * An edit's answer: `advice` is what the board tells the mover about the task now it is edited, when it has any;

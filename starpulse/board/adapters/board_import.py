@@ -8,7 +8,9 @@ imported as the record shows it and listed in the report's `gaps`."""
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypedDict
+
+from pydantic import ConfigDict, JsonValue, TypeAdapter, ValidationError
 
 from starpulse.board.model.seam import OPERATOR
 from starpulse.board.adapters.task_history import KIND, WRITER, Record, seed
@@ -23,9 +25,68 @@ Lane = tuple[str, str, str, float]
 Run = tuple[str, dict[str, Any]]
 
 
+class _Record(TypedDict, total=False):
+    """A task file's record as the board reads one: an import refuses any other key or type."""
+
+    __pydantic_config__ = ConfigDict(extra="forbid")  # type: ignore[misc]  # pydantic reads it off a TypedDict
+    id: str
+    uuid: str
+    uuids: dict[str, JsonValue]
+    title: str
+    type: str
+    status: str
+    profile: str
+    priority: str
+    impact: str
+    urgency: str
+    tier: str
+    labels: list[str]
+    milestone: str
+    source: str
+    follows: str
+    adrNeeded: str
+    duplicateSearch: str
+    duplicateResolution: str
+    dependencies: list[str]
+    dependencyNeeds: list[str]
+    actorMemory: dict[str, JsonValue]
+    frozen: dict[str, JsonValue]
+    members: dict[str, JsonValue]
+    references: list[str]
+    documentation: list[str]
+    modifiedFiles: list[str]
+    description: str
+    start_criteria: list[dict[str, JsonValue]]
+    plan: str
+    notes: str
+    finalSummary: str
+    needsAttention: str
+    comments: list[dict[str, JsonValue]]
+    assignee: str
+    session: str
+    createdBy: str
+    aliases: list[str]
+    acceptanceCriteria: list[dict[str, JsonValue]]
+    definitionOfDone: list[dict[str, JsonValue]]
+
+
+_RECORD = TypeAdapter(_Record)
+
+
+def _refusal(record: Record) -> str | None:
+    """Why `record` is no task record, naming the first field at fault, or None."""
+    try:
+        _RECORD.validate_python(record, strict=True)
+    except ValidationError as invalid:
+        error = invalid.errors()[0]
+        return f"{'.'.join(map(str, error['loc']))}: {error['msg']}"
+    return None
+
+
 @dataclass
 class Report:
-    """What the import did and whether every Task replays to its record; `broken` lists a Task whose History cannot replay."""
+    """What the import did and whether every Task replays to its record; `broken` lists a Task whose History cannot replay,
+    `refused` a Task whose record holds a field no task has or one of the wrong type, with why, imported not at all."""
 
     tasks: int = 0
     imported: int = 0
@@ -36,10 +97,11 @@ class Report:
     reconciled: list[str] = field(default_factory=list)
     runs: int = 0
     runs_imported: int = 0
+    refused: dict[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
-        return not (self.differing or self.broken)
+        return not (self.differing or self.broken or self.refused)
 
 
 def _lane_id(name: object) -> str:
@@ -111,6 +173,9 @@ def import_board(
         by_task[lane[1]].append(lane)
     report = Report(tasks=len(records))
     for task, record in records.items():
+        if refusal := _refusal(record):
+            report.refused[task] = refusal
+            continue
         try:
             _import_task(store, task, record, by_task.get(task, []), report)
             differing = _differing(store, task, record)
