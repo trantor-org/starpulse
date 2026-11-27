@@ -11,12 +11,10 @@ Its **parent** is the machine its declared tie enters it from, else the In Progr
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-__all__ = ["STUCK_S", "all_entries", "derive", "entry_inputs", "within"]
+__all__ = ["STUCK_S", "derive"]
 
 #: A task idle in a working state for longer than this (seconds) is stuck.
 STUCK_S = 7200
-#: How long before a session entered a sibling session of the same task still counts as open (seconds).
-_OPEN_S = 600
 
 
 def derive(flows: Sequence[Mapping[str, Any]], now: float) -> dict[str, dict]:
@@ -94,47 +92,6 @@ class _Ties:
         return next((t for t in self.of(child) if t["kind"] != "dag"), None)
 
 
-def _sessions(machines: Mapping[str, Mapping[str, Any]]) -> dict[str, list[tuple[str, dict]]]:
-    """Every task's sessions as (machine, session)."""
-    sessions: dict[str, list[tuple[str, dict]]] = {}
-    for name, f in machines.items():
-        for agent in f["agents"]:
-            if agent.get("task"):
-                sessions.setdefault(agent["task"], []).append((name, agent))
-    return sessions
-
-
-def _start(agent: Mapping[str, Any]) -> float:
-    trail = agent.get("trail") or []
-    return trail[0]["at"] if trail else agent.get("active", 0)
-
-
-def _state_at(agent: Mapping[str, Any], at: float) -> str | None:
-    state = None
-    for step in agent.get("trail") or []:
-        if step["at"] <= at:
-            state = step["state"]
-    return state
-
-
-def _entered_from(
-    agent: Mapping[str, Any], name: str, sessions: list[tuple[str, dict]], ip: str | None
-) -> tuple[str, str] | None:
-    """The machine and state a new session was entered from: the newest other session still open then, else the task's In Progress one."""
-    began = _start(agent)
-    others = [(m, b) for m, b in sessions if b is not agent and m != name]
-    open_ = sorted(
-        ((m, b) for m, b in others if m != ip and _start(b) <= began and b.get("active", 0) >= began - _OPEN_S),
-        key=lambda mb: -_start(mb[1]),
-    )
-    parent = open_[0] if open_ else next(((m, b) for m, b in others if m == ip), None)
-    if parent is None:
-        return None
-    machine, session = parent
-    trail = session.get("trail") or []
-    return machine, _state_at(session, began) or (trail[0]["state"] if trail else session["state"])
-
-
 def _nesting(
     machines: Mapping[str, Any], ip: str | None, leading: Mapping[str, dict | None]
 ) -> dict[str | None, str | None]:
@@ -173,73 +130,3 @@ def _activity(machines: Mapping[str, Mapping[str, Any]], names: Sequence[str], n
         "last": last,
         "stuck": None if stuck is None else {"machine": stuck[1], "state": stuck[2], "since": stuck[0]},
     }
-
-
-def _launching_dag(derived: Mapping[str, Any]) -> str | None:
-    return next((t["dag"] for t in derived["ties"] if t["kind"] == "dag"), None)
-
-
-def entry_inputs(flows: Sequence[Mapping[str, Any]], derived: Mapping[str, Mapping[str, Any]]) -> tuple:
-    """What `all_entries` reads of `flows` and `derived`: equal inputs give equal entries, whatever `now` is."""
-    shape = tuple(
-        (name, d["depth"], tuple(d["chain"][:1]), _launching_dag(d))
-        for name, d in derived.items()
-    )
-    return shape, tuple((f["name"], agent) for f in flows if f["name"] in derived for agent in f["agents"])
-
-
-def within(found: list[dict], now: float, span: float) -> list[dict]:
-    """The `found` entries of the last `span` seconds before `now`, oldest first."""
-    return [e for e in found if now - span <= e["at"] <= now]
-
-
-def all_entries(
-    flows: Sequence[Mapping[str, Any]], derived: Mapping[str, Mapping[str, Any]], known: dict | None = None
-) -> list[dict]:
-    """Every machine entry, oldest first: a session starting in a machine other than the
-    In Progress one, as `{at, machine, row, from, dag}`.
-
-    `row` is the machine on the In Progress level it lands on, so an entry into a nested machine counts on the row
-    above it. A task's session names `from` as `{machine, state}` (None when no earlier session of the task is
-    known); a session with no task is a DAG launch and names the `dag` that launches its machine.
-
-    `known` is the caller's, kept between calls: it holds each task's entries by the sessions they were drawn from, so
-    a task none of whose sessions changed is not walked again, and it is replaced by the tasks of this call.
-    """
-    machines = {f["name"]: f for f in flows if f["name"] in derived}
-    ip = next((n for n, d in derived.items() if d["depth"] == 0), None)
-    rows = {name: (derived[name]["chain"] or [name])[0] for name in machines}
-    sessions = _sessions(machines)
-    drawn: dict[str, tuple[tuple, list[dict | None]]] = {}
-    for task, found in sessions.items():
-        key = (tuple(found), ip, tuple(rows[m] for m, _ in found))
-        if known is not None and (held := known.get(task)) is not None and held[0] == key:
-            drawn[task] = held
-            continue
-        entries: list[dict | None] = []
-        for name, agent in found:
-            origin = None if name == ip else _entered_from(agent, name, found, ip)
-            entries.append(
-                None
-                if name == ip
-                else _entry(_start(agent), name, rows[name], None if origin is None else {"machine": origin[0], "state": origin[1]}, None)
-            )
-        drawn[task] = key, entries
-    found, at = [], dict.fromkeys(sessions, 0)
-    for name, f in machines.items():
-        dag = _launching_dag(derived[name])
-        for agent in f["agents"]:
-            if task := agent.get("task"):
-                entry, at[task] = drawn[task][1][at[task]], at[task] + 1  # the sessions are listed in this order
-            else:
-                entry = None if name == ip else _entry(_start(agent), name, rows[name], None, dag)
-            if entry is not None:
-                found.append(entry)
-    if known is not None:
-        known.clear()
-        known.update(drawn)
-    return sorted(found, key=lambda e: (e["at"], e["machine"]))
-
-
-def _entry(at: float, machine: str, row: str, origin: dict | None, dag: str | None) -> dict:
-    return {"at": at, "machine": machine, "row": row, "from": origin, "dag": dag}

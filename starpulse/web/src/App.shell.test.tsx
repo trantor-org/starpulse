@@ -49,7 +49,7 @@ afterEach(() => {
 describe("the page's first tree", () => {
   it("tells a first-time user how to create a task when the board is empty", () => {
     act(() => root.render(<App />));
-    act(() => held.store!.set({ tree: { states: ["To Do", "In Progress", "Done"], subs: {}, children: {} }, capabilities: { edit: true, archive: true, create: true } }));
+    act(() => held.store!.set({ tree: { states: ["To Do", "In Progress", "Done"], subs: {}, children: {} } }));
     frame();
 
     const hint = host.querySelector('[aria-label="Get started"]')?.textContent ?? "";
@@ -73,15 +73,6 @@ describe("the page's first tree", () => {
     expect(mounted('[aria-label="In Progress drill-in"]')).toBe(false);
     expect(mounted("#rail .recent")).toBe(true);
     expect(location.search).not.toContain("drill");
-  });
-
-  it("offers no create command on an empty board that cannot create a task", () => {
-    act(() => root.render(<App />));
-    // a Backlog.md board: `task create` is refused and the Kanban draws no New task
-    act(() => held.store!.set({ tree: { states: ["To Do", "In Progress", "Done"], subs: {}, children: {} }, capabilities: { edit: true, archive: true, create: false } }));
-    frame();
-
-    expect(mounted('[aria-label="Get started"]')).toBe(false);
   });
 
   it("mounts the navigator and the rail after the board-drawn mark, and keeps their frames so the canvas is sized the same", () => {

@@ -8,7 +8,7 @@ delivery on the queue's bounded backoff.
 """
 
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from starpulse.github.adapters.outbound.cursors import Cursor, SqlCursors
@@ -19,7 +19,7 @@ from starpulse.github.model.delivery import Delivery
 from starpulse.github.model.reconcile import epoch
 from starpulse.pulls.adapters.outbound.pull_events import REPORT_RESULTS, bare_detail
 from starpulse.pulls.adapters.outbound.pulls import PullStore
-from starpulse.pulls.model.required import with_missing
+from starpulse.pulls.model.required import rollup_state, with_missing
 
 __all__ = ["PULL_READS", "READ_EVENTS", "PullReads", "refresh", "settle_checks"]
 
@@ -33,6 +33,8 @@ _PAGE = 100
 _FILES_PAGES = 30
 _RULE_PAGES = 5
 _HEADS = "refs/heads/"
+#: GitHub lists at most 20 commits of a push: one with that many may have changed more paths than it names.
+_PUSH_COMMITS = 20
 
 
 class PullReads:
@@ -139,17 +141,29 @@ def _requiring(store: PullStore, record: dict[str, Any], contexts: frozenset[str
         if {check["name"] for check in checks} == {check["name"] for check in current["requiredChecks"]}:
             return {"requiredChecks": checks}
         # the rollup counted the old contexts: a newer one of the new set outvotes it in `PullStore._guarded`
-        results = {check["result"] for check in checks}
-        state = "failing" if "failing" in results else "passed" if results <= {"pass"} else "pending"
-        return {"requiredChecks": checks, "rollup": {"sha": current["headRefOid"], "state": state, "at": now}}
+        return {"requiredChecks": checks, "rollup": {"sha": current["headRefOid"], "state": rollup_state(checks), "at": now}}
 
     _amend(store, record, change)
 
 
-def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) -> None:
+def _pushed(delivery: Delivery) -> frozenset[str] | None:
+    """The paths a push to a branch changed, None when it does not list them all: a rewritten branch, a capped commit list
+    or a commit naming no path (a merge commit)."""
+    body = json.loads(delivery.body)
+    commits = body.get("commits") or []
+    if body.get("forced") or body.get("deleted") or not commits or len(commits) >= _PUSH_COMMITS:
+        return None
+    paths = [frozenset(path for key in ("added", "modified", "removed") for path in commit.get(key, ())) for commit in commits]
+    return None if not all(paths) else frozenset().union(*paths)
+
+
+def refresh(
+    store: PullStore, reads: PullReads, delivery: Delivery, now: float, burst: Sequence[Delivery] = ()
+) -> None:
     """Make the reads `delivery` names and save what they returned in the pull requests' records. Raises `LookupError` for a
     pull request delivery whose head or base the record does not hold yet, so the queue retries it once the write lands; one
-    a later delivery superseded returns with no read."""
+    a later delivery superseded returns with no read. `burst` is the earlier pushes to the same branch that this one stands
+    in for: a pull request whose files none of them changed keeps the tip its mergeability was judged at (`mergeBase`)."""
     body = json.loads(delivery.body)
     repository = delivery.repository
     if delivery.event == "pull_request":
@@ -160,7 +174,7 @@ def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) 
             if seen and epoch(pull["updated_at"]) < epoch(seen):
                 return  # a later push superseded this head: its own delivery reads the record's current one
             raise LookupError(f"{repository}#{pull['number']} does not hold the head and base this delivery names yet")
-        _put(store, record, baseOid=pull["base"]["sha"])
+        _put(store, record, baseOid=pull["base"]["sha"], mergeBase=pull["base"]["sha"])
         held = record["detail"].get("files")
         reads.files(repository, pull["number"], held, lambda files: _put(store, record, files=files))
         reads.required(repository, record["baseRefName"], force=False)
@@ -168,11 +182,18 @@ def refresh(store: PullStore, reads: PullReads, delivery: Delivery, now: float) 
             _behind(store, reads, record, record["headRefOid"], record["baseRefName"])
     elif delivery.event == "push":
         base = str(body.get("ref", "")).removeprefix(_HEADS)
+        pushes = [_pushed(push) for push in (delivery, *burst)]
+        changed = None if None in pushes else frozenset().union(*pushes)
+        records = []
         for open_pull in store.find(repository, state="OPEN"):
             if open_pull["baseRefName"] == base and open_pull["headRefOid"]:
                 record = _detailed(store, repository, open_pull["number"], now)
-                _put(store, record, baseOid=body["after"])
-                _behind(store, reads, record, record["headRefOid"], base)
+                files = record["detail"].get("files")
+                moved = changed is None or files is None or not changed.isdisjoint(files)
+                _put(store, record, baseOid=body["after"], **({"mergeBase": body["after"]} if moved else {}))
+                records.append(record)
+        for record in records:  # a read GitHub refuses fails the delivery here, after every tip is saved, so its retry judges none by less
+            _behind(store, reads, record, record["headRefOid"], base)
     elif delivery.event == "repository_ruleset":
         opened = store.find(repository, state="OPEN")
         for base in sorted({pull["baseRefName"] for pull in opened}):

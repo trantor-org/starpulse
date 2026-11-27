@@ -39,14 +39,10 @@ export interface ApiContract {
     | DeliveredElsewhere
     | UnrecognisedUrl
   )[];
-  build: BuildEvent;
   contractReport: ContractReport;
   docShown: DocShown;
   docs: Docs;
   donePage: DonePage;
-  events: (
-    TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | VerdictDelta | LedgersDelta | SchedulerStatus
-  )[];
   graphqlResponse: GraphqlResponse;
   harnesses: Harnesses;
   job: DagBody;
@@ -75,12 +71,10 @@ export interface ApiContract {
     | GraphqlRequest
     | AdminRequest
   )[];
-  restarting: RestartingEvent;
   retiredTasks: RetiredTasks;
   searchResults: SearchResults;
   snapshot: Snapshot;
   spend: Spend;
-  stale: StaleEvent;
   taskRecord: TaskRecord;
   taskRecords: TaskRecords;
   trajectories: Trajectories;
@@ -600,14 +594,6 @@ export interface UnrecognisedUrl {
   [k: string]: unknown;
 }
 /**
- * The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,
- * which names every chunk it loads by its digest. A page that holds another build than the one it is named is out of date.
- */
-export interface BuildEvent {
-  id: string;
-  [k: string]: unknown;
-}
-/**
  * The contract checks `starpulse doctor` runs; `ok` is false when any fails.
  */
 export interface ContractReport {
@@ -759,11 +745,7 @@ export interface RawTask {
   milestone?: string | null;
   model: string;
   /**
-   * A snapshot's key into its `move_sets` for the task's `moves`; absent when it has none.
-   */
-  move_set?: string | null;
-  /**
-   * The verdict on each Board column the task may move to, by state id; a snapshot names the set in `move_set` instead, and a delta carries it here.
+   * The verdict on each Board column the task may move to, by state id; a snapshot keeps it for an active task only.
    */
   moves?: {
     [k: string]: Move;
@@ -1012,57 +994,61 @@ export interface HeldNext {
   [k: string]: unknown;
 }
 /**
- * A Board task that moved (`agent` null once it left the lanes).
+ * `POST /graphql`: the data the query asked for, and the errors it met; a query the schema refuses has errors only.
  */
-export interface TaskDelta {
-  agent: RawTask | null;
-  /**
-   * On an archived task's delta, how many tasks were archived since local midnight.
-   */
-  archived_today?: number | null;
-  id: string;
-  settled: Settled | null;
+export interface GraphqlResponse {
+  data?: {
+    [k: string]: unknown;
+  } | null;
+  errors?: GraphqlError[] | null;
   [k: string]: unknown;
 }
 /**
- * A task that left the Board's lanes for good: where it settled, when, and the title, assignee, milestone and labels it settled with.
+ * One error a query met, as the GraphQL over HTTP spec names its fields.
  */
-export interface Settled {
-  at: number | null;
-  created: number | null;
+export interface GraphqlError {
   /**
-   * The labels it settled with.
+   * Machine-readable detail; `code` is `REREAD` for a lost stream position.
    */
-  labels?: string[];
-  /**
-   * The milestone it settled in; empty when it had none.
-   */
-  milestone?: string;
+  extensions?: {
+    [k: string]: unknown;
+  } | null;
+  locations?:
+    | {
+        [k: string]: number;
+      }[]
+    | null;
+  message: string;
+  path?: (string | number)[] | null;
+  [k: string]: unknown;
+}
+/**
+ * `GET /api/harnesses`: the tiers in order and each harness with its models and efforts.
+ */
+export interface Harnesses {
+  harnesses: HarnessBody[];
+  tiers: string[];
+  [k: string]: unknown;
+}
+export interface HarnessBody {
+  label: string;
+  name: string;
+  reason: string | null;
+  sessions: boolean;
+  tiers: {
+    [k: string]: HarnessTier;
+  };
+  [k: string]: unknown;
+}
+export interface HarnessTier {
+  efforts: string[];
   model: string;
-  state: string;
-  title: string;
-  [k: string]: unknown;
-}
-/**
- * A task a machine event placed on another machine.
- */
-export interface MoveDelta {
-  agent: RawTask;
-  id: string;
-  machine: string;
-  /**
-   * The names the agent's trail points index, each once.
-   */
-  names?: string[] | null;
-  [k: string]: unknown;
-}
-/**
- * A runs instance's workflows.
- */
-export interface DagsDelta {
-  dags: DagBody[];
-  error: string | null;
-  pools?: Pool[] | null;
+  models?: {
+    [k: string]: string;
+  } | null;
+  run_efforts?: {
+    [k: string]: string;
+  } | null;
   [k: string]: unknown;
 }
 /**
@@ -1339,314 +1325,6 @@ export interface Step {
   status: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
 }
 /**
- * One concurrency pool: the cap on the runs that may execute at once, and the runs holding or awaiting it.
- */
-export interface Pool {
-  /**
-   * The most runs the pool lets execute at once.
-   */
-  cap: number;
-  /**
-   * The pool's name, unique on its scheduler; a DAG's `pool` names it.
-   */
-  name: string;
-  /**
-   * The runs waiting for the pool to have room.
-   */
-  queued: number;
-  /**
-   * The runs executing on the pool now.
-   */
-  running: number;
-}
-export interface PullsDelta {
-  pulls: {
-    [k: string]: Pull[];
-  };
-  [k: string]: unknown;
-}
-/**
- * One pull request a task cites, as GitHub last answered the server.
- */
-export interface Pull {
-  /**
-   * Commits `main` holds that the PR's head lacks; null once the head branch is gone.
-   */
-  behind_main?: number | null;
-  /**
-   * The head commit's check rollup.
-   */
-  checks: "pass" | "failing" | "pending" | "none";
-  /**
-   * The PR closed without merging.
-   */
-  closed?: boolean;
-  /**
-   * The open PR conflicts with its base branch.
-   */
-  conflicting?: boolean;
-  /**
-   * The open PR is still a draft.
-   */
-  draft?: boolean;
-  /**
-   * The merge commit's SHA; null until the PR merges.
-   */
-  merge_sha: string | null;
-  merged: boolean;
-  /**
-   * When the PR merged, ISO 8601 UTC; null until it does.
-   */
-  merged_at: string | null;
-  number: number;
-  /**
-   * The open PR waits in its base branch's merge queue.
-   */
-  queued?: boolean;
-  /**
-   * The `org/repo` the PR belongs to; a number alone repeats across repositories.
-   */
-  repo: string;
-  /**
-   * Always false: nothing polls GitHub, so a record is current until a newer event lands.
-   */
-  stale: boolean;
-  /**
-   * Unresolved review threads.
-   */
-  threads: number;
-  url: string;
-  [k: string]: unknown;
-}
-export interface ClaimDelta {
-  at: number;
-  reason: string;
-  task: string;
-  [k: string]: unknown;
-}
-/**
- * One qa lens's verdict on a task, as the ingest took it.
- */
-export interface VerdictDelta {
-  at: number;
-  lens: string;
-  outcome: "PASS" | "CHANGES";
-  reason: string;
-  round: number;
-  task: string;
-  [k: string]: unknown;
-}
-/**
- * The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open
- * reads the `occurrenceChanges` subscription on `POST /graphql`.
- */
-export interface LedgersDelta {
-  mergePins: LedgerRow[];
-  mergeStrip: MergeStrip | null;
-  [k: string]: unknown;
-}
-/**
- * One merge occurrence: its pull request and commit, the runs paired with it by DAG, and, for another repository's
- * merge, the parent merge that pinned it.
- */
-export interface LedgerRow {
-  /**
-   * The parent merge's key whose pin bump applied this one; null until one has; absent on a merge of the main repository.
-   */
-  appliedBy?: string | null;
-  applies?: string[] | null;
-  /**
-   * Epoch seconds the merge landed.
-   */
-  at: number;
-  fails: {
-    [k: string]: LedgerFail;
-  };
-  key: string;
-  pinned: boolean;
-  pr?: LedgerPull | null;
-  runs: {
-    [k: string]: LedgerRun;
-  };
-  sha?: string | null;
-  tasks: string[];
-  [k: string]: unknown;
-}
-/**
- * A failed run of a cue the merge row holds open: the step it stopped at, and how the failure clears.
- */
-export interface LedgerFail {
-  finishedAt: string;
-  resolved: LedgerResolved | null;
-  resolves: ("forced" | "next") | null;
-  runId: string;
-  startedAt: string;
-  step: string;
-  [k: string]: unknown;
-}
-export interface LedgerResolved {
-  at: string;
-  runId: string;
-  [k: string]: unknown;
-}
-export interface LedgerPull {
-  number: number;
-  repo: string;
-  url: string;
-  [k: string]: unknown;
-}
-/**
- * One DAG run a merge row carries: `inferred` when time, not the commit, paired it, and `ambiguous` how many other merges landed in its window.
- */
-export interface LedgerRun {
-  ambiguous: number;
-  finishedAt: string;
-  inferred: boolean;
-  raw?: string | null;
-  runId: string;
-  startedAt: string;
-  status: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
-  /**
-   * The step running now, or "".
-   */
-  step: string;
-  steps: {
-    [k: string]: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
-  };
-  [k: string]: unknown;
-}
-/**
- * The 24-hour strip of the merge ledger: per bucket, the merges, the failed ones and the forced reruns.
- */
-export interface MergeStrip {
-  bucket: number;
-  buckets: StripBucket[];
-  since: number;
-  [k: string]: unknown;
-}
-export interface StripBucket {
-  failed: number;
-  merges: number;
-  reruns: number;
-  [k: string]: unknown;
-}
-/**
- * Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.
- *
- * `inFlight`, `next`, `sessionsByHarness`, `blockedBy`, `gateHistory` and `needsOperator` are served only by a server that runs a dispatch loop; without one they
- * are absent.
- */
-export interface SchedulerStatus {
-  /**
-   * Every gate holding admission back now, each with its use and limit; empty when none does.
-   */
-  blockedBy?: SchedulerBlock[];
-  /**
-   * Absent before the scheduler worker has reported them.
-   */
-  capacityLimits?: SchedulerCapacityLimits | null;
-  dimensions: SchedulerDimension[];
-  enabled: boolean;
-  /**
-   * The latest kept rows of gate readings and block reasons, oldest first, kept by the scheduler itself.
-   */
-  gateHistory?: SchedulerGateRow[];
-  /**
-   * The harness the loop starts sessions on; defaults to claude.
-   */
-  harness: string;
-  /**
-   * Every live session holding an In Progress task, oldest first; `url` is empty for one the loop did not start.
-   */
-  inFlight?: SchedulerSession[];
-  /**
-   * The `kind-decide` tasks in the eligible lane, which the scheduler never starts: the operator decides.
-   */
-  needsOperator?: SchedulerOperatorTask[];
-  /**
-   * Null when no task in the eligible lane is workable.
-   */
-  next?: SchedulerNext | null;
-  /**
-   * Harnesses whose admission is paused until `until`. Absent when none are paused.
-   */
-  pauses?: SchedulerPause[];
-  /**
-   * Null when no window holds admission back.
-   */
-  quietHours?: QuietHours | null;
-  sampledAt: number | null;
-  /**
-   * Absent before the scheduler worker has reported one.
-   */
-  sessionCap?: SchedulerSessionCap | null;
-  /**
-   * Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.
-   */
-  sessionsByHarness?: {
-    [k: string]: SchedulerHarnessSessions;
-  };
-  [k: string]: unknown;
-}
-/**
- * `POST /graphql`: the data the query asked for, and the errors it met; a query the schema refuses has errors only.
- */
-export interface GraphqlResponse {
-  data?: {
-    [k: string]: unknown;
-  } | null;
-  errors?: GraphqlError[] | null;
-  [k: string]: unknown;
-}
-/**
- * One error a query met, as the GraphQL over HTTP spec names its fields.
- */
-export interface GraphqlError {
-  /**
-   * Machine-readable detail; `code` is `REREAD` for a lost stream position.
-   */
-  extensions?: {
-    [k: string]: unknown;
-  } | null;
-  locations?:
-    | {
-        [k: string]: number;
-      }[]
-    | null;
-  message: string;
-  path?: (string | number)[] | null;
-  [k: string]: unknown;
-}
-/**
- * `GET /api/harnesses`: the tiers in order and each harness with its models and efforts.
- */
-export interface Harnesses {
-  harnesses: HarnessBody[];
-  tiers: string[];
-  [k: string]: unknown;
-}
-export interface HarnessBody {
-  label: string;
-  name: string;
-  reason: string | null;
-  sessions: boolean;
-  tiers: {
-    [k: string]: HarnessTier;
-  };
-  [k: string]: unknown;
-}
-export interface HarnessTier {
-  efforts: string[];
-  model: string;
-  models?: {
-    [k: string]: string;
-  } | null;
-  run_efforts?: {
-    [k: string]: string;
-  } | null;
-  [k: string]: unknown;
-}
-/**
  * `POST /api/jobs`: every runs workflow as the snapshot lists it, with the domains, cues, pools and the error a runs
  * instance reported, and the stream position the list was read at: a `jobChanges` subscription from it carries every
  * change after.
@@ -1707,6 +1385,27 @@ export interface DomainProcess {
   dags: DomainDag[];
   name: string;
   [k: string]: unknown;
+}
+/**
+ * One concurrency pool: the cap on the runs that may execute at once, and the runs holding or awaiting it.
+ */
+export interface Pool {
+  /**
+   * The most runs the pool lets execute at once.
+   */
+  cap: number;
+  /**
+   * The pool's name, unique on its scheduler; a DAG's `pool` names it.
+   */
+  name: string;
+  /**
+   * The runs waiting for the pool to have room.
+   */
+  queued: number;
+  /**
+   * The runs executing on the pool now.
+   */
+  running: number;
 }
 /**
  * `GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with
@@ -2581,13 +2280,6 @@ export interface DisplayPatch {
   view?: ("constellation" | "kanban") | null;
 }
 /**
- * The server was told to stop and will not answer after this: sent to every open stream before it exits.
- */
-export interface RestartingEvent {
-  at: number;
-  [k: string]: unknown;
-}
-/**
  * `GET /api/retired[?task=<id>][&milestone=<id>][&fields=dependencies][&limit=<n>][&before=<cursor>]`: the one
  * retired task `task` names, those of `milestone`, or else a page of them, newest retired first, with `next` the
  * `before` of the page that follows (null on the last); with `fields=dependencies` each is `{task, dependencies}`
@@ -2647,20 +2339,6 @@ export interface Snapshot {
    */
   archived_today?: number | null;
   /**
-   * The Backlog board a task links into.
-   */
-  boardUrl?: string | null;
-  /**
-   * What the board writes: the task modal draws Edit and Archive only when its board does.
-   */
-  capabilities?: Capabilities | null;
-  /**
-   * Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds).
-   */
-  claims?: {
-    [k: string]: Claim;
-  } | null;
-  /**
    * The ids of the done tasks from before local midnight that the board feed holds as a stub, left out of `flows`: the stored body never carries them (the page reads them from `/api/done` and `/api/task/<id>`), a feed's own snapshot does.
    */
   cold_done?: string[] | null;
@@ -2669,12 +2347,6 @@ export interface Snapshot {
    */
   cues?: Cue[] | null;
   dags: DagBody[];
-  /**
-   * The Grafana dashboard of each runs instance that has one, by instance name.
-   */
-  dashboards?: {
-    [k: string]: string;
-  } | null;
   /**
    * The DAG domains.
    */
@@ -2691,7 +2363,6 @@ export interface Snapshot {
   interactive?: {
     [k: string]: boolean;
   } | null;
-  machineStrip?: MachineStrip | null;
   /**
    * The pinned merge rows of the last day that the newest page leaves out.
    */
@@ -2702,14 +2373,6 @@ export interface Snapshot {
    */
   milestone_done?: {
     [k: string]: number;
-  } | null;
-  /**
-   * Each distinct set of Board-column verdicts a task's `move_set` names, by key.
-   */
-  move_sets?: {
-    [k: string]: {
-      [k: string]: Move;
-    };
   } | null;
   now: number;
   /**
@@ -2733,20 +2396,6 @@ export interface Snapshot {
   settled: {
     [k: string]: Settled;
   };
-  [k: string]: unknown;
-}
-/**
- * What the board writes beyond moves: the page draws Edit, Archive… and New task only for what its board does.
- */
-export interface Capabilities {
-  archive: boolean;
-  create?: boolean | null;
-  edit: boolean;
-  [k: string]: unknown;
-}
-export interface Claim {
-  at: number;
-  reason: string;
   [k: string]: unknown;
 }
 export interface FlowSnapshot {
@@ -2836,23 +2485,160 @@ export interface Tie {
   [k: string]: unknown;
 }
 /**
- * The last 24 hours of machine entries, counted over every machine.
+ * One merge occurrence: its pull request and commit, the runs paired with it by DAG, and, for another repository's
+ * merge, the parent merge that pinned it.
  */
-export interface MachineStrip {
-  entries: MachineEntry[];
-  [k: string]: unknown;
-}
-export interface MachineEntry {
+export interface LedgerRow {
+  /**
+   * The parent merge's key whose pin bump applied this one; null until one has; absent on a merge of the main repository.
+   */
+  appliedBy?: string | null;
+  applies?: string[] | null;
+  /**
+   * Epoch seconds the merge landed.
+   */
   at: number;
-  dag: string | null;
-  from: MachineEntryFrom | null;
-  machine: string;
-  row: string;
+  fails: {
+    [k: string]: LedgerFail;
+  };
+  key: string;
+  pinned: boolean;
+  pr?: LedgerPull | null;
+  runs: {
+    [k: string]: LedgerRun;
+  };
+  sha?: string | null;
+  tasks: string[];
   [k: string]: unknown;
 }
-export interface MachineEntryFrom {
-  machine: string;
+/**
+ * A failed run of a cue the merge row holds open: the step it stopped at, and how the failure clears.
+ */
+export interface LedgerFail {
+  finishedAt: string;
+  resolved: LedgerResolved | null;
+  resolves: ("forced" | "next") | null;
+  runId: string;
+  startedAt: string;
+  step: string;
+  [k: string]: unknown;
+}
+export interface LedgerResolved {
+  at: string;
+  runId: string;
+  [k: string]: unknown;
+}
+export interface LedgerPull {
+  number: number;
+  repo: string;
+  url: string;
+  [k: string]: unknown;
+}
+/**
+ * One DAG run a merge row carries: `inferred` when time, not the commit, paired it, and `ambiguous` how many other merges landed in its window.
+ */
+export interface LedgerRun {
+  ambiguous: number;
+  finishedAt: string;
+  inferred: boolean;
+  raw?: string | null;
+  runId: string;
+  startedAt: string;
+  status: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
+  /**
+   * The step running now, or "".
+   */
+  step: string;
+  steps: {
+    [k: string]: "not_started" | "queued" | "running" | "succeeded" | "failed" | "aborted" | "skipped";
+  };
+  [k: string]: unknown;
+}
+/**
+ * The 24-hour strip of the merge ledger: per bucket, the merges, the failed ones and the forced reruns.
+ */
+export interface MergeStrip {
+  bucket: number;
+  buckets: StripBucket[];
+  since: number;
+  [k: string]: unknown;
+}
+export interface StripBucket {
+  failed: number;
+  merges: number;
+  reruns: number;
+  [k: string]: unknown;
+}
+/**
+ * One pull request a task cites, as GitHub last answered the server.
+ */
+export interface Pull {
+  /**
+   * Commits `main` holds that the PR's head lacks; null once the head branch is gone.
+   */
+  behind_main?: number | null;
+  /**
+   * The head commit's check rollup.
+   */
+  checks: "pass" | "failing" | "pending" | "none";
+  /**
+   * The PR closed without merging.
+   */
+  closed?: boolean;
+  /**
+   * The open PR conflicts with its base branch.
+   */
+  conflicting?: boolean;
+  /**
+   * The open PR is still a draft.
+   */
+  draft?: boolean;
+  /**
+   * The merge commit's SHA; null until the PR merges.
+   */
+  merge_sha: string | null;
+  merged: boolean;
+  /**
+   * When the PR merged, ISO 8601 UTC; null until it does.
+   */
+  merged_at: string | null;
+  number: number;
+  /**
+   * The open PR waits in its base branch's merge queue.
+   */
+  queued?: boolean;
+  /**
+   * The `org/repo` the PR belongs to; a number alone repeats across repositories.
+   */
+  repo: string;
+  /**
+   * Always false: nothing polls GitHub, so a record is current until a newer event lands.
+   */
+  stale: boolean;
+  /**
+   * Unresolved review threads.
+   */
+  threads: number;
+  url: string;
+  [k: string]: unknown;
+}
+/**
+ * A task that left the Board's lanes for good: where it settled, when, and the title, assignee, milestone and labels it settled with.
+ */
+export interface Settled {
+  at: number | null;
+  created: number | null;
+  /**
+   * The labels it settled with.
+   */
+  labels?: string[];
+  /**
+   * The milestone it settled in; empty when it had none.
+   */
+  milestone?: string;
+  model: string;
   state: string;
+  title: string;
   [k: string]: unknown;
 }
 /**
@@ -2940,14 +2726,6 @@ export interface SpendPhase {
    * Uncached input + 1.25 x cache write + 0.1 x cache read + 5 x output.
    */
   wte: number;
-  [k: string]: unknown;
-}
-/**
- * No Board writer is folding: the one that was stopped, and no other has stored since. A page shows its Board as stale
- * until the next change arrives; a page that connects while none is folding is sent this after its snapshot.
- */
-export interface StaleEvent {
-  at: number;
   [k: string]: unknown;
 }
 /**

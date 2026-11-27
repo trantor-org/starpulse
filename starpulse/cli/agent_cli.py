@@ -50,8 +50,8 @@ verb needs of it) is unavailable and 4 for something not found. The server is `-
 token on every request.
 `starpulse help --agent` prints the manifest of
 verbs, generated from the parser below, so a verb added here is listed with its arguments, output keys and exit codes.
-`watch` is the one verb that writes more than one document: it holds the server's event stream open and writes one JSON
-line, `{"event": "task|move|pulls|claim|dags", "data": {...}}`, per change that `--machine` and `--task` leave in, until
+`watch` is the one verb that writes more than one document: it holds the server's `taskChanges` subscription open and
+writes one JSON line, `{"event": "task", "data": {...}}`, per task change that `--machine` and `--task` leave in, until
 it is interrupted (exit 0) or the server ends the stream (an error line, exit 3).
 `task create`, `task edit` and `task profile` write a task through the server's create and edit routes, as the Kanban page
 does. `task edit` sends every field given in one write, which the server refuses whole (exit 1) when any field it
@@ -268,66 +268,52 @@ def _runs(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     }
 
 
-def _frames(base: str) -> Iterator[tuple[str, Any]]:
-    """Each named event the server's stream sends, keep-alive comments skipped; the stream's end is an error."""
+_TASK_CHANGES = """subscription ($from: Int!) { taskChanges(from: $from) {
+  id machine task { id title lane } settled { id state } machineTask { machine id title }
+} }"""
+
+
+def _frames(base: str, position: int) -> Iterator[dict[str, Any]]:
+    """Each `taskChanges` change after `position`, keep-alive comments skipped; the stream's end is an error."""
+    body = json.dumps({"query": _TASK_CHANGES, "variables": {"from": position}}).encode()
+    headers = {**agent_wire.auth(base), "Content-Type": "application/json", "Accept": "text/event-stream"}
     try:
-        events = urllib.request.Request(f"{base}/api/events", headers=agent_wire.auth(base))
-        with urllib.request.urlopen(events, timeout=_STREAM_TIMEOUT_S) as resp:
+        with urllib.request.urlopen(
+            urllib.request.Request(f"{base}/graphql", data=body, headers=headers, method="POST"),
+            timeout=_STREAM_TIMEOUT_S,
+        ) as resp:
             name = ""
             for raw in resp:
                 line = raw.decode().rstrip("\r\n")
                 if line.startswith("event: "):
                     name = line.removeprefix("event: ")
-                elif line.startswith("data: "):
-                    yield name, json.loads(line.removeprefix("data: "))
+                elif line.startswith("data: ") and name == "next":
+                    change = json.loads(line.removeprefix("data: "))
+                    if errors := change.get("errors"):
+                        raise agent_wire.CliError("unavailable", f"{base} /graphql: {errors[0].get('message')}")
+                    yield change["data"]["taskChanges"]
     except urllib.error.HTTPError as exc:  # before OSError, which it subclasses
         if isinstance(base, agent_wire.Server) and (refusal := base.refusal(exc.code, None)):
             raise refusal from exc
         raise agent_wire.CliError(
-            "unavailable", f"{base} answered {exc.code} for /api/events: is it a StarPulse server?"
+            "unavailable", f"{base} answered {exc.code} for /graphql: is it a StarPulse server?"
         ) from exc
     except (OSError, ValueError) as exc:
-        raise agent_wire.CliError("unavailable", f"cannot read StarPulse's events at {base}: {exc}") from exc
-    raise agent_wire.CliError("unavailable", f"{base} closed the event stream")
-
-
-def _delta(event: str, data: dict[str, Any], machine: str | None, task: str | None) -> dict[str, Any] | None:
-    """The delta as `--machine` and `--task` leave it, None when they drop it.
-
-    A `task` or `claim` delta is the Board's, a `move` delta its machine's, and `pulls` are the Board's tasks' with
-    `--task` keeping only that task's. Workflow runs (`dags`) belong to neither, so any filter drops them.
-    """
-    if not (machine or task):
-        return data
-    if event == "pulls":
-        pulls = {id_: found for id_, found in data["pulls"].items() if task in (None, id_)}
-        return {"pulls": pulls} if pulls and machine in (None, "board") else None
-    about = {
-        "task": lambda d: ("board", d["id"]),
-        "move": lambda d: (d["machine"], d["id"]),
-        "claim": lambda d: ("board", d["task"]),
-    }.get(event)
-    if about is None:
-        return None
-    flow, id_ = about(data)
-    return data if machine in (None, flow) and task in (None, id_) else None
+        raise agent_wire.CliError("unavailable", f"cannot read StarPulse's changes at {base}: {exc}") from exc
+    raise agent_wire.CliError("unavailable", f"{base} closed the change stream")
 
 
 def _watch(args: argparse.Namespace, environ: Mapping[str, str]) -> Iterator[dict[str, Any]]:
-    """One line per change the server announces after the connect snapshot, the snapshot itself never."""
+    """One line per task change the server announces after the position it is read at, `{event: "task", data}` with
+    `data` the `taskChanges` change; `--machine` keeps the changes on that machine and `--task` that task's."""
     base = agent_wire.server_url(args.server, environ)
-    frames = _frames(base)
-    name, snapshot = next(frames)
-    if name != "snapshot" or not isinstance(snapshot, dict) or "flows" not in snapshot:
-        raise agent_wire.CliError(
-            "unavailable", f"{base} opened its event stream with no snapshot: is it a StarPulse server?"
-        )
-    flows = [flow["name"] for flow in snapshot["flows"]]
+    flows = [flow["name"] for flow in agent_wire.get_flows(base)["flows"]]
     if args.machine and args.machine not in flows:
         raise agent_wire.CliError("not_found", f"{args.machine} is not a machine; the server draws {', '.join(flows)}")
-    for name, data in frames:
-        if (delta := _delta(name, data, args.machine, args.task)) is not None:
-            yield {"event": name, "data": delta}
+    position = agent_wire.graphql(base, "query { tasks { position } }", {})["tasks"]["position"]
+    for change in _frames(base, position):
+        if args.machine in (None, change["machine"]) and args.task in (None, change["id"]):
+            yield {"event": "task", "data": change}
 
 
 def _doctor(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -1156,7 +1142,7 @@ def _parser() -> argparse.ArgumentParser:
     watch = leaf(
         verbs,
         "watch",
-        "hold the event stream open and write one JSON line per change to a task, machine or workflow run",
+        "hold the task change stream open and write one JSON line per change to a task",
         _watch,
         ("event", "data"),
         (0, 2, 3, 4),

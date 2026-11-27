@@ -41,6 +41,12 @@ type PullRequest {
   files: [String!]
 }
 
+"""What a task's holder session is doing now."""
+type SessionActivity {
+  state: String!
+  last_turn_at: String
+}
+
 """One open task as a card draws it."""
 type Task {
   id: ID!
@@ -89,6 +95,8 @@ type Task {
   skill: TaskSkill
   """A person took the session over: the task shows as interactive."""
   interactive: Boolean!
+  """What the holder's session is doing, for a held working task; null for any other."""
+  sessionActivity: SessionActivity
   """The acceptance criteria, in order."""
   criteria: [Criterion!]!
   """Why the task waits on a person: the first line of its `## Needs attention` section; empty in any other lane."""

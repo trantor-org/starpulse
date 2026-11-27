@@ -20,10 +20,6 @@
       "description": "The board snapshot, its flows, machines, harnesses and history"
     },
     {
-      "name": "streams",
-      "description": "Server-sent streams of the board, its columns and ledgers"
-    },
-    {
       "name": "milestones",
       "description": "Milestones"
     },
@@ -53,177 +49,6 @@
     }
   ],
   "paths": {
-    "/api/events": {
-      "get": {
-        "summary": "Stream the board: a snapshot, then each change",
-        "tags": [
-          "streams"
-        ],
-        "operationId": "get_api_events",
-        "parameters": [
-          {
-            "name": "snapshot",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/Snapshot"
-                    },
-                    {
-                      "$ref": "#/components/schemas/BuildEvent"
-                    },
-                    {
-                      "$ref": "#/components/schemas/RestartingEvent"
-                    },
-                    {
-                      "$ref": "#/components/schemas/StaleEvent"
-                    },
-                    {
-                      "$ref": "#/components/schemas/TaskDelta"
-                    },
-                    {
-                      "$ref": "#/components/schemas/MoveDelta"
-                    },
-                    {
-                      "$ref": "#/components/schemas/DagsDelta"
-                    },
-                    {
-                      "$ref": "#/components/schemas/PullsDelta"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ClaimDelta"
-                    },
-                    {
-                      "$ref": "#/components/schemas/VerdictDelta"
-                    },
-                    {
-                      "$ref": "#/components/schemas/LedgersDelta"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SchedulerStatus"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/held": {
-      "get": {
-        "summary": "Stream the columns with the tasks a session holds",
-        "tags": [
-          "streams"
-        ],
-        "operationId": "get_api_held",
-        "parameters": [
-          {
-            "name": "assignee",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/lanes": {
-      "get": {
-        "summary": "Stream the columns, only the states named when given",
-        "tags": [
-          "streams"
-        ],
-        "operationId": "get_api_lanes",
-        "parameters": [
-          {
-            "name": "state",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/events/body/{key}": {
-      "get": {
-        "summary": "A stored snapshot body by its key",
-        "tags": [
-          "streams"
-        ],
-        "operationId": "get_api_events_body_key",
-        "parameters": [
-          {
-            "name": "key",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Snapshot"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "A refusal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/snapshot": {
       "get": {
         "summary": "The board snapshot",
@@ -3652,47 +3477,6 @@
         "title": "Archived",
         "type": "object"
       },
-      "BuildEvent": {
-        "description": "The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,\nwhich names every chunk it loads by its digest. A page that holds another build than the one it is named is out of date.",
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "title": "BuildEvent",
-        "type": "object"
-      },
-      "Capabilities": {
-        "description": "What the board writes beyond moves: the page draws Edit, Archive\u2026 and New task only for what its board does.",
-        "properties": {
-          "edit": {
-            "type": "boolean"
-          },
-          "archive": {
-            "type": "boolean"
-          },
-          "create": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "required": [
-          "edit",
-          "archive"
-        ],
-        "title": "Capabilities",
-        "type": "object"
-      },
       "Changes": {
         "additionalProperties": false,
         "description": "An edit's fields by name, each as the board's writer takes it. `documentation` entries are links; `appendNotes`\nadds to the notes as they are when the write lands, and `planReason` is why the plan changes: neither has a base.",
@@ -3875,42 +3659,6 @@
           "quote"
         ],
         "title": "Cite",
-        "type": "object"
-      },
-      "Claim": {
-        "properties": {
-          "reason": {
-            "type": "string"
-          },
-          "at": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "reason",
-          "at"
-        ],
-        "title": "Claim",
-        "type": "object"
-      },
-      "ClaimDelta": {
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "at": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "task",
-          "reason",
-          "at"
-        ],
-        "title": "ClaimDelta",
         "type": "object"
       },
       "ClaimRelease": {
@@ -4973,47 +4721,6 @@
           "rerun"
         ],
         "title": "DagBody",
-        "type": "object"
-      },
-      "DagsDelta": {
-        "description": "A runs instance's workflows.",
-        "properties": {
-          "dags": {
-            "items": {
-              "$ref": "#/components/schemas/DagBody"
-            },
-            "type": "array"
-          },
-          "pools": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/Pool"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "dags",
-          "error"
-        ],
-        "title": "DagsDelta",
         "type": "object"
       },
       "DeliveredElsewhere": {
@@ -6727,33 +6434,6 @@
         "title": "LedgerRun",
         "type": "object"
       },
-      "LedgersDelta": {
-        "description": "The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open\nreads the `occurrenceChanges` subscription on `POST /graphql`.",
-        "properties": {
-          "mergeStrip": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MergeStrip"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "mergePins": {
-            "items": {
-              "$ref": "#/components/schemas/LedgerRow"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "mergeStrip",
-          "mergePins"
-        ],
-        "title": "LedgersDelta",
-        "type": "object"
-      },
       "Link": {
         "description": "One stored link of a task, keyed by the task's UUID: `handle` is the task's current key, `url` the owning\nadapter's display form of `ref` (None: it renders none), `requested_by` the session that asked, `at` when the\ntask actor wrote it and `event` the id of its `link-written` or `link-removed` event.",
         "properties": {
@@ -7422,64 +7102,6 @@
         "title": "MachineDetail",
         "type": "object"
       },
-      "MachineEntry": {
-        "properties": {
-          "at": {
-            "type": "number"
-          },
-          "machine": {
-            "type": "string"
-          },
-          "row": {
-            "type": "string"
-          },
-          "from": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MachineEntryFrom"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "dag": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "at",
-          "machine",
-          "row",
-          "from",
-          "dag"
-        ],
-        "title": "MachineEntry",
-        "type": "object"
-      },
-      "MachineEntryFrom": {
-        "properties": {
-          "machine": {
-            "type": "string"
-          },
-          "state": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "machine",
-          "state"
-        ],
-        "title": "MachineEntryFrom",
-        "type": "object"
-      },
       "MachineGuard": {
         "additionalProperties": false,
         "properties": {
@@ -7887,22 +7509,6 @@
           "final"
         ],
         "title": "MachineState",
-        "type": "object"
-      },
-      "MachineStrip": {
-        "description": "The last 24 hours of machine entries, counted over every machine.",
-        "properties": {
-          "entries": {
-            "items": {
-              "$ref": "#/components/schemas/MachineEntry"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "entries"
-        ],
-        "title": "MachineStrip",
         "type": "object"
       },
       "MachineSubmachine": {
@@ -8446,42 +8052,6 @@
           "allowed"
         ],
         "title": "Move",
-        "type": "object"
-      },
-      "MoveDelta": {
-        "description": "A task a machine event placed on another machine.",
-        "properties": {
-          "machine": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "agent": {
-            "$ref": "#/components/schemas/RawTask"
-          },
-          "names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "The names the agent's trail points index, each once."
-          }
-        },
-        "required": [
-          "machine",
-          "id",
-          "agent"
-        ],
-        "title": "MoveDelta",
         "type": "object"
       },
       "NotHolder": {
@@ -9105,24 +8675,6 @@
         "title": "Pull",
         "type": "object"
       },
-      "PullsDelta": {
-        "properties": {
-          "pulls": {
-            "additionalProperties": {
-              "items": {
-                "$ref": "#/components/schemas/Pull"
-              },
-              "type": "array"
-            },
-            "type": "object"
-          }
-        },
-        "required": [
-          "pulls"
-        ],
-        "title": "PullsDelta",
-        "type": "object"
-      },
       "QuietHours": {
         "description": "A daily window in which the scheduler admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before\n`start` runs past midnight.",
         "properties": {
@@ -9614,19 +9166,7 @@
               }
             ],
             "default": null,
-            "description": "The verdict on each Board column the task may move to, by state id; a snapshot names the set in `move_set` instead, and a delta carries it here."
-          },
-          "move_set": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "A snapshot's key into its `move_sets` for the task's `moves`; absent when it has none."
+            "description": "The verdict on each Board column the task may move to, by state id; a snapshot keeps it for an active task only."
           },
           "entered": {
             "anyOf": [
@@ -9922,19 +9462,6 @@
           "step"
         ],
         "title": "Rerun",
-        "type": "object"
-      },
-      "RestartingEvent": {
-        "description": "The server was told to stop and will not answer after this: sent to every open stream before it exits.",
-        "properties": {
-          "at": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "at"
-        ],
-        "title": "RestartingEvent",
         "type": "object"
       },
       "Restored": {
@@ -10583,132 +10110,6 @@
         "title": "SchedulerSessionCap",
         "type": "object"
       },
-      "SchedulerStatus": {
-        "description": "Whether the scheduler admits tasks, and the capacity strip's readings; no dimensions before the first sample.\n\n`inFlight`, `next`, `sessionsByHarness`, `blockedBy`, `gateHistory` and `needsOperator` are served only by a server that runs a dispatch loop; without one they\nare absent.",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "harness": {
-            "description": "The harness the loop starts sessions on; defaults to claude.",
-            "type": "string"
-          },
-          "quietHours": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuietHours"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Null when no window holds admission back."
-          },
-          "sessionCap": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SchedulerSessionCap"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Absent before the scheduler worker has reported one."
-          },
-          "capacityLimits": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SchedulerCapacityLimits"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Absent before the scheduler worker has reported them."
-          },
-          "sampledAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "dimensions": {
-            "items": {
-              "$ref": "#/components/schemas/SchedulerDimension"
-            },
-            "type": "array"
-          },
-          "inFlight": {
-            "description": "Every live session holding an In Progress task, oldest first; `url` is empty for one the loop did not start.",
-            "items": {
-              "$ref": "#/components/schemas/SchedulerSession"
-            },
-            "type": "array"
-          },
-          "next": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SchedulerNext"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Null when no task in the eligible lane is workable."
-          },
-          "pauses": {
-            "description": "Harnesses whose admission is paused until `until`. Absent when none are paused.",
-            "items": {
-              "$ref": "#/components/schemas/SchedulerPause"
-            },
-            "type": "array"
-          },
-          "sessionsByHarness": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/SchedulerHarnessSessions"
-            },
-            "description": "Each harness's in-flight count against its session cap; the Sessions meter follows `harness`.",
-            "type": "object"
-          },
-          "blockedBy": {
-            "description": "Every gate holding admission back now, each with its use and limit; empty when none does.",
-            "items": {
-              "$ref": "#/components/schemas/SchedulerBlock"
-            },
-            "type": "array"
-          },
-          "gateHistory": {
-            "description": "The latest kept rows of gate readings and block reasons, oldest first, kept by the scheduler itself.",
-            "items": {
-              "$ref": "#/components/schemas/SchedulerGateRow"
-            },
-            "type": "array"
-          },
-          "needsOperator": {
-            "description": "The `kind-decide` tasks in the eligible lane, which the scheduler never starts: the operator decides.",
-            "items": {
-              "$ref": "#/components/schemas/SchedulerOperatorTask"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "enabled",
-          "harness",
-          "sampledAt",
-          "dimensions"
-        ],
-        "title": "SchedulerStatus",
-        "type": "object"
-      },
       "SearchHit": {
         "description": "One task a search found: where it is now, and the text around the match.",
         "properties": {
@@ -10948,21 +10349,6 @@
             "default": null,
             "description": "The DAG domains."
           },
-          "dashboards": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "The Grafana dashboard of each runs instance that has one, by instance name."
-          },
           "cues": {
             "anyOf": [
               {
@@ -10977,18 +10363,6 @@
             ],
             "default": null,
             "description": "The DAGs cued by a Board event."
-          },
-          "boardUrl": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "The Backlog board a task links into."
           },
           "dags": {
             "items": {
@@ -11017,17 +10391,6 @@
             },
             "type": "array"
           },
-          "machineStrip": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MachineStrip"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
           "pulls": {
             "anyOf": [
               {
@@ -11045,21 +10408,6 @@
             ],
             "default": null,
             "description": "Each open task's pull requests, by task id."
-          },
-          "claims": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/Claim"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds)."
           },
           "mergeStrip": {
             "anyOf": [
@@ -11098,18 +10446,6 @@
             ],
             "default": null,
             "description": "Which State plays which part on the board."
-          },
-          "capabilities": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Capabilities"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "What the board writes: the task modal draws Edit and Archive only when its board does."
           },
           "settled": {
             "additionalProperties": {
@@ -11158,24 +10494,6 @@
             ],
             "default": null,
             "description": "How many tasks were archived since local midnight, the window of the Done count."
-          },
-          "move_sets": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "additionalProperties": {
-                    "$ref": "#/components/schemas/Move"
-                  },
-                  "type": "object"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Each distinct set of Board-column verdicts a task's `move_set` names, by key."
           },
           "interactive": {
             "anyOf": [
@@ -11275,19 +10593,6 @@
           "current"
         ],
         "title": "StaleEdit",
-        "type": "object"
-      },
-      "StaleEvent": {
-        "description": "No Board writer is folding: the one that was stopped, and no other has stored since. A page shows its Board as stale\nuntil the next change arrives; a page that connects while none is folding is sent this after its snapshot.",
-        "properties": {
-          "at": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "at"
-        ],
-        "title": "StaleEvent",
         "type": "object"
       },
       "StartRequest": {
@@ -11656,53 +10961,6 @@
           "checked"
         ],
         "title": "TaskCriterion",
-        "type": "object"
-      },
-      "TaskDelta": {
-        "description": "A Board task that moved (`agent` null once it left the lanes).",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "agent": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RawTask"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "settled": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Settled"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "archived_today": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "On an archived task's delta, how many tasks were archived since local midnight."
-          }
-        },
-        "required": [
-          "id",
-          "agent",
-          "settled"
-        ],
-        "title": "TaskDelta",
         "type": "object"
       },
       "TaskPutRequest": {
@@ -12161,43 +11419,6 @@
           "allowed"
         ],
         "title": "Verdict",
-        "type": "object"
-      },
-      "VerdictDelta": {
-        "description": "One qa lens's verdict on a task, as the ingest took it.",
-        "properties": {
-          "task": {
-            "type": "string"
-          },
-          "lens": {
-            "type": "string"
-          },
-          "round": {
-            "type": "integer"
-          },
-          "outcome": {
-            "enum": [
-              "PASS",
-              "CHANGES"
-            ],
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "at": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "task",
-          "lens",
-          "round",
-          "outcome",
-          "reason",
-          "at"
-        ],
-        "title": "VerdictDelta",
         "type": "object"
       },
       "ViewShown": {

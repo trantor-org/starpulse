@@ -185,43 +185,9 @@ describe("a started card", () => {
     await flush();
 
     expect(starts.get().claiming).toEqual({});
-    expect(starts.get().failed["TASK-D1"]).toEqual({ from: "waiting", reason: "tmux could not start session task-1", url: "", refused: false });
+    expect(starts.get().failed["TASK-D1"]).toEqual({ from: "waiting", reason: "tmux could not start session task-1" });
     expect(placeClaims([t], starts.get(), LIFECYCLE_ROLES)[0].lane).toBe("waiting");
     expect(canDrag("TASK-D1", starts.get())).toBe(true);
-  });
-
-  it("returns to its column with the writer's reason and keeps the session link when the claim is refused", async () => {
-    const { starts, settle } = stores();
-    const t = task("TASK-D1", "waiting");
-    starts.ask(t, "play", LIFECYCLE_ROLES);
-    starts.key("1");
-    settle({ ok: true, url: SESSION, at: 1000 });
-    await flush();
-
-    starts.sync([t], { "TASK-D1": { reason: "TASK-D3 is not Done", at: 999 } }); // an older refusal, before this start
-    expect(starts.get().claiming["TASK-D1"]?.phase).toBe("waiting");
-
-    starts.sync([t], { "TASK-D1": { reason: "TASK-D3 is not Done", at: 1001 } });
-
-    expect(starts.get().claiming).toEqual({});
-    expect(starts.get().failed["TASK-D1"]).toEqual({ from: "waiting", reason: "TASK-D3 is not Done", url: SESSION, refused: true });
-    expect(placeClaims([t], starts.get(), LIFECYCLE_ROLES)[0].lane).toBe("waiting");
-
-    starts.dismiss("TASK-D1");
-    expect(starts.get().failed).toEqual({});
-  });
-
-  it("applies a refusal the stream reported before the start answered", async () => {
-    const { starts, settle } = stores();
-    const t = task("TASK-D1", "ready");
-    starts.ask(t, "play", LIFECYCLE_ROLES);
-    starts.key("1");
-    starts.sync([t], { "TASK-D1": { reason: "refused", at: 1001 } });
-
-    settle({ ok: true, url: SESSION, at: 1000 });
-    await flush();
-
-    expect(starts.get().failed["TASK-D1"]).toMatchObject({ reason: "refused", refused: true, url: SESSION });
   });
 
   it("clears its mark once the projection reports the agent's claim", async () => {
@@ -231,7 +197,7 @@ describe("a started card", () => {
     settle({ ok: true, url: SESSION, at: 1000 });
     await flush();
 
-    starts.sync([task("TASK-D1", "in_progress")], {});
+    starts.sync([task("TASK-D1", "in_progress")]);
 
     expect(starts.get().claiming).toEqual({});
     expect(starts.get().failed).toEqual({});

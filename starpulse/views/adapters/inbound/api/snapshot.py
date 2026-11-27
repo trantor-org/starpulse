@@ -1,8 +1,5 @@
-"""The Board's snapshot: the event stream that carries it and the held and lane streams that follow it, the body a
-`ref` snapshot event names (once), and the snapshot read itself, served as the Board writer stored it.
+"""The Board's snapshot read, served as the Board writer stored it.
 
-- `GET /api/events`, `/api/held`, `/api/lanes`: streams of the Board, a session's held tasks and its lanes.
-- `GET /api/events/body/{key}`: the snapshot body a `ref` event names.
 - `GET /api/snapshot`, `?view=full`, `GET /api/flows`: the one live payload the Board writer stored, to the page and the agent CLI alike.
 """
 
@@ -12,21 +9,10 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from starpulse.views.adapters.inbound.api.answering import answer, reading, seams
-from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, StreamRoute
-from starpulse.views.adapters.inbound.api.streams import streaming
-from starpulse.views.model.encoding import encode
+from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute
 
 if TYPE_CHECKING:  # annotation only
     from starpulse.views.adapters.inbound.api.routing import Api
-
-
-@reading
-def body(request: Request) -> Response:
-    key = request.path_params["key"]
-    held = seams(request).snapshots.body(key)
-    if held is None:
-        return answer(request, encode("error", {"error": f"no snapshot {key} is held"}), 404)
-    return answer(request, held, cache="max-age=3600, immutable")
 
 
 @reading
@@ -40,12 +26,7 @@ def flows(request: Request) -> Response:
 
 
 def routes(api: Api) -> list[ApiRoute]:
-    streams = api.streams
     return [
-        StreamRoute("/events", streaming(streams.board)),
-        StreamRoute("/held", streaming(streams.held)),
-        StreamRoute("/lanes", streaming(streams.lanes)),
-        ReadRoute("/events/body/{key:path}", body),
         ReadRoute("/snapshot", snapshot, params=frozenset({"view"})),
         ReadRoute("/flows", flows),
     ]

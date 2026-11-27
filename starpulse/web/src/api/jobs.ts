@@ -14,7 +14,8 @@ const JOB_FIELDS = [
   `failed { ${RUN} finishedAt params }`,
   `closed { ${RUN} finishedAt params }`,
 ].join(" ");
-const SUBSCRIPTION = `subscription ($from: Int!) { jobChanges(from: $from) { jobs { ${JOB_FIELDS} } error } }`;
+const DOMAINS = "domains { name dags { name } processes { name dags { name } } } cues { dag event state on resolves grace } pools { name cap running queued }";
+const SUBSCRIPTION = `subscription ($from: Int!) { jobChanges(from: $from) { jobs { ${JOB_FIELDS} } error ${DOMAINS} } }`;
 
 /** How long the one read may take, its body included, before it rejects and `useJobs` retries. */
 const READ_TIMEOUT_MS = 30_000;
@@ -24,11 +25,14 @@ export async function readJobs(post: Post = apiFetch): Promise<Jobs | null> {
   return resp.ok ? ((await resp.json()) as Jobs) : null;
 }
 
-/** Each change after `from` hands over the full job list and the runs error; `end` says why the stream stopped, unless `close` stopped it. */
+/** What a change hands over beside the job list: the domains, the cues and the pools, whole. */
+export type JobsBeside = Pick<Jobs, "domains" | "cues" | "pools">;
+
+/** Each change after `from` hands over the full job list, the runs error and what rides beside them; `end` says why the stream stopped, unless `close` stopped it. */
 export function followJobs(
   from: number,
-  on: { jobs(list: Dag[], error: string | null): void; end(why: Ended): void },
+  on: { jobs(list: Dag[], error: string | null, beside: JobsBeside): void; end(why: Ended): void },
   post: Post = apiFetch,
 ): { close(): void } {
-  return follow<{ jobs: Dag[]; error: string | null }>(SUBSCRIPTION, "jobChanges", from, { change: (c) => on.jobs(c.jobs, c.error), end: on.end }, post);
+  return follow<{ jobs: Dag[]; error: string | null } & JobsBeside>(SUBSCRIPTION, "jobChanges", from, { change: (c) => on.jobs(c.jobs, c.error, c), end: on.end }, post);
 }

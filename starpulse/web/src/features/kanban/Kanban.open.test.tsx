@@ -26,7 +26,7 @@ vi.mock("./TaskView", async (actual) => {
 const card = (id: string): KanbanTask => ({
   id, title: `title ${id}`, lane: "ready", milestone: "", labels: [], assignee: "", dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [],
 });
-const hud = { cards: [card("TASK-1"), card("TASK-2"), card("TASK-3")], names: {}, roles: LIFECYCLE_ROLES, claims: {}, boardUrl: null } as unknown as HudState;
+const hud = { cards: [card("TASK-1"), card("TASK-2"), card("TASK-3")], names: {}, roles: LIFECYCLE_ROLES } as unknown as HudState;
 const record: TaskRecord = {
   title: "title TASK-1", profile: "", priority: "High", labels: [], milestone: "", dependencies: [], description: "", plan: "1. Write the test", notes: "the full record's notes",
   acceptanceCriteria: [], definitionOfDone: [], session: "",

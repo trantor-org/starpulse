@@ -4,7 +4,7 @@ import type { Snapshot } from "../api";
 import { build } from "./scene";
 import { merge, Moves } from "./sky";
 
-// a drill-down of the captured live /api/events snapshot's phase flows
+// a drill-down of the captured live snapshot's phase flows
 const snap = capture as unknown as Snapshot;
 const drill = (flow: string, scale: number) => {
   const S = merge(snap), moves = new Moves();

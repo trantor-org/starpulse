@@ -1,4 +1,4 @@
-"""The page as an ASGI app: the page and its assets, the event streams and every `/api` route.
+"""The page as an ASGI app: the page and its assets, the `/graphql` subscriptions and every `/api` route.
 
 Each handler is a Starlette route and runs (blocking) on a worker thread, so the handlers stay plain functions of a
 request; a stream hands its frames to the event loop one at a time. A server such as Hypercorn runs the app, over
@@ -41,11 +41,11 @@ from starpulse.views.adapters.inbound.api import graphql, intake, metrics
 from starpulse.views.adapters.inbound.api.answering import CAUGHT_UP_S, PLACE, RAN, WORKERS
 from starpulse.views.adapters.inbound.api.openapi import swagger
 from starpulse.views.adapters.inbound.api.routing import Api, api_routes
-from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, StreamRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.compression import Gzip
 from starpulse.views.adapters.inbound.snapshots import Snapshots
 from starpulse.views.adapters.outbound import request_durations
-from starpulse.views.model.encoding import encode, event
+from starpulse.views.model.encoding import encode
 from starpulse.views.ports.services import Services
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
@@ -97,13 +97,6 @@ def _build_id(path: str, mtime_ns: int) -> str:
     """The digest of the built page's `index.html`, which names every chunk it loads by that chunk's digest: it changes
     exactly when the page a browser would load does. `mtime_ns` keys a rebuilt file afresh."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
-
-
-@functools.lru_cache(maxsize=4)
-def _build_text(build: str) -> str:
-    """The `build` event's data for one build id, made once: each connect sends it, and the `EventText` cache of the
-    Board's large events must not be spent on it."""
-    return event("build", {"id": build})
 
 
 def page_build(static: Path) -> str | None:
@@ -496,8 +489,6 @@ class PageApp:
                 return Route(at, handler, methods=["GET"], middleware=[observed, traced])
             case WriteRoute(_, methods, handler):
                 return Route(at, handler, methods=list(methods), middleware=[traced])
-            case StreamRoute(_, handler):
-                return Route(at, handler, methods=["GET"])
 
     async def _page(self, request: Incoming) -> Reply:
         return await self._files.get_response("index.html", request.scope)
@@ -530,10 +521,6 @@ def page_app(
     """The Page API over `feed`, serving the snapshot and deltas the Board writer stored (`snapshots`)."""
     services = replace(services, harnesses=services.harnesses or Harnesses((), {}))
 
-    def build_frame() -> str | None:
-        build = page_build(static)
-        return None if build is None else _build_text(build)
-
     api = Api(
         feed,
         history,
@@ -542,7 +529,7 @@ def page_app(
         board,
         services,
         clock=clock,
-        build=build_frame,
+        build=lambda: page_build(static),
         page_gauge=lambda: build_gauge(static),
     )
     grpc = None if services.events is None else cloudevents_grpc(services.events)

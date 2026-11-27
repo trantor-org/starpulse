@@ -2,7 +2,7 @@
 
 import type { LedgerRow, MergeStrip } from ".";
 import { apiFetch } from "./apiFetch";
-import { retryWait } from "./stream";
+import { retryWait } from "./retry";
 
 /** The newest rows of one event's ledger, and whether older ones are left to page. */
 export interface LedgerHead {

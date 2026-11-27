@@ -30,7 +30,7 @@ describe("the jobs subscription", () => {
     const body = JSON.parse((post.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
     expect(body.variables).toEqual({ from: 7 });
     expect(body.query).toContain("jobChanges(from: $from)");
-    expect(body.query).toMatch(/jobChanges\(from: \$from\) \{ jobs \{ name status .*runId.* steps \{ name depends .*\} stats \{ .*\} rerun \{ .*\} active \{ .*\} failed \{ .*\} closed \{ .*\} \} error \}/);
+    expect(body.query).toMatch(/jobChanges\(from: \$from\) \{ jobs \{ name status .*runId.* steps \{ name depends .*\} stats \{ .*\} rerun \{ .*\} active \{ .*\} failed \{ .*\} closed \{ .*\} \} error domains \{.*\} cues \{.*\} pools \{.*\} \}/);
     expect(seen).toEqual([[["a"], null], [["a", "b"], "x: refused"]]);
   });
 

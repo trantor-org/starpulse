@@ -43,16 +43,11 @@ describe("the task view in read mode", () => {
     expect(railOf(html)).not.toMatch(/<(select|textarea)/);
     expect(html).not.toMatch(/<textarea[^>]*data-field="(description|plan|notes)"/);
     expect(html).not.toMatch(/<input[^>]*type="checkbox"[^>]*disabled=""/);
-    expect(draw({ capabilities: { edit: false, archive: false } })).toMatch(/<input[^>]*type="checkbox"[^>]*disabled=""/);
   });
 
-  it("draws Edit and Archive only when the board can", () => {
+  it("draws Edit and Archive", () => {
     expect(draw()).toContain("Archive…");
     expect(draw()).toContain("Edit");
-    const readOnly = draw({ capabilities: { edit: false, archive: false } });
-    expect(readOnly).not.toContain("Archive…");
-    expect(readOnly).not.toContain("Edit");
-    expect(draw({ capabilities: undefined })).not.toContain("Archive…");
   });
 
   it("selects the tier's own option, and standard when the task names none", () => {

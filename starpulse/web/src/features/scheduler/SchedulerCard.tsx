@@ -1,6 +1,6 @@
 // The Admin view's Scheduler card: the global switch, the harness Segments, each capacity dimension's use against its
 // limit, the next pick as text with why it goes or waits, the count of sessions in flight and the quiet hours. Status
-// arrives on /api/events; one GET syncs on view open. Off stops admission; the card dims and counts the sessions still
+// arrives on the `schedulerChanges` subscription; one GET syncs on view open. Off stops admission; the card dims and counts the sessions still
 // running from its last reading.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { clockHm } from "../../shared/clock";

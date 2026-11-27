@@ -4,7 +4,7 @@
 import { stepRings, type StepRing } from "../features/fanout/fanoutModel";
 import { tree, type Tree } from "./levels";
 import { mocked } from "./mockSky";
-import type { Capabilities, Cue, Dag, FlowSnapshot, LedgerRow, MachineEntry, MergeStrip, Move as Verdict, Pool, Pull, RawTask, Roles, Settled, Snapshot, Writer } from "../api";
+import type { Cue, Dag, FlowSnapshot, LedgerRow, MergeStrip, Pool, Pull, RawTask, Roles, Settled, Snapshot, Writer } from "../api";
 
 /** Seconds one move takes to cross its path, the arrival rings, and a finished DAG's flare. */
 export const TRAVEL = 3;
@@ -46,13 +46,8 @@ export interface Sky {
   cues: Cue[];
   groups: Group[];
   dagGroup: Record<string, string>;
-  boardUrl: string | null;
-  /** The Grafana dashboard of each runs instance that has one, by instance name. */
-  dashboards: Record<string, string>;
   /** Which of the Board's States plays which part, as its machine declares them; empty before the snapshot carries any. */
   roles: Roles;
-  /** What the board writes beyond moves; absent for a board that only reads. */
-  capabilities?: Capabilities;
   tree: Tree;
   /** The lifecycle machines each Board state opens into; the first is the state's own. */
   subs: Record<string, string[]>;
@@ -64,28 +59,20 @@ export interface Sky {
   rides: Record<string, { flow: string; state: string; at: number }>;
   /** Each open task's pull requests, by task id. */
   pulls: Record<string, Pull[]>;
-  /** Each task's latest In Progress claim the board writer refused an agent, and when. */
-  claims: Record<string, { reason: string; at: number }>;
   /** The tasks created or settled recently, which the day's arrivals and the task titles are read from. */
   settled: Record<string, Settled>;
   /** How many tasks each milestone has completed, over every settled task, not only the recent ones in `settled`. */
   milestoneDone: Record<string, number>;
   /** How many tasks were archived since local midnight: archived tasks leave the board, so the final state's day count reads this, not a dot. */
   archivedToday: number;
-  /** Each distinct set of Board-column verdicts an agent's `move_set` names. */
-  moveSets: Record<string, Record<string, Verdict>>;
   /** The rows of each Ledger the page has open, newest first; an event is absent until its stream's first page arrives, and holds none when its Ledger is empty. */
   ledgers: Record<string, LedgerRow[]>;
   /** The merge Ledger's 24-hour strip; null when the server sent none. */
   mergeStrip: MergeStrip | null;
   /** The pinned merges the Ledger's newest page leaves out. */
   mergePins: LedgerRow[];
-  /** The first page of the machine ledger's rows; null when the server sent none, which shows every machine. */
-  /** The last 24 hours of machine entries, oldest first; empty when the server sent none. */
-  machineEntries: MachineEntry[];
   /** The day's arrivals on each starting and terminal Board state: tasks created, or settled there, since local midnight. */
   today: Record<string, RawTask[]>;
-  error: string | null;
   /** The server was still reading its board, so this sky's Board is partial. */
   reading: boolean;
 }
@@ -189,27 +176,20 @@ export function merge(raw: Snapshot, since = midnight()): Sky {
     cues: snap.cues ?? [],
     groups,
     dagGroup: Object.fromEntries(groups.flatMap((g) => g.dags.map((d) => [d, g.name]))),
-    boardUrl: snap.boardUrl ?? null,
-    dashboards: snap.dashboards ?? {},
     roles: snap.roles ?? {},
-    capabilities: snap.capabilities ?? undefined,
     tree: t,
     subs: t.subs,
     child,
     latest,
     rides,
     pulls: snap.pulls ?? {},
-    claims: snap.claims ?? {},
     settled: snap.settled,
     milestoneDone: snap.milestone_done ?? {},
     archivedToday: snap.archived_today ?? 0,
-    moveSets: snap.move_sets ?? {},
     ledgers: {},
     mergeStrip: snap.mergeStrip ?? null,
     mergePins: snap.mergePins ?? [],
-    machineEntries: snap.machineStrip?.entries ?? [],
     today: arrivals(board, snap.settled, since),
-    error: snap.error,
     reading: !!snap.reading,
   };
 }

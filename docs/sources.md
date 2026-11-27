@@ -279,7 +279,7 @@ producer: a missing or wrong token answers 401, another producer's `source` 403,
 A qa lens's verdict rides the ingest too: `type` `VerdictRecorded`, no `machine`, `subject` the task and `data` holding
 the `lens`, the `round` (an integer from 1), the `outcome` (`PASS` or `CHANGES`) and optionally a `reason`. A verdict
 missing a lens, round or outcome answers 400 and writes nothing. Every verdict is kept, per lens and round, by the
-history store, and `/api/events` sends each as a `verdict` event (`task`, `lens`, `round`, `outcome`, `reason`, `at`).
+history store, and the feed publishes each as a `verdict` event (`task`, `lens`, `round`, `outcome`, `reason`, `at`).
 A lens that has sent no verdict has no row, so a reader never counts it as `PASS`.
 
 A commit that broke the default branch is a `postmortem` doc, linked from the task that broke it through the task's
@@ -328,7 +328,7 @@ A batch (Connect `PublishBatch`) takes up to 200 such events. The attributes map
 | `data` | `data` | optional JSON object, at most 8 KiB as JSON |
 
 A batch is checked whole before anything is appended, so one refused event writes none of them. An accepted event is
-a `machine:events` row like any other: it moves the task on the page and in the `/api/events` stream. The answers:
+a `machine:events` row like any other: it moves the task on the page and in the `taskChanges` subscription. The answers:
 
 | Status | Meaning |
 |---|---|

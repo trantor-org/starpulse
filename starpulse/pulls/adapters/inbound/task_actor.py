@@ -142,9 +142,6 @@ _GRACE = "grace:"
 _GRACE_S = 190.0
 #: Seconds before a pull request GitHub could not yet answer for (`mergeable` gave None) is asked again.
 _MERGEABLE_RETRY_S = 30.0
-#: Seconds a settled `mergeable` answer outlives a move of the base tip alone: every open pull request is read again on each
-#: merge to the default branch, which spent a third of the GitHub core budget in a merge-heavy hour. A new head is read at once.
-_BASE_MOVE_REREAD_S = 600.0
 #: Seconds a dispatched or resumed session has to report its start; a healthy dispatch reports within seconds.
 _START_BOUND_S = 300.0
 #: The prefix of the deadline key that checks a resume's start, apart from a task's own overdue deadline.
@@ -396,7 +393,8 @@ class TaskActor:
         #: GitHub's answer now whether a pull request merges; a push that clears a conflict sends no event for it.
         self._mergeable = mergeable
         #: Per pull request, the stored record's version, what `mergeable` answered for it and when: an answer is read once,
-        #: a None (GitHub still computing, or out of reach) again after `_MERGEABLE_RETRY_S`.
+        #: a None (GitHub still computing, or out of reach) again after `_MERGEABLE_RETRY_S`. A record's version is its head and
+        #: the base tip its mergeability was last judged at (`detail.mergeBase`: a base push that changes a file of the pull request).
         self._settled: dict[str, tuple[tuple[str, str | None], str | None, float]] = {}
         #: The pull request versions whose `mergeable` read is running off the lock, and the tries of each task's write the
         #: board refused as locked, whose next try waits off the lock.
@@ -437,6 +435,8 @@ class TaskActor:
         self._clock = clock
         #: Epoch seconds, which a task's `entered` and `expect_by` are in; `clock` is monotonic and has no date.
         self._wall = wall
+        #: When each holder's last nudge was sent, so a settle that came before it is not nudged again.
+        self._nudged: dict[str, float] = {}
         #: The lanes that wait on the service level expectation.
         self._timed_lanes = {lane for lane, facts in waits.items() if "overdue" in facts}
         #: When each timed task's deadline falls, if still ahead; a fired one derives its task again.
@@ -1396,14 +1396,9 @@ class TaskActor:
             ).start()
         if record and record["state"] == "OPEN":
             detail = (pull_record(self._store, url, detailed=True) or record).get("detail") or {}
-            version = (record["headRefOid"], detail.get("baseOid"))
+            version = (record["headRefOid"], detail.get("mergeBase") or detail.get("baseOid"))
             settled = self._settled.get(url, ((), None, 0.0))
-            base_moved_only = (
-                settled[0][:1] == version[:1]
-                and settled[1] in ("MERGEABLE", "CONFLICTING")
-                and self._clock() - settled[2] < _BASE_MOVE_REREAD_S
-            )
-            if settled[0] != version and not base_moved_only:
+            if settled[0] != version:
                 self._read_mergeable(url, version, record["repo"], record["number"])
                 return {**record, "mergeable": "UNKNOWN"}  # a stored MERGEABLE may predate the base's tip: unsettled until GitHub answers
             if settled[1] is None and self._clock() - settled[2] >= _MERGEABLE_RETRY_S:
@@ -1730,6 +1725,12 @@ class TaskActor:
         with self._lock:
             return [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == roles.ready]
 
+    def nudged_since(self, name: str, at: float) -> bool:
+        """Whether the holder was nudged at or after `at`: a settle then (the Stop hook's second turn, which ends before the
+        first settle's nudge returns) is answered by that nudge, and a second would wake the session twice."""
+        with self._lock:
+            return self._nudged.get(name, 0.0) >= at
+
     def holder_settled(self, name: str, wait_ended: bool = False) -> None:
         """A session settled. A holder whose task has an open criterion (neither checked nor struck through) is nudged by
         `_nudge`, pull request or not. Any other In Progress task, a no-pull-request one included, whose holder is not busy (`confirm`) and that no event is awaited on
@@ -1749,6 +1750,7 @@ class TaskActor:
             self._memory.keep(name, awaited=None, resume_held=None, unreachable=None, busy=None)
             if agent is None or agent["state"] != self._feed.roles.working:
                 self._memory.keep(name, resumes=None)
+                self._nudged.pop(name, None)
                 self._unwant(name)
                 self._end_closed(name)
                 return
@@ -2108,6 +2110,8 @@ class TaskActor:
             self._nudge_failed(name, error)
             return False
         self._unwant(name)
+        with self._lock:
+            self._nudged[name] = self._wall()
         return True
 
     def _nudge(self, name: str, opened: list[tuple[int, str]], ticks: tuple[bool, ...], wait_ended: bool) -> None:

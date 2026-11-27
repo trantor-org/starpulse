@@ -10,7 +10,7 @@ import { StartStore } from "./start";
 import { RENAMED_NAMES, RENAMED_ROLES, card } from "./rolesFixtures";
 
 const board = (cards: ReturnType<typeof card>[]) =>
-  ({ cards, names: RENAMED_NAMES, roles: RENAMED_ROLES, claims: {}, settled: [], boardUrl: null }) as unknown as HudState;
+  ({ cards, names: RENAMED_NAMES, roles: RENAMED_ROLES, settled: [] }) as unknown as HudState;
 
 let host: HTMLDivElement, root: Root;
 const show = (hud: HudState) => {

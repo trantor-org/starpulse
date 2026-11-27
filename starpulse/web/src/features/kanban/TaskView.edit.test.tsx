@@ -41,13 +41,11 @@ describe("editing one section at a time", () => {
   const open = (host: HTMLElement) => host.querySelectorAll(".sec.on, .tvhead .on");
   const pen = (host: HTMLElement, name: string) => q<HTMLButtonElement>(host, `button.pen[aria-label="Edit ${name}"]`);
 
-  it("puts a ✎ Edit beside each section heading, the title and Details, and none when the board cannot edit", () => {
+  it("puts a ✎ Edit beside each section heading, the title and Details", () => {
     const host = mount();
 
     for (const name of ["description", "acceptance criteria", "implementation plan", "notes", "title", "details"]) expect(pen(host, name), name).toBeTruthy();
     expect(q(host, ".tvhead .editbtn")).toBeNull();
-    const readOnly = mount({ capabilities: { edit: false, archive: false } });
-    expect(q(readOnly, "button.pen")).toBeNull();
   });
 
   it("opens that section's editor in place with its own bar while the rest stays readable", () => {

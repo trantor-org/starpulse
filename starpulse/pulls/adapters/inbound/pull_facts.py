@@ -13,6 +13,7 @@ from starpulse.contracts.stamps import iso_utc
 from starpulse.github.model.delivery import Delivery
 from starpulse.pulls.adapters.outbound.pull_events import Record, bare_detail
 from starpulse.pulls.adapters.outbound.pulls import PullStore
+from starpulse.pulls.model.required import rollup_state
 
 __all__ = ["FACTS", "Handler", "forced_push"]
 
@@ -43,7 +44,8 @@ def _posted(name: str, result: str) -> Edit:
         if name not in {check["name"] for check in checks}:
             return {}
         posted = [{**check, "result": result} if check["name"] == name else check for check in checks]
-        return {"requiredChecks": posted, "fetchedAt": max(now, record["fetchedAt"])}  # `PullStore._guarded` reads this
+        rollup = {"sha": record["headRefOid"], "state": rollup_state(posted), "at": now}  # the rollup the posted results make, as GitHub's
+        return {"requiredChecks": posted, "rollup": rollup, "fetchedAt": max(now, record["fetchedAt"])}  # `PullStore._guarded` reads these
 
     return edit
 

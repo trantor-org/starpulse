@@ -17,7 +17,7 @@ const board: Machine = {
 };
 const fan = Array.from({ length: 8 }, (_, i) => step(`check-${i}`, ["clone"]));
 const data: DagData = {
-  now: 3600, facts: {}, dashboards: {},
+  now: 3600, facts: {},
   dags: [
     dag("runs/pr-watch", "succeeded", { startUrl: "http://runner.test/pr-watch" }),
     dag("runs/triage", "failed", { steps: [step("scan"), step("fix", ["scan"], "failed")] }),
@@ -137,21 +137,6 @@ describe("opening a DAG's modal", () => {
     await key(document, "Escape");
     await click(row("triage"));
     expect(q(".dgm .sec:last-of-type").textContent).toContain("No Board tie");
-  });
-});
-
-describe("the runner's dashboard in the modal's head", () => {
-  const link = () => host.querySelector<HTMLAnchorElement>(".dgm .tvhead a");
-
-  it("links the workflow's runs instance to its Grafana dashboard, and only when the instance has one", async () => {
-    await act(async () => root.render(<Dags data={{ ...data, dashboards: { runs: "http://grafana/d/runs" } }} />));
-    await click(row("pr-watch"));
-    expect([link()?.textContent, link()?.getAttribute("href")]).toEqual(["runner dashboard ↗", "http://grafana/d/runs"]);
-    await key(document, "Escape");
-
-    await act(async () => root.render(<Dags data={{ ...data, dashboards: { other: "http://grafana/d/other" } }} />));
-    await click(row("pr-watch"));
-    expect(link()).toBeNull();
   });
 });
 

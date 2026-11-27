@@ -9,7 +9,7 @@ import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import { MoveStore } from "./move";
 import { StartStore } from "./start";
 
-const hud = { cards: [], names: {}, roles: LIFECYCLE_ROLES, claims: {}, boardUrl: null } as unknown as HudState;
+const hud = { cards: [], names: {}, roles: LIFECYCLE_ROLES } as unknown as HudState;
 let host: HTMLDivElement, search: HTMLDivElement, outline: HTMLDivElement, root: Root;
 
 /** The Kanban inside the keep-alive App wraps it in, over the navigator's slots, which sit outside the view. */

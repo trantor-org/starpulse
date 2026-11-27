@@ -17,7 +17,7 @@ const expired = { at: NOW - 45 * 60, last_renewal: NOW - 40 * 60, session: "@age
 
 let host: HTMLDivElement, root: Root;
 const mount = (cards: KanbanTask[]) => {
-  const hud = { cards, names: {}, roles: LIFECYCLE_ROLES, claims: {}, boardUrl: null } as unknown as HudState;
+  const hud = { cards, names: {}, roles: LIFECYCLE_ROLES } as unknown as HudState;
   const moves = new MoveStore(async () => ({ ok: true }) as never);
   act(() => root.render(<Kanban hud={hud} moves={moves} starts={new StartStore((async () => ({})) as never, moves)} compact={false} constellation={() => {}} searchSlot={null} outlineSlot={null} onQuery={() => {}} />));
 };

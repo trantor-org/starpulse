@@ -58,7 +58,7 @@ board_keys = Table(
 )
 
 #: One row per (machine, task): the state the task holds on that lifecycle machine, the drawn agent as JSON and when the
-#: machine last placed it. `seq` is the `machine:events` position folded in, the cursor `/api/events` resumes from.
+#: machine last placed it. `seq` is the `machine:events` position folded in, the cursor a `taskChanges` subscription resumes from.
 machine_tasks = Table(
     "starpulse_machine_tasks",
     metadata,

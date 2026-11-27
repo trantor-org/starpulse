@@ -16,7 +16,7 @@ const card = (id: string, lane: string, assignee: string, extra: Partial<KanbanT
 
 let host: HTMLDivElement, root: Root;
 const mount = (cards: KanbanTask[]) => {
-  const hud = { cards, names: {}, roles: LIFECYCLE_ROLES, claims: {}, boardUrl: null } as unknown as HudState;
+  const hud = { cards, names: {}, roles: LIFECYCLE_ROLES } as unknown as HudState;
   const moves = new MoveStore(async () => ({ ok: true }) as never);
   act(() => root.render(<Kanban hud={hud} moves={moves} starts={new StartStore((async () => ({})) as never, moves)} compact={false} constellation={() => {}} searchSlot={null} outlineSlot={null} onQuery={() => {}} />));
 };

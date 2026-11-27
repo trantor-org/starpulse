@@ -18,7 +18,7 @@ const cards = [
   card("TASK-3", "done", "m-2"),
   card("TASK-4", "ready", "m-3"), card("TASK-5", "ready", "m-3"), card("TASK-6", "review", "m-3"),
 ];
-const hud = { cards, names: {}, roles: LIFECYCLE_ROLES, claims: {}, boardUrl: null } as unknown as HudState;
+const hud = { cards, names: {}, roles: LIFECYCLE_ROLES } as unknown as HudState;
 
 let host: HTMLDivElement, search: HTMLDivElement, outline: HTMLDivElement, root: Root;
 const rows = () => [...outline.querySelectorAll<HTMLButtonElement>("button.ms")];

@@ -59,8 +59,8 @@ only on 3.15t. On that build mimalloc keeps freed pages resident until its purge
 against about 1 GB live in one deployment, 1.5-1.7 GB with no delay), so `serve` sets `MIMALLOC_PURGE_DELAY=0` in every
 child it supervises unless its own environment already names a value, which the child keeps.
 
-An event stream (`/api/events`, `/api/lanes`, `/api/held`) leaves that pool for as long as it stays open and is counted
-against `STREAM_LIMIT` (256) instead, so a crowd of long-lived streams never takes the worker a short request needs. A
+A subscription (`POST /graphql` answered as `text/event-stream`) leaves that pool for as long as it stays open and is counted
+against `STREAM_LIMIT` (256) instead, so a crowd of long-lived subscriptions never takes the worker a short request needs. A
 stream past the limit gets `503` with `Retry-After: 5` and the client reconnects. The same middleware owns the
 stream's place: it is taken when the handler admits the stream and given back once, when the request ends, whether the
 client left, the server stopped the stream or the handler refused it after admitting.
@@ -83,10 +83,7 @@ snapshot body (`Encoded`) carries its own gzip, level 1, made by the request tha
 of 64 KB or less is sent uncompressed.
 
 The snapshot is taken and encoded for each request that asks for it (`views.adapters.inbound.snapshots`); no process
-holds a Task, an encoded snapshot or its gzip between requests. A stream that sends its snapshot by reference
-(`ref /api/events/body/<key>`) holds that body for one fetch, released when the page reads it or the stream ends; a
-second fetch is `404`. The column streams (`/api/held`, `/api/lanes`) share one take per feed revision on the
-`ColumnViews` thread, so one change costs one live-set read however many streams it wakes.
+holds a Task, an encoded snapshot or its gzip between requests.
 
 A stopping server first tells the feed it is restarting, ends every open stream, waits up to 8 s (`DRAIN_S`) for the
 requests it took and closes.
@@ -278,7 +275,7 @@ clock time of the last data the page drew.
 | --- | --- | --- | --- |
 | Live | green | `live · HH:MM MST` | The stream is open. |
 | Restarting | amber, pulsing | `restarting · HH:MM MST` | The `health` subscription sent `restarting` before the server exited. |
-| Stale | amber, pulsing | `stale · HH:MM MST` | The page drew the Board it kept from an earlier load and the server has not yet sent its own, or the server sent `stale`: no Board writer is folding. |
+| Stale | amber, pulsing | `stale · HH:MM MST` | The connection dropped and the page still shows the Board it drew, until the new read replaces it. |
 | Retrying | amber, pulsing | `retrying · HH:MM MST` | The stream dropped with no announcement. |
 | Offline | red | `offline · HH:MM MST` | The stream has been down for 20 s, from the drop or the announcement. It keeps retrying. |
 | New build | green | `updating when idle` | The `health` subscription's `build` is a page build other than the one loaded. |
@@ -288,29 +285,24 @@ The dot does not pulse under `prefers-reduced-motion`.
 The page reconnects at once after a drop, then waits 250 ms, 500 ms, 1 s, 2 s and 3 s between tries and keeps trying at 3 s.
 Each connect replaces the page's Board with a fresh snapshot.
 
-The page keeps the Board it draws in IndexedDB (database `starpulse`, store `kept`), at most once a second and never a
-partial Board from a server still `reading`. A load reads it back and draws it at once, marked `stale`, so a reload while
-the server is down or restarting shows the cards it last had instead of an empty page; `<time>` is the snapshot's own time.
-It stays stale, turning to `retrying` or `offline` as the stream fails, until the server's snapshot arrives and replaces
-it; a server that is still `reading` does not clear the mark. A Board the page held through a drop is marked stale from the
-reconnect until the server's whole Board arrives. A Board writer that stops (a deploy replacing the `contexts` worker) stores a `stale` delta as its last, which every open stream sends and a stream that attaches before the next writer stores replays after its snapshot; the next change a writer folds clears the mark. A crash stores none. The `contexts` worker starts `board` first and the other contexts after its first start, so a replacement leaves the writer down for one Board build, not for the slowest context. A snapshot is read back only by the page build that wrote it. Where the
-browser has no IndexedDB or refuses a write (a full quota), the page works as before with nothing kept.
+The page keeps nothing between loads: a load reads the Board over `POST /graphql` (`tasks`, `board`) and `POST /api/jobs`, then
+follows it with the `taskChanges` and `jobChanges` subscriptions from the positions those reads answered, the merge Ledger's
+`occurrenceChanges` marks and one `health` subscription ({components, build, restarting, at}) that drives the link dot, the
+build check and the clock. A page holds what it drew through a drop, marked `stale`, until the next read replaces it; a server
+still `reading` its board does not replace it. A position the server no longer holds answers `410` and is read again at once.
 
-While the Board is replaying after a start, `/api/events` resends only `snapshot`, once the replay has ended, because a
-reconnecting page needs the Board the replay built. Every other kind is a delta of that Board; resending it would make
-consumers such as the scheduler act twice. `FEED_EVENT_RESEND` in the feed module is the table: `snapshot` is resent,
-and `task`, `move`, `pulls`, `claim`, `dags`, `ledgers` and `scheduler` are not.
-`build` and `restarting` are process announcements on an open stream, not replayed deltas.
+While the Board is replaying after a start, the feed publishes no delta, so a consumer such as the
+scheduler never acts on a delta twice; the Board it reads then is the one the replay built. `FEED_EVENT_RESEND` in the feed
+module is the table of kinds a restart resends: only `snapshot`.
 
-Two events on `/api/events` carry what the page needs:
+The `health` subscription carries what the page needs besides the Board:
 
-- `build` ({id}): the page build the server is serving, the first 12 hex digits of the SHA-256 of `static/index.html`
-  (whose asset names carry each bundle's hash, so a rebuilt page has a new id). It follows the `snapshot` on every connect.
-  The first build a page's first connection names is the build it was loaded from; a later connection that names another
-  makes the page show `updating when idle`, once that connection's snapshot no longer carries `reading`: a page reloaded
-  onto a server still reading its board would draw the partial Board it holds.
-- `restarting` ({at}): sent to every open stream when the server receives `SIGTERM`, before it exits, after it has
-  waited up to one second in all for the open streams to write the frame. The server then saves the Board and stops.
+- `build`: the page build the server is serving, the first 12 hex digits of the SHA-256 of `static/index.html` (whose asset
+  names carry each bundle's hash, so a rebuilt page has a new id). The first build a page's first connection names is the build
+  it was loaded from; a later connection that names another makes the page show `updating when idle`, once the server is no
+  longer `reading`: a page reloaded onto a server still reading its board would draw the partial Board it holds.
+- `restarting`: set for every open subscription when the server receives `SIGTERM`, before it exits, after it has waited up to
+  one second in all for the open streams to write the frame. The server then saves the Board and stops.
 
 A page that holds a new build reloads itself once nobody is using it: no task view, dialog or menu open, no field focused,
 and no pointer, key or wheel input for 30 s. A tab in the background reloads at once. It reloads once per build: the page
@@ -328,34 +320,12 @@ no `Origin` or this server's own (else 403), so a web page on another site canno
 It listens on --host, 127.0.0.1 by default.
 
 GET /              the page, built by `pnpm --filter @starpulse/web build` into static/: one view
-                   that drills Board → Board state → machine, or Board → workflow. It holds one
-                   /api/events connection and nothing else
+                   that drills Board → Board state → machine, or Board → workflow. After its first
+                   reads it asks for nothing but its `/graphql` subscriptions
 GET /board, /flow/<name>, /runs
                    the same page; it opens the level that draws that graph, then rewrites the address to /
-GET /api/events    server-sent events: a `snapshot` on connect ({graphs, dags, pools, flows: [{name,
-                   machine, agents}], pulls, settled, error, now}: every machine with its tasks, the
-                   workflow declarations, the workflows, each named `<instance>/<workflow>`, and the
-                   concurrency pools they run on, each named `<instance>/<pool>`), then
-                   a `task` delta ({id, agent, settled}) per Board task change, a `move` delta ({flow, id, agent}) per task a machine placed (the machine:events replay at start sends none: a `snapshot` follows it), a
-                   `dags` delta ({dags, pools, error}) per runs change, a `pulls` delta ({pulls}) per
-                   change to a task's pull requests and a `claim` delta ({task, reason, at}) per
-                   refused agent claim the board reports, with a `: ping` comment every 15 s. A `build` event
-                   ({id}: the first 12 hex digits of the SHA-256 of `static/index.html`) follows the `snapshot` on every
-                   connect, so a page can tell it is not running the server's build; `restarting` ({at}) goes to every
-                   open stream on `SIGTERM`, before the process exits.
-                   `pulls` maps each open task that cites a pull request to [{number, repo (org/repo), url, checks
-                   (pass, failing, pending, none), merged, closed (unmerged), conflicting (open and conflicting with its base), draft (open and still a draft), queued (open and in the merge queue), merge_sha, merged_at (null until merged), threads (unresolved), behind_main (commits main holds that the head lacks; null once the head branch is gone), stale}], read from
-                   GitHub once a minute and held between reads; a failed read keeps the
-                   last value with `stale` true.
-                   Everything is held in memory: the Board from the configured board, other machines' tasks
-                   from machine:events, each instance's workflows from its adapter (`pushed/`: runs:events)
-                   `?snapshot=ref` sends the `snapshot` as `ref /api/events/body/<key>`, the path its document is read
-                   from, so a browser parses it off its main thread rather than as one long event.
-GET /api/events/body/<key>
-                   the `snapshot` document a `ref` named, cacheable for an hour (its key is its digest); 404 once the
-                   server has built four newer ones
-GET /api/snapshot  the document /api/events sends on connect, as one response: without each task's description,
-                   criteria and moves (`/api/task/<id>`, `move_sets`) and with only the day's settled tasks;
+GET /api/snapshot  the Board as one response, for the CLI: without each task's description and criteria
+                   (`/api/task/<id>`) and with only the day's settled tasks, each active task keeping its `moves`;
                    `?view=full` and `/api/flows` send this same stored body (gzip once per stored body), which
                    `starpulse snapshot` and `starpulse board|task|machines|machine|doctor|incident` read; a verb
                    that needs a task's description or criteria reads `/api/task/<id>`
@@ -872,7 +842,6 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 - `type` (text, required): The runs adapter: a module under `starpulse` or the dotted path of one an installed package provides. It offers `follow(url, runs, log)`, and optionally `declared_params(url, workflow)`, the parameter names a workflow declares, which `doctor` reads. See Runs adapters for what a built-in adapter reads and serves.
 - `url` (text, required): What the adapter reads. A built-in adapter is an opt-in worker: `serve`'s `contexts` child runs it as a thread, or you run `starpulse worker <adapter> --config <this file>`, and, with it down or not yet started, the page shows this instance with the error "the <adapter> worker has not reported" or "last reported Ns ago" (its beat is older than 60s).
 - `domains` (table of list of text or table of list of text): How the page groups this instance's workflows: each domain is a list of workflow names, or a table of process name to workflow list.
-- `dashboard` (text): The Grafana dashboard that shows this instance's runner; the jobs page links the instance to it.
 - `start_url` (text): Where this instance's runner starts a run; the jobs page's Run in <runner> link opens it.
 - `commit` (`[runs.commit]` table): The run parameters that carry what a run applies, so the Ledger pairs a run with its merge for certain. Each key names a parameter; a key left out is a parameter this instance has none of.
 
@@ -1005,8 +974,8 @@ StarPulse Admin's Scheduler card shows it: the switch with **On** or **Paused**,
 in green or `waits: <reason>` in yellow, or **Nothing eligible**), the count of sessions in flight (the Sessions
 dimension's use, or the length of `inFlight` without it), the session cap row, the CPU and memory limit rows, and the quiet hours row. A click on the switch sends the
 `PUT` with no dialog, and a refusal shows its reason under the switch. The card reads `next` from the same body when it
-carries it, and shows no pick without it. It reads once when Admin opens and follows the `/api/events` `scheduler`
-event after. A server with no scheduler (404) shows the card with its reason and no controls. The Kanban draws no
+carries it, and shows no pick without it. It reads once when Admin opens and follows the `schedulerChanges`
+subscription after. A server with no scheduler (404) shows the card with its reason and no controls. The Kanban draws no
 scheduler control.
 
 ### Session cap
@@ -1082,7 +1051,7 @@ ranked first; once its run ends it is held until the task leaves `in_progress`. 
 - the sampler's reading of a dimension crosses its limit;
 - the feed's `scheduler` status event of a new sample says the next pick would start: a task's demand can fit a
   dimension's headroom without the dimension ever having reached its limit, so a crossing alone would leave it waiting.
-  The loop reads that event from the feed it already subscribes to (the stream `/api/events` serves), once per sample.
+  The loop reads that event from the feed it already subscribes to once per sample.
 
 Each pass starts the first admitted task, then decides again over readings that carry that task's demand, so two tasks that
 do not fit together are never both started in one pass. A run holds its capacity from its start until its task leaves
@@ -1448,8 +1417,7 @@ A task is hot for 24 h after it enters `done`, then cold: the board feed holds o
 publishes nothing, so a page keeps a card until it reloads. The page's snapshot (`/api/snapshot`) is slim:
 
 - `flows` carries open and hot done tasks, each without `description` and `criteria` (read them from
-  `GET /api/task/<id>`) except an In Progress task, which keeps both live; each has its `moves` as `move_set`, a key into
-  the snapshot's `move_sets`; a Done task is a slim dot (`id`, `title`, `state`, `model`, `labels`, `milestone`, `created`, `entered`), here and in
+  `GET /api/task/<id>`) except an In Progress task, which keeps both live; an active task keeps its `moves` inline; a Done task is a slim dot (`id`, `title`, `state`, `model`, `labels`, `milestone`, `created`, `entered`), here and in
   the `task` delta that moves it, for the Star Map's black hole and the counts (`done_dot` in `board/model/feed/shared.py`);
 - every other flow names its states and events once in `names`, and each task's `trail` is points `[state, event, dt]`
   indexing it (a sourced machine's step adds its `id` as a fourth member): `dt` is the whole milliseconds since the step
@@ -1476,11 +1444,6 @@ pages nothing. A machine's **ties** are declared (a `submachines` link on anothe
 machine is nested only where a file declares it. Each machine file declares its `type` and `parents`, and the loader
 refuses a file whose `parents` differ from the machines whose `submachines` name it. `POST /api/machines` and
 `GET /api/machines/{name}` show that config.
-
-`machineStrip` (`{entries}`) lists every machine entry of the 24 hours before the snapshot's `now`, without the rows, oldest first, as
-`{at, machine, row, from, dag}`: `row` is the machine on the In Progress level the entry lands on, so an entry into a
-nested machine counts on the row above it; `from` is the `{machine, state}` the task's session was entered from (null
-when no earlier session is known); `dag` is the workflow that launched a session with no task.
 
 The page scrolls the rows under the fixed top by the wheel, Page Up and Page Down, the arrow keys, Home and End and a
 draggable thumb, with `↑ back to newest` once scrolled; the rows are drawn only while in view. The 24 h strip under the rows draws a tick per

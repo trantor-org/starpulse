@@ -20,7 +20,7 @@ const record: TaskRecord = {
   title: "title TASK-1", profile: "", priority: "High", labels: [], milestone: "", dependencies: [], description: "", plan: "", notes: "",
   acceptanceCriteria: [], definitionOfDone: [], session: "",
 };
-const hud = { cards: [task], names: {}, roles: LIFECYCLE_ROLES, claims: {}, boardUrl: null } as unknown as HudState;
+const hud = { cards: [task], names: {}, roles: LIFECYCLE_ROLES } as unknown as HudState;
 
 let host: HTMLDivElement, root: Root, post: ReturnType<typeof vi.fn<Post>>;
 const settle = () => act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });

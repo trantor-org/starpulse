@@ -106,10 +106,6 @@ class RunsInstanceFile(_Table):
             "process name to workflow list."
         ),
     )
-    dashboard: str | None = Field(
-        default=None,
-        description="The Grafana dashboard that shows this instance's runner; the jobs page links the instance to it.",
-    )
     start_url: str | None = Field(
         default=None,
         description="Where this instance's runner starts a run; the jobs page's Run in <runner> link opens it.",

@@ -52,7 +52,6 @@ import { frozenNote } from "../shared/frozen";
 import { sizes as ledgerSizes } from "../features/level/machineLedger";
 import { firstOpened, rowMeta } from "../features/level/machineRows";
 import { dragTo, inputGoal, revealGoal, type ScrollInput } from "../features/level/machineScroll";
-import { tickAt } from "../features/level/machineStrip";
 import { heldBy, sessionsOf, traceSteps } from "../features/level/machineTrace";
 import { backStep, canvasSpace, levelParams, levelSearch, replaceSearch, retired, viewOf, viewSearch } from "../shared/nav";
 import { boardDraw } from "./boardDraw";
@@ -437,7 +436,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       stream?.close();
       stream = null;
       resync();
-    } else stream ??= openStream(connection, undefined, undefined, null); // the page already holds a Board: the kept one is older
+    } else stream ??= openStream(connection); // the page already holds a Board: the kept one is older
   };
 
   // ---- data: every machine's tasks and the runs instances' workflows, pushed by the stream ----
@@ -579,9 +578,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       names: Object.fromEntries(board.machine.states.map((s) => [s.id, s.name])),
       types: Object.fromEntries(board.machine.states.map((s) => [s.id, s.role ?? null])),
       roles: sky.roles,
-      claims: sky.claims,
-      boardUrl: sky.boardUrl,
-      capabilities: sky.capabilities,
       // the note beside the dot names the time of the Board drawn, so a Board drawn after the link changed (the kept one, drawn after the server was found down) is dated
       ...(link === "live" ? {} : linkHud(link, lastAt, updating)),
     };
@@ -836,7 +832,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
       event: led.event, from: fold.a!.name, to: fold.b!.name, ties: led.cols,
       steps: Object.fromEntries(dags.map((d) => [d, sc.stars[d].glyph.nodes.map((n) => n.name)])),
       optional: Object.fromEntries(dags.map((d) => [d, optionalSteps(rows, d)])),
-      palette: LEDGER_PALETTE, now: T, hm: hhmm, by: (k) => byKey.get(k), task: (id) => taskLink(id, id, S!), runUrl: (dag, runId) => failedRunUrl(S!.dags, dag, runId),
+      palette: LEDGER_PALETTE, now: T, hm: hhmm, by: (k) => byKey.get(k), task: (id) => taskLink(id, id), runUrl: (dag, runId) => failedRunUrl(S!.dags, dag, runId),
     };
   }
   /** The row whose panel is open, if one is. */
@@ -975,7 +971,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     return {
       queue: q ? queueCell(q) : "",
       steps: o.steps.map((s) => { const n = stepRuns(o, s.name); return `<span class="chip" style="color:${DAG_COLOR[stepStatus(o, s.name, s.status)] || MUTED}">${esc(s.name)}${n ? ` ×${n}` : ""}</span>${s.depends.length ? `<span class="k"> after ${s.depends.map(esc).join(", ")}</span>` : ""}`; }).join("<br>"),
-      list: fanList(rows, last, (id) => taskLink(id, id, sky)),
+      list: fanList(rows, last, (id) => taskLink(id, id)),
     };
   }
   /** Repaint the open DAG panel's runs; its run link stays as it is. */
@@ -1109,7 +1105,7 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   });
   // ---- the machine ledger's scroll, the footer that loads older machines, and the 24 h strip along the bottom ----
   let railHover: Rail | null = null, railMoving = false;
-  /** What the rail is under (x, y) of the ledger: the back-to-newest chip, the thumb, or a tick of the strip. */
+  /** What the rail is under (x, y) of the ledger: the back-to-newest chip or the thumb. */
   function railHit(x: number, y: number): Rail | null {
     if (!scene?.top) return null;
     const led = ensureMled();
@@ -1117,10 +1113,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
     const r = led.railBox, within = (b: { x0: number; y0: number; x1: number; y1: number } | null) => !!b && x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
     if (within(r.chip)) return { kind: "chip" };
     if (led.thumb && Math.abs(x - r.thumbX) < 8 && y > r.laneTop + led.thumb.y0 && y < r.laneTop + led.thumb.y1) return { kind: "thumb" };
-    if (y >= r.stripT) {
-      const t = x < r.sx0 - 4 || x > r.sx1 + 4 ? null : tickAt(led.ticks, x);
-      return t ? { kind: "tick", tick: t } : null;
-    }
     return null;
   }
   /** Move the scroll's goal by an input; false for a key that does not scroll. */
@@ -1140,7 +1132,6 @@ export function renderer(cv: HTMLCanvasElement, hud: HudStore, els: { tip: HTMLE
   }
   function railClick(r: Rail) {
     if (r.kind === "chip") scrollGoal = 0;
-    else if (r.kind === "tick") revealRow(r.tick.entry.row);
     loop.wake();
   }
   /** One frame of the scroll: ease to the goal. */

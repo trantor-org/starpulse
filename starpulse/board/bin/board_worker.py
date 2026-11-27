@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import NamedTuple, Protocol
 
 from starpulse.board.adapters.search import SearchIndex
-from starpulse.board.application.queries.claim_refusals import CLAIMS_STREAM, ClaimRefusals
 from starpulse.board.application.queries.machine_tasks import MachineDeltas
 from starpulse.board.application.queries.verdicts import Verdicts
 from starpulse.board.bin.blocks import BoardConfig, board_built_blocks
@@ -136,8 +135,6 @@ def start(
             fold()
 
         threading.Thread(target=take_over, name="board-take-over", daemon=True).start()
-    refusals = ClaimRefusals(feed)
-    follow_stream(refusals, log, CLAIMS_STREAM, refusals.handle_entry, stop=stop)  # the claim refusals
     verdicts = Verdicts(feed)
     follow_stream(verdicts, log, verdict_events.STREAM, verdicts.handle_entry, stop=stop)  # the verdicts
     followers.pulls(feed, log, stop)  # the pull requests, which the ledgers draw

@@ -8,7 +8,7 @@ import { Dags } from "./Dags";
 
 const dag = (name: string, status: Dag["status"] = "succeeded"): Dag => ({ name, status, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: [{ name: "scan", depends: [], status: "succeeded", kind: null, precondition: null, lock: null, last: [] }], pool: "" });
 const dags = [dag("runs/job-0", "running"), dag("runs/job-1"), dag("runs/job-2")];
-const data: DagData = { now: 3600, facts: {}, dashboards: {}, dags, domains: [{ name: "Ops", dags: dags.map((d) => ({ name: d.name })) }], pools: [], cues: [], flows: [] };
+const data: DagData = { now: 3600, facts: {}, dags, domains: [{ name: "Ops", dags: dags.map((d) => ({ name: d.name })) }], pools: [], cues: [], flows: [] };
 
 let host: HTMLDivElement, root: Root;
 const phone = (narrow: boolean) => vi.stubGlobal("matchMedia", (query: string) => ({ matches: narrow && query === "(max-width: 900px)", addEventListener() {}, removeEventListener() {} }));

@@ -199,18 +199,14 @@ describe("the cards drawn from a snapshot", () => {
     now: 600,
   });
 
-  it("carry the moves their move set names in the snapshot's table, and the moves a delta put on the agent itself", () => {
-    const allowed = { in_progress: { allowed: true } } as never;
+  it("carry the moves a delta put on the agent itself, and none otherwise", () => {
     const guarded = { in_progress: { allowed: false, reason: "needs a plan" } } as never;
     const snap = snapshot();
-    snap.move_sets = { abc: allowed };
-    const [first, second] = snap.flows[0].agents;
-    snap.flows[0].agents[0] = { ...first, move_set: "abc" };
-    snap.flows[0].agents[1] = { ...second, moves: guarded };
+    snap.flows[0].agents[1] = { ...snap.flows[0].agents[1], moves: guarded };
 
     const cards = Object.fromEntries(kanbanTasks(merge(snap)).map((t) => [t.id, t.moves]));
 
-    expect(cards).toMatchObject({ "PROJ-1": allowed, "PROJ-2": guarded, "PROJ-3": {} });
+    expect(cards).toMatchObject({ "PROJ-2": guarded, "PROJ-3": {} });
   });
 
   it("carry the numbered criteria and Definition of Done a snapshot entry keeps, and none it slimmed off", () => {

@@ -164,6 +164,7 @@ def start_delivery(
             lease_ended=actor.session_ended,
             unstarted=actor.unstarted,
             closed=actor.closed,
+            covered=actor.nudged_since,
         )
         follow_admitted(actor.admitted, log, stop)
         follow_failed(actor.start_failed, log, stop)

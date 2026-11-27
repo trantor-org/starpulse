@@ -102,7 +102,6 @@ def _answers(op: Op, is_write: bool) -> dict[str, Any]:
 TAGS = {
     "tasks": "One task and every write that moves or edits tasks",
     "board": "The board snapshot, its flows, machines, harnesses and history",
-    "streams": "Server-sent streams of the board, its columns and ledgers",
     "milestones": "Milestones",
     "docs": "Docs",
     "jobs": "Workflows, their runs, and Admin's settings (the scheduler, display and theme)",
@@ -118,7 +117,6 @@ _SEGMENT_TAG = {
         "tasks",
     ),
     **dict.fromkeys("snapshot flows machines harnesses history history-window".split(), "board"),
-    **dict.fromkeys("events held lanes ledger".split(), "streams"),
     **dict.fromkeys("jobs admin".split(), "jobs"),
     "intake": "ingest",
     **dict.fromkeys("doctor health steps".split(), "ops"),

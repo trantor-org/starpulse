@@ -99,6 +99,7 @@ def follow_holder_idle(
     lease_ended: Callable[[str, str], None] = lambda _task, _session: None,
     unstarted: Callable[[], list[str]] = list,
     closed: Callable[[], list[str]] = list,
+    covered: Callable[[str, float], bool] = lambda _task, _at: False,
 ) -> threading.Thread:
     """Call `settled` with the task of each session that settles, and `entered` (`settled` when none) with each task
     moved from a parked lane to In Progress, after this call, within the event's own latency; call `ended` with the task
@@ -110,7 +111,8 @@ def follow_holder_idle(
     Once `ready` is set (the actor has indexed its tasks) it also calls `settled` once with each task of `working`
     whose newest harness event before this call, a `SESSION_STOPPED` aside, is a settle (`settled`) or an end (`lease_ended` with the session its entry names, then `ended`):
     its holder settled or died while the actor was down and was not started again since. The cost is one indexed lookup per working task, never a read of
-    the stream. A task of `closed` (an open one in a lane that ends its idle session) gets the same `settled` call for any newest
+    the stream. A settle `covered` says a nudge sent since already answers (it came while that nudge was in flight, as a Stop hook's
+    second turn does) is not called. A task of `closed` (an open one in a lane that ends its idle session) gets the same `settled` call for any newest
     event but an end, which ends its session once idle: the move that closed the lane may have come while the actor was down, or its end
     been lost at a stop. It calls `dispatched` (`lease_ended` first for a dead holder it replaces) with each task of `working` or
     `unstarted` whose newest such event is a dispatch: the actor was down for it and pinned no session since. Nothing is called before `ready`, and the live tail's rows wait for it."""
@@ -129,7 +131,8 @@ def follow_holder_idle(
             lanes[task] = lane
             moved(task, lane)
         elif task := _task_of(entry, SETTLED):
-            settled(task)
+            if not covered(task, entry.at):
+                settled(task)
         elif task := _task_of(entry, DISPATCHED):
             if replaces := _session_of(entry, "replaces"):
                 lease_ended(task, replaces)

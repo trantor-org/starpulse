@@ -15,7 +15,7 @@ if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from pydantic import BaseModel
 
 
-#: Whether a restart resends this `/api/events` kind. Only `snapshot`: a reconnecting page needs the Board
+#: Whether a restart resends this feed kind. Only `snapshot`: a reconnecting page needs the Board
 #: the replay built. Every other kind is a delta of that Board, so resending it would make consumers act twice.
 FEED_EVENT_RESEND = {
     "snapshot": True,

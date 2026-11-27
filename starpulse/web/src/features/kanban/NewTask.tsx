@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { EMPTY_DRAFT, createOutcome, newTaskKey, postCreate, type NewTaskDraft } from "./newTaskModel";
 import { LEVELS, PRIORITIES } from "./taskViewModel";
-import type { Capabilities } from "../../api";
 
 type Field = Exclude<keyof NewTaskDraft, "acceptanceCriteria">;
 
@@ -96,14 +95,13 @@ export function NewTaskForm({ draft, busy, refused, lane, assignees, milestones,
 }
 
 /** New task with its own state, drawn only when the snapshot says the board creates; closing keeps the draft until it is created. */
-export function NewTaskAction({ capabilities, lane, assignees, milestones, created }: {
-  capabilities?: Capabilities; lane: string; assignees: string[]; milestones: string[]; created: (task: string) => void;
+export function NewTaskAction({ lane, assignees, milestones, created }: {
+  lane: string; assignees: string[]; milestones: string[]; created: (task: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<NewTaskDraft>(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
-  if (!capabilities?.create) return null;
   const submit = async () => {
     if (busy || !draft.title.trim()) return;
     setBusy(true);

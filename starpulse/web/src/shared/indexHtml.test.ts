@@ -36,55 +36,19 @@ describe("index.html's first paint", () => {
   });
 });
 
-describe("index.html's early stream", () => {
+describe("index.html's early record", () => {
   const inline = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, body]) => body);
-  const streamSource = readFileSync(new URL("../api/stream.ts", import.meta.url), "utf8");
-
-  class Source {
-    listeners = new Map<string, ((e: { type: string; data: string }) => void)[]>();
-    constructor(readonly url: string) {}
-    addEventListener(type: string, fn: (e: { type: string; data: string }) => void) {
-      this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
-    }
-    send(type: string, data: string) {
-      for (const fn of this.listeners.get(type) ?? []) fn({ type, data });
-    }
-  }
   const start = (search = "") => {
-    const win: {
-      location: { search: string }; __earlyRecord?: { id: string; read: unknown };
-      __earlyStream?: { src: Source; events: { type: string; data: string }[]; adopted?: boolean; bodies: Record<string, unknown> };
-    } = { location: { search } };
+    const win: { location: { search: string }; __earlyRecord?: { id: string; read: unknown } } = { location: { search } };
     const asked: string[] = [];
-    new Function("window", "EventSource", "fetch", inline[0])(win, Source, (url: string) => (asked.push(url), `read ${url}`));
+    new Function("window", "fetch", inline[0])(win, (url: string) => (asked.push(url), `read ${url}`));
     return { win, asked };
   };
-  const run = () => {
-    const { win, asked } = start();
-    return Object.assign(win.__earlyStream!, { asked });
-  };
 
-  it("runs before the bundle's module script, so the snapshot is requested while the bundle loads", () => {
+  it("runs before the bundle's module script, and requests nothing but a task's record", () => {
     expect(inline).toHaveLength(1);
     expect(page.indexOf("<script>")).toBeLessThan(page.indexOf('<script type="module"'));
-    expect(run().src.url).toBe("/api/events?snapshot=ref");
-  });
-
-  it("holds every event type the page listens for, in the order they arrive", () => {
-    const early = run();
-    const types = [...streamSource.matchAll(/addEventListener\("(\w+)"/g)].map(([, t]) => t);
-    expect(types.length).toBeGreaterThan(5);
-
-    for (const [i, type] of types.entries()) early.src.send(type, `{"n":${i}}`);
-
-    expect(early.events).toEqual(types.map((type, i) => ({ type, data: `{"n":${i}}` })));
-  });
-
-  it("asks for a snapshot's body the moment its reference arrives, and holds the answer for the page", () => {
-    const early = run();
-    early.src.send("snapshot", "ref /api/events/body/0123abcd");
-
-    expect([early.asked, early.bodies]).toEqual([["/api/events/body/0123abcd"], { "/api/events/body/0123abcd": "read /api/events/body/0123abcd" }]);
+    expect(start().asked).toEqual([]);
   });
 
   it("asks for the record of the task the address names while the bundle loads, and holds the answer for the boot", () => {
@@ -96,15 +60,6 @@ describe("index.html's early stream", () => {
 
   it("asks for no record when the address names no task", () => {
     expect(start("?view=kanban").asked).toEqual([]);
-  });
-
-  it("stops holding events once the page listens itself", () => {
-    const early = run();
-    early.src.send("snapshot", "{}");
-    early.adopted = true;
-    early.src.send("task", "{}");
-
-    expect(early.events).toEqual([{ type: "snapshot", data: "{}" }]);
   });
 });
 

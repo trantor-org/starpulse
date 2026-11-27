@@ -178,10 +178,18 @@ def _roles(_: dict, info: GraphQLResolveInfo) -> dict:
     return info.context["feed"].roles.wire()
 
 
+def _link(link: dict) -> dict:
+    return {**link, "routes": link.get("routes", {}), "skill": link.get("skill", "")}
+
+
 @board.field("machines")
 def _machines(_: dict, info: GraphQLResolveInfo) -> list[dict]:
     machines = info.context["feed"].machines
-    return [{**machines[name], "name": name} for name in ("board", *(name for name in machines if name != "board"))]
+    names = ("board", *(name for name in machines if name != "board"))
+    return [
+        {**machines[name], "name": name, "submachines": [_link(link) for link in machines[name].get("submachines", ())]}
+        for name in names
+    ]
 
 
 async def _runs(parent: dict, info: GraphQLResolveInfo) -> dict:
@@ -268,6 +276,11 @@ async def _skill(agent: dict, info: GraphQLResolveInfo) -> dict | None:
 @task.field("interactive")
 async def _interactive(agent: dict, info: GraphQLResolveInfo) -> bool:
     return (await _placing(info))["interactive"].get(agent["id"], False)
+
+
+@task.field("sessionActivity")
+def _session_activity(agent: dict, _: GraphQLResolveInfo) -> dict | None:
+    return agent.get("session_activity")
 
 
 @task.field("criteria")

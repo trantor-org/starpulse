@@ -10,7 +10,7 @@ import { StartStore } from "./start";
 
 const LANES = { ready: "Ready", waiting: "Waiting", in_progress: "In Progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
 const TYPES = { ready: "initial", waiting: null, in_progress: "resting", review: "waiting_on_fact", needs_attention: "waiting_on_person", done: "final" };
-const board = () => ({ cards: [], names: LANES, types: TYPES, roles: LIFECYCLE_ROLES, claims: {}, settled: [], boardUrl: null }) as unknown as HudState;
+const board = () => ({ cards: [], names: LANES, types: TYPES, roles: LIFECYCLE_ROLES, settled: [] }) as unknown as HudState;
 
 let host: HTMLDivElement, root: Root;
 

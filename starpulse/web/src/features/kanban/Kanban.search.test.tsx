@@ -13,7 +13,7 @@ const card = (id: string, title: string, assignee: string, labels: string[] = []
   id, title, lane: "ready", milestone: "", labels, assignee, dependencies: [], openDeps: 0, prs: [], description: "", live: null, released: false, moves: {}, entered: 0, created: null, workableSince: null, machines: [],
 });
 const cards = [card("TASK-1", "plain", "@agent-a"), card("TASK-2", "needle", "@agent-a", ["backup"]), card("TASK-3", "plain", "@agent-b")];
-const hud = { cards, names: {}, roles: LIFECYCLE_ROLES, claims: {}, boardUrl: null } as unknown as HudState;
+const hud = { cards, names: {}, roles: LIFECYCLE_ROLES } as unknown as HudState;
 
 let host: HTMLDivElement, slot: HTMLDivElement, root: Root;
 let queries: string[];

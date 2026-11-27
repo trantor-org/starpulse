@@ -3,7 +3,7 @@
 import type { KanbanTask } from "../features/kanban/kanbanModel";
 import { BOARD, type Path, type Tree } from "./levels";
 import type { DagData } from "../features/dags/dagsModel";
-import type { Capabilities, Pool, Roles } from "../api";
+import type { Pool, Roles } from "../api";
 
 /** One line of the activity feed: a move, a DAG run ending, or a run starting, queueing, changing step or ending. */
 export interface FeedLine {
@@ -63,18 +63,12 @@ export interface HudState {
   types?: Record<string, string | null>;
   /** Which of those States plays which part: the Kanban draws and gates by these, never by a State's name. */
   roles: Roles;
-  /** Each task's latest refused claim, which returns a card the view started a session for. */
-  claims: Record<string, { reason: string; at: number }>;
-  /** The Backlog board a task links into. */
-  boardUrl: string | null;
-  /** What the board writes beyond moves: the task view draws Edit and Archive… only for what it can. */
-  capabilities?: Capabilities;
 }
 
 export class HudStore {
   private state: HudState = {
     stats: "reading machine events…", live: "", path: BOARD, tree: null, states: [], counts: {}, hostCounts: {}, dags: [], dagData: null,
-    moving: [], pools: [], feed: [], cards: [], milestoneDone: {}, doneCount: 0, names: {}, types: {}, roles: {}, claims: {}, boardUrl: null,
+    moving: [], pools: [], feed: [], cards: [], milestoneDone: {}, doneCount: 0, names: {}, types: {}, roles: {},
   };
   private listeners = new Set<() => void>();
 
