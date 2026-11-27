@@ -5,6 +5,7 @@ compare-and-swap at the head it read, and only then writes the file. An append t
 write and writes no file; a Task with no History refuses every write."""
 
 import json
+import time
 from collections import Counter
 from collections.abc import Callable, Collection, Iterator, Mapping
 from contextlib import contextmanager
@@ -15,7 +16,7 @@ from typing import Any
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-from starpulse.board.model import criteria
+from starpulse.board.model import criteria, lane_writes
 from starpulse.board.model.seam import OPERATOR, Written
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore, NewEvent, StaleVersion
@@ -311,9 +312,10 @@ class TaskHistory:
 
     def __init__(self) -> None:
         self._store: EventStore | None = None
+        self._engine: Engine | None = None
 
     def attach(self, engine: Engine) -> None:
-        self._store = EventStore(engine)
+        self._store, self._engine = EventStore(engine), engine
 
     def recorded(
         self, write: Callable[..., Written], *, unstarted: Collection[str] | None = None, moves: bool = False
@@ -382,9 +384,10 @@ class TaskHistory:
         head: int | None = None,
     ) -> None:
         """Append what `events` makes of the replay of `task`'s History at the head read, at that head; a created task's
-        `TaskCreated` of `created` at none. A `head` the History has moved past raises `StaleVersion`."""
-        store = self._store
-        if store is None:
+        `TaskCreated` of `created` at none. A `head` the History has moved past raises `StaleVersion`. Inside a feed's
+        `lane_writes.recording`, a move's lane row is written in the same transaction, so a move it fails to record is refused."""
+        store, engine = self._store, self._engine
+        if store is None or engine is None:
             return
         held = store.head(KIND, task)
         if head is not None and held != head:
@@ -401,8 +404,18 @@ class TaskHistory:
             batch = events(replay(stored), sum(1 for event in stored if event.type == "PlanRevised"))
         if not batch:
             return
+        new = [self._new(kind, payload, actor) for kind, payload in batch]
+        moved = next((payload["to"] for kind, payload in batch if kind == "Transitioned"), None)
+        recorder = lane_writes.recorder()
         try:
-            store.append(KIND, task, head, [self._new(kind, payload, actor) for kind, payload in batch])
+            if moved is None or recorder is None:
+                store.append(KIND, task, head, new)
+                return
+            at = time.time()
+            record = recorder(task, str(moved), at)
+            with engine.begin() as db:  # the move and its lane row land together, or neither does
+                store.append(KIND, task, head, new, at=at, connection=db)
+                record(db)
         except (OSError, SQLAlchemyError) as error:
             raise Refused(f"{task}: its History could not be appended to: {error}") from error
 

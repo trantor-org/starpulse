@@ -12,6 +12,7 @@ events, so a restart restores them.
 import json
 import logging
 from collections.abc import Callable, Iterable, Mapping
+from contextlib import nullcontext
 from typing import Any
 
 from sqlalchemy import (
@@ -271,6 +272,7 @@ class HistoryStore:
         cursor: int | None = None,
         event: Mapping[str, Any] | None = None,
         actor: str | None = None,
+        connection: Connection | None = None,
     ) -> bool:
         """Write a task's lane change; True when a row was written. The status is kept as
         its lane id (`In Progress` is `in_progress`). One that repeats the task's last (a reconcile) is no change, and
@@ -279,9 +281,9 @@ class HistoryStore:
         A source's change (`<source>/<id>`) repeats only the last status of the same source's task: two sources may
         key a task alike. `cursor`, the entry's id in the log, is saved in the same transaction, as is the lane `event`
         (the `board:lanes` fields, under `event_id`) a change writes: both land or neither does. The row keeps the `actor`
-        that made the change, else the `event`'s.
+        that made the change, else the `event`'s. With `connection`, all of it joins the caller's transaction.
         """
-        with self.engine.begin() as db:
+        with nullcontext(connection) if connection is not None else self.engine.begin() as db:
             written = self._fold_lane(db, event_id, task, status, at, actor or (event or {}).get("actor"))
             if written and event is not None:
                 insert_event(db, lane_events.STREAM, event, event_id)

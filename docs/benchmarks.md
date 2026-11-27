@@ -7,7 +7,7 @@ latency budget, a fourth holds that page open idle to see it degrade, and a fift
 | Script | Measures | Needs |
 | --- | --- | --- |
 | `ic_event_log.py` | concurrent fail-open appends to an instance's SQLite WAL log while a reader polls by cursor, at 10 thousand and 1 million rows | a scratch file path |
-| `page_latency.py` | the p50 and p95 of every read route, the `health` subscription's first event, and in Chrome the first paint (navigation to the frame that draws the board), each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
+| `page_latency.py` | the p50 and p95 of every read route, the `health` subscription's first event, and in Chrome the first paint (navigation to the frame that draws the board), each view switch, a task modal, the Star Map's fly-to, each `/graphql` subscription's frame to paint (a row per subscription) and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
 | `soak.py` | one tab held open for hours: every 10 minutes the budget probed and the task modal opened and closed, every few minutes the JS heap, DOM nodes, listeners, idle frames per second, and the server's RSS, threads and open files; against a running StarPulse, or a seeded one it starts and feeds events | Google Chrome, a built page for the seeded server, or a running StarPulse |
 | `load.py` | a Locust crowd of viewers, each holding the `health` subscription open and reading the `/api` routes: per-route p50, p95 and p99 and the subscription's first event, against 50 ms | a running StarPulse |
 

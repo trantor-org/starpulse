@@ -541,7 +541,6 @@ no checkpoint and holds no writer off.
 
 ```toml
 # Every top-level key and table is described in the settings reference below; a setting left out takes its default.
-tracker_url = "https://tracker.example.com"
 database_url = "sqlite:////var/lib/starpulse/history.sqlite"
 event_log_retention_days = 7   # the default
 event_log_archive_dir = "starpulse-archive"   # the default
@@ -753,7 +752,6 @@ models in `starpulse/runtime/config_model.py`, which the loader takes its keys a
 
 #### Top level
 
-- `tracker_url` (text): The tracker's web address: a task links to `<tracker_url>/tasks/<id>`. Unset, it opens in the page's own Kanban.
 - `database_url` (text): The SQLAlchemy URL of the history store; unset, `starpulse-history.sqlite` beside the config. The credentials never live here; they come from the driver's environment, such as `PGPASSWORD`.
 - `event_log_retention_days` (whole number, 1 or more, default `7`): How long `serve` keeps the event log's rows: the sweeper prunes older ones at start and each pass, so the table, a SQLite file and every reader's replay at boot stay bounded. A reader that was down longer than this resumes at the oldest kept row. The `machine:events` stream is exempt: the prune never deletes it, because a read-model rebuild refolds every machine's tasks from it. On its first pass the sweeper also puts the archived rows of that stream back at their archived `id`, once. A whole number of days.
 - `event_log_archive_dir` (text, default `"starpulse-archive"`): Where the sweeper writes each row it prunes, before it deletes the row (see Event log archive): a directory, relative to this file unless absolute.

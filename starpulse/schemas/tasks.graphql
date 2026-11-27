@@ -736,6 +736,11 @@ type Query {
   occurrences(event: String!, offset: Int! = 0, limit: Int! = 50): OccurrencePage
   """One pull request the PR store holds, whatever task cites it, or null when it holds none."""
   pull(repo: String!, number: Int!): PullRequest
+  """
+  The ids among `ids` a dependency no longer waits on, in their order: each task archived or Done of any age, in one
+  read. An id the board does not hold still waits.
+  """
+  finished(ids: [ID!]!): [ID!]!
   """The board's columns, state roles, machines and jobs: what the CLI's board, task show and snapshot verbs read beside the tasks."""
   board: Board!
 }

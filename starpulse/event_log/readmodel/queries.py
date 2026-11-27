@@ -60,6 +60,12 @@ def held_done(done: str) -> Select[Any]:
     return select(tasks.c.id).where(tasks.c.archived == false(), lane.in_(done_lanes(done))).order_by(tasks.c.id)
 
 
+def finished(ids: Collection[str], done: str) -> Select[Any]:
+    """The ids among `ids` of Tasks archived or in a done lane, each one a primary-key seek."""
+    lane = func.lower(func.replace(tasks.c.state, " ", "_"))
+    return select(tasks.c.id).where(tasks.c.id.in_(ids), or_(tasks.c.archived == true(), lane.in_(done_lanes(done))))
+
+
 def linked(uuids: Collection[str], roles: Collection[str]) -> Select[Any]:
     """The task, role and reference of each link of `roles` that the tasks of these UUIDs hold, oldest first: one seek of the
     links' primary key for each task."""

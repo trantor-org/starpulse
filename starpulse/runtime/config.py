@@ -164,8 +164,6 @@ def _worker_memory(file: ConfigFile) -> dict[str, MemoryLimit]:
 
 @dataclass(frozen=True)
 class Config:
-    tracker_url: str | None
-    """The tracker's web address; a task links to `<tracker_url>/tasks/<id>`, or with none to the page's own Kanban."""
     mode: str
     """`ic`, the one value: one person on one machine."""
     runs: tuple[RunsInstance, ...] = ()
@@ -423,7 +421,6 @@ REHEARSE_ENV = "STARPULSE_REHEARSE"
 
 #: The keys that reach a service beyond the store or answer on a network address: a rehearsal drops each.
 _OUTBOUND = (
-    "tracker_url",
     "tls_cert",
     "tls_key",
     "session_start_url",
@@ -472,7 +469,6 @@ def load(path: Path | None) -> Config:
         raise ConfigError(f"harness {file.harness} is not an adapter: use one of {', '.join(ADAPTERS)}", ["harness"])
     kind, board = _board(file.board)
     return Config(
-        file.tracker_url,
         file.mode,
         tuple(_instance(table) for table in file.runs),
         _harnesses(file, path),

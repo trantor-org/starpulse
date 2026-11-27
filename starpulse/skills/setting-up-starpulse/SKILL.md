@@ -20,7 +20,7 @@ Done when `ok` is true. Checks: `config`, `server`, `adapter:board` (and `adapte
 ## Config
 
 `starpulse serve --config starpulse.toml` reads one TOML file; `starpulse.toml` in the working directory is read when
-it exists. Keys: `tracker_url`, `database_url` (a `sqlite:///` URL), `[board]` with `type`, and one `[[runs]]` table per runs adapter with
+it exists. Keys: `database_url` (a `sqlite:///` URL), `[board]` with `type`, and one `[[runs]]` table per runs adapter with
 `name`, `type`, `url`. SQLite must be on a local disk; set `database_url` to a file on one when the config or project
 lives on NFS or SMB. Run `starpulse doctor --config starpulse.toml` after an edit.
 
