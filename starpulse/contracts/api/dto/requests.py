@@ -15,15 +15,15 @@ from pydantic import (
 
 from starpulse.contracts.api._base import _Request
 from starpulse.contracts.api.dto.admin import Clock, Density, OpensOn, Scale, Theme
+from starpulse.contracts.api.dto.brief import Brief
 from starpulse.contracts.api.dto.machine_definition import MachineDefinition, PolicyRows
 from starpulse.contracts.api.dto.scheduler import QuietHours
-from starpulse.contracts.api.dto.task_fields import Changes, DocLink, EditBase, MemberKindSize
+from starpulse.contracts.api.dto.task_fields import Changes, DocLink, EditBase, MemberKindSize, Title
 from starpulse.contracts.tiers import TIERS
 
 #: The details a create takes besides its title, as one text value or a list of them. A create takes every one in its
 #: single write: a second write to finish a task is refused as not on the board until the next scan places the card.
 CREATE_TEXT = (
-    "description",
     "notes",
     "priority",
     "impact",
@@ -162,8 +162,8 @@ class CreateSpec(_Request):
     """
 
     ref: str | None = None
-    title: str
-    description: str | None = None
+    title: Title
+    brief: Brief
     notes: str | None = None
     priority: str | None = None
     impact: str | None = None
@@ -225,7 +225,8 @@ class CreateRequest(_Writer, CreateSpec):
     `created_by: <harness>:<session>`, or each of `tasks` in one call, each with its own title and details.
     """
 
-    title: str | None = None
+    title: Title | None = None
+    brief: Brief | None = None  # type: ignore[assignment]
     tasks: list[CreateSpec] | None = Field(None, min_length=1)
     request_key: str | None = Field(
         None,
@@ -238,6 +239,8 @@ class CreateRequest(_Writer, CreateSpec):
     def _one_of_title_and_tasks(self) -> CreateRequest:
         if (self.title is None) == (self.tasks is None):
             raise ValueError("name exactly one of title and tasks")
+        if self.tasks is None and self.brief is None:
+            raise ValueError("a task takes a brief")
         return self
 
 

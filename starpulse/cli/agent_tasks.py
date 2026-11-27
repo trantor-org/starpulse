@@ -417,10 +417,25 @@ def record_call(
     raise agent_wire.CliError("unavailable", f"{base}: {message}")
 
 
+def _read(path: str) -> str:
+    return sys.stdin.read() if path == "-" else Path(path).read_text()
+
+
+def _brief(source: str | None, description: str | None) -> Any:
+    if description is not None:
+        raise agent_wire.CliError("usage", "task create takes --brief FILE (a JSON object), not --description")
+    if source is None:
+        return None
+    try:
+        return json.loads(_read(source))
+    except (OSError, ValueError) as error:
+        raise agent_wire.CliError("usage", f"--brief {source} is not a JSON object: {error}") from error
+
+
 def _created_task(args: argparse.Namespace) -> dict[str, Any]:
     """The title and details a `create` command line names, each field only when given."""
     given = {
-        "description": args.description,
+        "brief": _brief(args.brief, args.description),
         "priority": args.priority,
         "impact": args.impact,
         "urgency": args.urgency,
@@ -472,7 +487,7 @@ def task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
 
 def _create_batch(args: argparse.Namespace, environ: Mapping[str, str], base: str, path: str) -> dict[str, Any]:
     """The batch create of the JSON list `args.batch` names (`-` for stdin) for `task_create`."""
-    text = sys.stdin.read() if args.batch == "-" else Path(args.batch).read_text()
+    text = _read(args.batch)
     specs = json.loads(text)
     status, reply = agent_wire.put_keyed(base, path, {"tasks": specs, **writer(args, environ)}, args.request_key)
     results = record_call(base, path, status, reply)["results"]
