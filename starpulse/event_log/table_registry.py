@@ -1,7 +1,7 @@
 """Every StarPulse table's class, and the tables each derived family folds from.
 
 A durable table holds rows no event rebuilds; a derived one is dropped, created and refolded when its family's stamp
-changes; an ephemeral one is rewritten by its owner while it runs; a dead one nothing writes or reads, left declared
+changes, except the read model's, which has no stamp: its shape changes by a migration; an ephemeral one is rewritten by its owner while it runs; a dead one nothing writes or reads, left declared
 until the baseline squash drops it. The search, facets and vectors tables are created outside this chain and left out.
 """
 

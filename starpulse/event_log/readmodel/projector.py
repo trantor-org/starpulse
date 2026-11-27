@@ -1,8 +1,6 @@
 """The projector: folds Task Events into the read model and remembers how far it got."""
 
-import hashlib
-from collections.abc import Callable, Mapping, Sequence
-from pathlib import Path
+from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 from sqlalchemy import Connection, Engine, select
@@ -13,9 +11,8 @@ from starpulse.event_log.checkpoints import Checkpoints
 from starpulse.event_log.readmodel import rows, task_uuid
 from starpulse.event_log.readmodel.fold import Row, apply
 from starpulse.event_log.readmodel.machine_fold import Placer, event_of
-from starpulse.event_log.readmodel.tables import MACHINE_TABLES, TASK_TABLES, machine_tasks
+from starpulse.event_log.readmodel.tables import machine_tasks
 from starpulse.event_log.store import EventStore, StoredEvent
-from starpulse.event_log.table_registry import definition, is_stamped, stamp_of, swap, write_stamp
 
 if TYPE_CHECKING:
     from starpulse.event_log.event_log import EventLog, Tail
@@ -30,19 +27,6 @@ SEARCH_CHECKPOINT = "read-model:search-comments"
 #: The states in which a task has finished, as the search index dates it.
 _FINISHED = frozenset({"done", "archived"})
 BATCH = 500
-#: The two table families, each with its own stamp, so a change to one refolds only that one.
-FAMILY = "read_model"
-MACHINE_FAMILY = "read_model_machines"
-_CHECKPOINTS = {FAMILY: CHECKPOINT, MACHINE_FAMILY: MACHINE_CHECKPOINT}
-
-
-def _hash(*names: str) -> str:
-    return hashlib.sha256(b"".join((Path(__file__).parent / name).read_bytes() for name in names)).hexdigest()
-
-
-#: What folds an event into a task row, and into a machine row: an edit to any of these sources refolds that family.
-CODE_HASH = _hash("fold.py", "projector.py", "rows.py")
-MACHINE_CODE_HASH = _hash("machine_fold.py", "projector.py")
 
 
 class SearchIndex(Protocol):
@@ -107,87 +91,19 @@ class Projector:
         if self._search is not None:
             self._index_changed()
 
-    def stamp(self) -> str:
-        """The stamp of the whole read model, which the stored snapshots follow."""
-        return stamp_of(*self._stamps().values())
+    def rebuild(self, tasks: Collection[str]) -> list[str]:
+        """Replay: replace each named Task's row with one folded from its whole History; the Tasks replaced.
 
-    def _stamps(self) -> dict[str, str]:
-        """Each family's stamp: its table definitions, the code that folds into it and, for machine rows, what places an event."""
-        placed = self._placer.fingerprint() if self._placer else ""
-        return {
-            FAMILY: stamp_of(definition(TASK_TABLES), CODE_HASH),
-            MACHINE_FAMILY: stamp_of(definition(MACHINE_TABLES), MACHINE_CODE_HASH, placed),
-        }
-
-    def stale(self) -> list[str]:
-        """The families whose tables were folded under another stamp than this code's."""
-        with self._engine.connect() as db:
-            return [family for family, stamp in self._stamps().items() if not is_stamped(db, family, stamp)]
-
-    def build(self) -> int:
-        """Fold what is new, first replacing each family the store never folded; the number of Events folded.
-
-        A family folded under another stamp is left as it is, serving, for `refold` to replace: a deploy's migration
-        waits on no replay of the History.
+        The one fold that starts from a Task's first Event, run only by `starpulse replay` for an operator. It reads and
+        saves under the write lock, so no Event folds between the two, and it touches no checkpoint and no other Task.
         """
-        never = [family for family in self.stale() if self._checkpoints.load(_CHECKPOINTS[family])[0] is None]
-        return self.rebuild(never) if never else self.catch_up()
-
-    def refold(self, only: Sequence[str] | None = None) -> list[str]:
-        """Replace each family (of `only`, when given) folded under another stamp, the old rows serving until the swap;
-        the families replaced."""
-        stale = [family for family in self.stale() if only is None or family in only]
-        if stale:
-            self.rebuild(stale)
-        return stale
-
-    def rebuild(self, families: Sequence[str] = (FAMILY, MACHINE_FAMILY)) -> int:
-        """Replace `families` with tables folded from the whole History; the number of Task Events folded.
-
-        The rows are folded in memory while writers carry on. The write lock is taken only to swap them in, with the
-        tables created again from their metadata, the fold cursors at the end of the fold and the stamp, so a reader sees
-        the old rows or the new, never an empty or missing table. A stop inside the fold changes nothing; the Events
-        recorded meanwhile are folded after the swap. Consumer cursors keep their place.
-        """
-        tasks_held, position, folded = self._replay_tasks() if FAMILY in families else ({}, 0, 0)
-        machines_held, last = self._replay_machines() if MACHINE_FAMILY in families else ({}, 0)
-        stamps = self._stamps()
-        with self._engine.begin() as db:
-            if FAMILY in families:
-                swap(db, FAMILY, TASK_TABLES)
-                rows.save_all(db, tasks_held.values())
-                self._checkpoints.save(CHECKPOINT, position, conn=db)
-                self._checkpoints.save(SEARCH_CHECKPOINT, 0, conn=db)
-                write_stamp(db, FAMILY, stamps[FAMILY])
-            if MACHINE_FAMILY in families:
-                swap(db, MACHINE_FAMILY, MACHINE_TABLES)
-                self._save_machines(db, machines_held)
-                self._checkpoints.save(MACHINE_CHECKPOINT, last, conn=db)
-                write_stamp(db, MACHINE_FAMILY, stamps[MACHINE_FAMILY])
-        self.catch_up()
-        return folded
-
-    def _replay_tasks(self) -> tuple[dict[str, tuple[Row | None, int]], int, int]:
-        """Every Task Event folded in memory: the rows, the position of the last Event and the number folded."""
         held: dict[str, tuple[Row | None, int]] = {}
-        position = folded = 0
-        while batch := self._store.read_after("task", position, BATCH):
-            position = batch[-1].position
-            folded += len(batch)
-            self._fold(batch, held, lambda _: (None, 0))
-        return held, position, folded
-
-    def _replay_machines(self) -> tuple[dict[tuple[str, str], tuple[dict, int]], int]:
-        """Every `machine:events` entry placed in memory: the rows and the id of the last entry."""
-        held: dict[tuple[str, str], tuple[dict, int]] = {}
-        if self._log is None or self._placer is None:
-            return held, 0
-        tail = self._tail(0)
-        last = 0
-        while batch := tail.poll_json():
-            last = batch[-1][0]
-            self._place(batch, held, lambda *_: (None, 0))
-        return held, last
+        with self._engine.begin() as db:
+            db.exec_driver_sql("BEGIN IMMEDIATE")
+            for task in tasks:
+                self._fold(self._store.read_in(db, "task", task), held, lambda _: (None, 0))
+            rows.save_all(db, held.values())
+        return sorted(held)
 
     def _tail(self, after: int) -> Tail:
         from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the log's stack loads when a log opens
@@ -202,9 +118,9 @@ class Projector:
         while batch := self._store.read_after("task", position, BATCH):
             folded_rows: dict[str, tuple[Row | None, int]] = {}
             with self._engine.begin() as db:
-                db.exec_driver_sql("BEGIN IMMEDIATE")  # a refold's swap waits here, so the comparison below holds through the write
+                db.exec_driver_sql("BEGIN IMMEDIATE")  # a second folder waits here, so the comparison below holds through the write
                 if (self._checkpoints.load(CHECKPOINT, conn=db)[0] or 0) != position:
-                    break  # a refold swapped the rows since this batch was read: the next pass folds from the swap's cursor
+                    break  # another folder took this batch: the next pass folds from its cursor
                 self._fold(batch, folded_rows, lambda task: rows.load_at(db, task))
                 rows.save_all(db, folded_rows.values())
                 position = batch[-1].position

@@ -3,7 +3,7 @@ snapshot it rebuilds from.
 
 A snapshot is read only when it still validates against the model; otherwise the reader gets its position and no
 snapshot, and replays from the log. A name is one checkpoint: a projection that changes keeps no cursor here, because
-its family refolds under its own stamp.
+its family rebuilds under its own stamp (the read model has none).
 """
 
 import time

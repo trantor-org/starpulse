@@ -71,7 +71,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     url = database_url(config.database_url, base)
     shown = make_url(url).render_as_string(hide_password=True)
     if args.check:
-        done = settled(url, machines, keys=board.keys)
+        done = settled(url)
         print(json.dumps({"store": shown, "settled": done}))
         return 0 if done else 1
     maintain(
@@ -88,16 +88,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def settled(url: str, machines: Mapping[str, dict], *, keys: TaskKeys | None = None) -> bool:
-    """Whether `maintain` has nothing to change: the store is at the chain's head and every read-model family and the
-    stored snapshot hold the stamp of this code and these machines. It writes nothing, and reads no stamp of a store
-    behind the head, which may hold none of the tables."""
+def settled(url: str) -> bool:
+    """Whether `maintain` has nothing to change: the store is at the chain's head and the stored snapshot holds the stamp
+    of its table definition. It writes nothing, and reads no stamp of a store behind the head, which may hold none of
+    the tables."""
     engine = store_engine(url)
     try:
-        if not at_head(engine):
-            return False
-        projector = Projector(engine, EventStore(engine), drawn=machines, keys=keys)
-        return not projector.stale() and snapshots_built(engine, projector.stamp())
+        return at_head(engine) and snapshots_built(engine)
     finally:
         engine.dispose()
 
@@ -120,10 +117,10 @@ def maintain(
     With `inbox_files` (a glob for the old GitHub inbox databases) it copies their rows into the store once and leaves the files.
 
     With a `base` (the config's directory) it also imports the operator files found there, and in `state_dir` under it.
-    With `fold` (the `starpulse migrate` run, the only writer besides the Board child) it folds the Task History and the
-    `machine:events` the store holds into the read model, placing machine tasks with `keys`; a family never folded is
-    built first, and a family stamped under other code is left to the Board writer's `starpulse refold`. The stored
-    snapshot and the summaries are rebuilt when their stamp differs.
+    With `fold` (the `starpulse migrate` run) it folds the Task History and the `machine:events` the store holds past
+    the read model's checkpoints, placing machine tasks with `keys`. It never rebuilds a row: a table's shape changes by
+    a migration, and `starpulse replay` repairs a named Task. The stored snapshot is emptied only when its own table
+    definition changed.
     """
     engine = store_engine(url)
     try:
@@ -131,8 +128,8 @@ def maintain(
         log = EventLog(url, engine=engine)  # opened after the migration: an unmigrated store refuses its events
         if fold:
             projector = Projector(engine, EventStore(engine), log=log, drawn=machines, keys=keys)
-            projector.build()
-            build_snapshots(engine, projector.stamp())
+            projector.catch_up()
+            build_snapshots(engine)
         if base is not None:
             import_files(log, base, base / (state_dir or ""))
         if inbox_files is not None:
