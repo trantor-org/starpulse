@@ -30,11 +30,12 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecords,
 )
 from starpulse.contracts.api.dto.links import Link
-from starpulse.contracts.api.dto.pages import DonePage, MachineDetail, Machines
+from starpulse.contracts.api.dto.pages import DailyReports, DonePage, MachineDetail, Machines
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     AdminRequest,
     CreateRequest,
+    DailyReportListRequest,
     DocCreateRequest,
     DocListRequest,
     DocPutRequest,
@@ -88,6 +89,7 @@ class ApiContract(_Api):
     snapshot: Snapshot
     donePage: DonePage
     machines: Machines
+    dailyReports: DailyReports
     machineDetail: MachineDetail
     graphqlResponse: GraphqlResponse
     viewShown: ViewShown
@@ -122,6 +124,7 @@ class ApiContract(_Api):
         | MilestonePutRequest
         | DocCreateRequest
         | DocListRequest
+        | DailyReportListRequest
         | DocPutRequest
         | WindowRequest
         | GraphqlRequest

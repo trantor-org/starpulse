@@ -17,7 +17,6 @@ announcement and clock, and each later one follows a change of the components, t
 
 import asyncio
 import json
-import math
 import time
 from collections.abc import Callable
 from functools import partial
@@ -64,7 +63,7 @@ _LABEL_FIELDS = 4
 
 query = QueryType()
 task = ObjectType("Task")
-task_list = ObjectType("TaskList")
+task_list = ObjectType("TaskPage")
 occurrence = ObjectType("Occurrence")
 pull_request = ObjectType("PullRequest")
 claim_release = ObjectType("ClaimRelease")
@@ -97,12 +96,16 @@ async def _tasks(
     source: str | None = None,
     lane: str | None = None,
     milestone: str | None = None,
+    offset: int = 0,
+    limit: int | None = None,
 ) -> dict:
+    if offset < 0 or limit is not None and limit < 1:
+        raise GraphQLError("tasks takes an offset of 0 or more and a limit of 1 or more")
     position = info.context[
         "api"
     ].snapshots.position()  # before the read: a change after it is replayed, none is missed
     agents = await _worker(info, info.context["feed"].open_tasks)
-    items = [
+    found = [
         agent
         for agent in agents
         if (filter is None or _holds(agent, filter))
@@ -110,9 +113,10 @@ async def _tasks(
         and (lane is None or agent["state"] == lane_id(lane))
         and (milestone is None or agent["milestone"] == milestone)
     ]
+    items = found[offset : None if limit is None else offset + limit]
     listed = {agent["id"]: agent for agent in items}
     info.context.setdefault("lists", {}).update({id(agent): listed for agent in items})
-    return {"position": position, "items": items}
+    return {"position": position, "items": items, "total": len(found)}
 
 
 async def _done(parent: dict, info: GraphQLResolveInfo) -> dict:
@@ -163,11 +167,11 @@ async def _task(_: Any, info: GraphQLResolveInfo, id: str) -> dict | None:
 
 @query.field("occurrences")
 async def _occurrences(
-    _: Any, info: GraphQLResolveInfo, event: str, before: float | None = None, limit: int = 20
+    _: Any, info: GraphQLResolveInfo, event: str, offset: int = 0, limit: int = 50
 ) -> dict | None:
-    if before is not None and not math.isfinite(before) or not 0 < limit <= PAGE_LIMIT:
-        raise GraphQLError(f"occurrences takes a finite before and a limit from 1 to {PAGE_LIMIT}")
-    return await _worker(info, info.context["feed"].ledger_rows, event, before, limit)
+    if offset < 0 or not 0 < limit <= PAGE_LIMIT:
+        raise GraphQLError(f"occurrences takes an offset of 0 or more and a limit from 1 to {PAGE_LIMIT}")
+    return await _worker(info, info.context["feed"].ledger_rows, event, offset, limit)
 
 
 @occurrence.field("child")

@@ -5,7 +5,8 @@ A task's file and its replayed row are compared through `markdown.render`, plus 
 meta (start criteria by their authored fields only), the assignee, the comments' text and whether the task is archived."""
 
 import difflib
-from collections.abc import Iterable, Iterator, Mapping
+import time
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -24,6 +25,8 @@ __all__ = ["Filed", "Parity", "backfill_answers", "check", "filed", "import_miss
 
 Record = Mapping[str, Any]
 _SHOWN = 6
+BATCH = 50
+PAUSE_S = 1.0
 
 
 class Filed(NamedTuple):
@@ -119,15 +122,31 @@ def check(items: Iterable[Filed], store: EventStore) -> Parity:
     return report
 
 
-def import_missing(items: Iterable[Filed], engine: Engine) -> list[str]:
-    """Give each of `items` without History its `TaskImported`; the tasks that got one."""
-    history = TaskHistory()
-    history.attach(engine)
-    return [item.task for item in items if history.imported(item.task, item.record, item.archived)]
+def _paced(wrote: Iterable[tuple[str, bool]], batch: int, pause: Callable[[float], None]) -> list[str]:
+    """The tasks of `wrote` that got a write, pausing `PAUSE_S` after each `batch` writes so served reads proceed between them."""
+    done: list[str] = []
+    for task, written in wrote:
+        if written:
+            done.append(task)
+            if len(done) % batch == 0:
+                pause(PAUSE_S)
+    return done
 
 
-def backfill_answers(items: Iterable[Filed], engine: Engine) -> list[str]:
-    """Give each of `items` with a History the creation answers its file holds and the History lacks; the tasks that got them."""
+def import_missing(
+    items: Iterable[Filed], engine: Engine, *, batch: int = BATCH, pause: Callable[[float], None] = time.sleep
+) -> list[str]:
+    """Give each of `items` without History its `TaskImported`, pausing after each `batch`; the tasks that got one."""
     history = TaskHistory()
     history.attach(engine)
-    return [item.task for item in items if history.backfilled(item.task, item.record)]
+    return _paced(((item.task, history.imported(item.task, item.record, item.archived)) for item in items), batch, pause)
+
+
+def backfill_answers(
+    items: Iterable[Filed], engine: Engine, *, batch: int = BATCH, pause: Callable[[float], None] = time.sleep
+) -> list[str]:
+    """Give each of `items` with a History the creation answers its file holds and the History lacks, pausing after each
+    `batch`; the tasks that got them."""
+    history = TaskHistory()
+    history.attach(engine)
+    return _paced(((item.task, history.backfilled(item.task, item.record)) for item in items), batch, pause)

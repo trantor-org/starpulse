@@ -3,12 +3,12 @@ import { apiFetch } from "../../api/apiFetch";
 import { type LedgerHead, OCCURRENCES, ledgerRow } from "../../api/ledgerStream";
 import { PAGE } from "./ledgerScroll";
 
-/** The `event` rows older than `before`, a page of them; null when the server refuses, cannot be reached, holds no ledger for the event or answers something else, so the footer asks again. */
-export async function fetchLedger(event: string, before: number, fetcher: typeof apiFetch = apiFetch): Promise<LedgerHead | null> {
+/** A page of the `event` rows after the newest `offset`, which the caller holds (a row that reached the head since repeats, and `receive` drops it); null when the server refuses, cannot be reached, holds no ledger for the event or answers something else, so the footer asks again. */
+export async function fetchLedger(event: string, offset: number, fetcher: typeof apiFetch = apiFetch): Promise<LedgerHead | null> {
   try {
     const response = await fetcher("/graphql", {
       method: "POST",
-      body: JSON.stringify({ query: OCCURRENCES, variables: { event, before, limit: PAGE } }),
+      body: JSON.stringify({ query: OCCURRENCES, variables: { event, offset, limit: PAGE } }),
     });
     const body = (await response.json()) as { data?: { occurrences?: { rows?: unknown; more?: boolean } | null }; errors?: unknown[] } | null;
     const page = body?.data?.occurrences;

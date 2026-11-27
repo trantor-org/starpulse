@@ -297,18 +297,11 @@ def build(
 PAGE = 20
 
 
-def page(rows: Sequence[Mapping], *, before: float | None, limit: int, since: float) -> tuple[list[Mapping], bool]:
-    """The next `limit` rows of `rows` (newest first) older than `before`, none from before `since`, and whether older remain.
-
-    `before` is the `at` of the last row the reader holds (None: start at the newest). A page ends only between two
-    different `at`s, so rows sharing the boundary second travel together and the next page, which starts strictly
-    older, neither repeats nor skips one; such a page may hold more than `limit`.
-    """
-    live = [row for row in rows if row["at"] >= since and (before is None or row["at"] < before)]
-    end = limit
-    while 0 < end < len(live) and live[end]["at"] == live[end - 1]["at"]:
-        end += 1
-    return live[:end], end < len(live)
+def page(rows: Sequence[Mapping], *, offset: int, limit: int, since: float) -> tuple[list[Mapping], bool, int]:
+    """The `limit` rows of `rows` (newest first) after the first `offset`, none from before `since`, whether older
+    remain, and how many rows from `since` on there are."""
+    live = [row for row in rows if row["at"] >= since]
+    return live[offset : offset + limit], offset + limit < len(live), len(live)
 
 
 #: The width of one strip bucket: a quarter-hour, so a day is 96.

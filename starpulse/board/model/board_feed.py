@@ -110,6 +110,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, PullMethods, ReadMethods, RunMetho
         self._build_lock = threading.Lock()
         #: The read model's position the page's deltas have been published up to; the snapshot carries what came before.
         self._followed = read_model.position()
+        #: The Tasks the page has been told are gone or never held: an edit of one draws nothing, so it sends no frame.
+        self._gone = read_model.archived_ids()
         #: Which of the Board's States play which part (`Board.roles`); the default is Backlog.md's default statuses.
         self._roles = roles or StateRoles.of_statuses(DEFAULT_STATUSES)
         self._clock = clock

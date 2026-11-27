@@ -113,12 +113,20 @@ class ReadMethods:
         for summary in changed:
             for alias in (summary["meta"] or {}).get("aliases") or []:
                 self.alias(alias, summary["id"])
-            agent = None if summary["archived"] else self._read_model_agent(summary["id"])
+            task_id, settled = summary["id"], None
+            if summary["archived"]:
+                settled = self.settled(task_id).get(task_id)
+                known = task_id in self._gone  # a task the page already lacks, edited with nothing settled to draw
+                self._gone.add(task_id)
+                if known and settled is None:
+                    continue
+            else:
+                self._gone.discard(task_id)
+            agent = None if summary["archived"] else self._read_model_agent(task_id)
             if agent and agent["state"] == self._roles.done:
                 agent = done_dot(agent)
             elif agent:
                 agent = self._active(agent)
-            settled = self.settled(summary["id"]).get(summary["id"]) if summary["archived"] else None
             self._publish(
                 "task", {"id": summary["id"], "agent": agent, "settled": settled, "archived_today": archived_today}
             )

@@ -139,6 +139,10 @@ class ReadModel:
         with self._reading() as db:
             return {task: milestone for task, milestone in db.execute(queries.cold_done(done, since, only))}
 
+    def archived_ids(self) -> set[str]:
+        """The ids of every archived Task."""
+        return set(self._ids(queries.archived_ids()))
+
     def archived_since(self, since: float) -> int:
         """How many Tasks were archived at or after `since`."""
         with self._reading() as db:

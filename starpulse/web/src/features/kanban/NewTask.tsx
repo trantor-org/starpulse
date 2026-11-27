@@ -1,10 +1,25 @@
 // The Kanban toolbar's New task: a button that opens a form, laid out like the task view, for every field a new task takes;
 // the card lands in the board's starting lane.
 import { useState } from "react";
-import { EMPTY_DRAFT, createOutcome, newTaskKey, postCreate, type NewTaskDraft } from "./newTaskModel";
+import { EMPTY_DRAFT, createOutcome, newTaskKey, postCreate, refusedField, type NewTaskDraft } from "./newTaskModel";
 import { LEVELS, PRIORITIES } from "./taskViewModel";
 
 type Field = Exclude<keyof NewTaskDraft, "acceptanceCriteria">;
+
+type Text = "outcome" | "why" | "currentState" | "scope" | "outOfScope" | "stopConditions" | "rollback";
+const BRIEF_TEXT: [Text, string, number, string][] = [
+  ["outcome", "Outcome", 2, "One line, at most 200 characters"],
+  ["why", "Why", 3, "One line, at most 400 characters"],
+  ["currentState", "Current state", 3, "One line, at most 400 characters"],
+  ["scope", "Scope", 3, "One item per line"],
+  ["outOfScope", "Out of scope", 3, "One item per line"],
+  ["stopConditions", "Stop conditions", 3, "One item per line"],
+  ["rollback", "Rollback", 2, "Required when undo is 2 or more"],
+];
+const AXES = ["reach", "data", "undo", "detect"] as const;
+const ONE_LINE: Text[] = ["outcome", "why", "currentState", "rollback"];
+
+const Refusal = ({ id, text }: { id: string; text: string | null }) => <div id={id} className="editrefusal" role="alert">{text}</div>;
 
 export interface NewTaskFormProps {
   draft: NewTaskDraft;
@@ -23,6 +38,7 @@ export function NewTaskForm({ draft, busy, refused, lane, assignees, milestones,
   const set = (field: Field) => (e: { currentTarget: { value: string } }) => change({ ...draft, [field]: e.currentTarget.value });
   const criteria = draft.acceptanceCriteria.length ? draft.acceptanceCriteria : [""];
   const setCriteria = (items: string[]) => change({ ...draft, acceptanceCriteria: items });
+  const bad = refusedField(refused);
   const ready = !busy && !!draft.title.trim();
   return (
     <div id="kbm" onClick={(e) => e.target === e.currentTarget && cancel()}>
@@ -69,9 +85,27 @@ export function NewTaskForm({ draft, busy, refused, lane, assignees, milestones,
           </tbody></table>
           <datalist id="nt-assignees">{assignees.map((v) => <option key={v} value={v} />)}</datalist>
           <datalist id="nt-milestones">{milestones.map((v) => <option key={v} value={v} />)}</datalist>
+          {BRIEF_TEXT.map(([field, label, rows, hint]) => (
+            <section className="sec" key={field}>
+              <div className="sh"><span className="t">{label}</span></div>
+              <textarea className={ONE_LINE.includes(field) ? "fv" : "fv long"} rows={rows} value={draft[field]} aria-label={label} aria-invalid={bad === field} aria-describedby={bad === field ? `nt-${field}-err` : undefined} placeholder={hint} disabled={busy} onChange={set(field)} />
+              {bad === field && <Refusal id={`nt-${field}-err`} text={refused} />}
+            </section>
+          ))}
           <section className="sec">
-            <div className="sh"><span className="t">Description</span></div>
-            <textarea className="fv long" rows={5} value={draft.description} aria-label="Description" placeholder="What the task is for and what it changes" disabled={busy} onChange={set("description")} />
+            <div className="sh"><span className="t">Blast radius</span></div>
+            <table><tbody>
+              {AXES.map((field) => (
+                <tr key={field}><td>{field}</td><td>
+                  <select className="fv" value={draft[field]} aria-label={`Blast radius ${field}`} aria-invalid={bad === field} aria-describedby={bad === field ? `nt-${field}-err` : undefined} disabled={busy} onChange={set(field)}>
+                    {["", "0", "1", "2", "3"].map((v) => <option key={v} value={v}>{v || "—"}</option>)}
+                  </select>
+                  {bad === field && <Refusal id={`nt-${field}-err`} text={refused} />}
+                </td></tr>
+              ))}
+            </tbody></table>
+            <textarea className="fv" rows={1} value={draft.blastNote} aria-label="Blast radius note" aria-invalid={bad === "blastNote"} aria-describedby={bad === "blastNote" ? "nt-blastNote-err" : undefined} placeholder="One sentence on the worst axis" disabled={busy} onChange={set("blastNote")} />
+            {bad === "blastNote" && <Refusal id="nt-blastNote-err" text={refused} />}
           </section>
           <section className="sec">
             <div className="sh"><span className="t">Acceptance criteria</span></div>

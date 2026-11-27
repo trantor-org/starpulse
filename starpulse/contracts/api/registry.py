@@ -27,12 +27,13 @@ from starpulse.contracts.api.dto.milestones import (
     TaskRecords,
 )
 from starpulse.contracts.api.dto.links import Link
-from starpulse.contracts.api.dto.pages import DonePage, MachineDetail, Machines
+from starpulse.contracts.api.dto.pages import DailyReports, DonePage, MachineDetail, Machines
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     AdminRequest,
     CreateRequest,
     DocCreateRequest,
+    DailyReportListRequest,
     DocListRequest,
     DocPutRequest,
     JobListRequest,
@@ -124,6 +125,7 @@ LISTS: dict[str, type[BaseModel]] = {
     "/api/machines": MachineListRequest,
     "/api/milestones": MilestoneListRequest,
     "/api/docs": DocListRequest,
+    "/api/daily-reports": DailyReportListRequest,
 }
 
 def writes(method: str, path: str) -> bool:
@@ -136,6 +138,7 @@ BODIES: dict[str, Any] = {
     "error": ApiError,
     "snapshot": Snapshot,
     "machines": Machines | ApiError,
+    "daily_reports": DailyReports | ApiError,
     "machine": MachineDetail | ApiError,
     "machine_create": MachineWritten | ApiError,
     "machine_put": MachineWritten | ApiError,
@@ -277,6 +280,9 @@ ROUTES: dict[tuple[str, str], Op] = {
     ("GET", "/api/docs/{id}"): _read("One doc, archived or open", "doc"),
     ("PUT", "/api/docs/{id}"): _write("Write or restore a doc over the revision named", "doc_put", DocPutRequest),
     ("DELETE", "/api/docs/{id}"): _write("Archive a doc", "doc_archive"),
+    ("POST", "/api/daily-reports"): _write(
+        "One machine's daily report of counts and durations", "daily_reports", DailyReportListRequest
+    ),
     ("POST", "/api/docs"): _write("The docs named, without bodies", "docs", DocListRequest),
     ("PUT", "/api/docs"): _write("Create a doc", "doc_create", DocCreateRequest, "201"),
     ("POST", "/api/jobs"): _write("The jobs, at a stream position", "jobs", JobListRequest),

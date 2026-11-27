@@ -40,6 +40,7 @@ export interface ApiContract {
     | UnrecognisedUrl
   )[];
   contractReport: ContractReport;
+  dailyReports: DailyReports;
   docShown: DocShown;
   docs: Docs;
   donePage: DonePage;
@@ -66,6 +67,7 @@ export interface ApiContract {
     | MilestonePutRequest
     | DocCreateRequest
     | DocListRequest
+    | DailyReportListRequest
     | DocPutRequest
     | WindowRequest
     | GraphqlRequest
@@ -611,6 +613,22 @@ export interface ContractCheck {
   check: string;
   reason: string;
   status: "pass" | "warn" | "fail";
+  [k: string]: unknown;
+}
+/**
+ * `POST /api/daily-reports`: the buckets of one machine's range, empty when it made no move in it.
+ */
+export interface DailyReports {
+  items: DailyReportItem[];
+  [k: string]: unknown;
+}
+/**
+ * One bucket of a daily report: the transitions counted and the summed length of the Stays they ended.
+ */
+export interface DailyReportItem {
+  bucket: string;
+  count: number;
+  seconds: number;
   [k: string]: unknown;
 }
 /**
@@ -2248,6 +2266,27 @@ export interface DocCreateRequest {
  */
 export interface DocListRequest {
   ids: string[];
+}
+/**
+ * `POST /api/daily-reports`: one machine's counts and summed durations over a range of days, read from the daily
+ * report rows, `limit` buckets from `offset`.
+ */
+export interface DailyReportListRequest {
+  filter: DailyReportFilter;
+  limit?: number;
+  offset?: number;
+}
+/**
+ * The `filter` of `POST /api/daily-reports`: `machine`, `since` and `until` (inclusive local dates in
+ * America/Phoenix) are required, `state` keeps the transitions out of that state, and `bucket` sums the rows per `day`,
+ * `month`, `year` or the whole `range`.
+ */
+export interface DailyReportFilter {
+  bucket?: "day" | "month" | "year" | "range";
+  machine?: string | null;
+  since?: string | null;
+  state?: string | null;
+  until?: string | null;
 }
 /**
  * `PUT /api/docs/{id}`: replace the `title`, `type` or `body` named, if the doc still reads `base`, the `revision`

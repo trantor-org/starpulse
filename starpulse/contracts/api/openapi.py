@@ -116,7 +116,7 @@ _SEGMENT_TAG = {
         "miss restore take-over retired dispatch review complete reopen done search".split(),
         "tasks",
     ),
-    **dict.fromkeys("snapshot flows machines harnesses history history-window".split(), "board"),
+    **dict.fromkeys("snapshot flows machines harnesses history history-window daily-reports".split(), "board"),
     **dict.fromkeys("jobs admin".split(), "jobs"),
     "intake": "ingest",
     **dict.fromkeys("doctor health steps".split(), "ops"),

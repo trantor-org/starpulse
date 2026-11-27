@@ -1,22 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_DRAFT, createBody, createOutcome, postCreate, newTaskKey, type NewTaskDraft } from "./newTaskModel";
+import { EMPTY_DRAFT, createBody, refusedField, createOutcome, postCreate, newTaskKey, type NewTaskDraft } from "./newTaskModel";
 
 const answer = (status: number, body: unknown) => async () => new Response(JSON.stringify(body), { status });
 const FULL: NewTaskDraft = {
-  title: " Write the quickstart ", description: "Explain the lanes.\n", priority: "High", impact: "high", urgency: " low ", labels: "docs, ui ,", milestone: "m-1",
+  title: " Write the quickstart ", outcome: " Explain the lanes ", why: "Readers get lost", currentState: "No quickstart", scope: "Write it\n\n Link it ", outOfScope: "Translations", stopConditions: "A lane is unnamed",
+  reach: "1", data: "0", undo: "2", detect: "1", blastNote: "Docs only", rollback: "Revert the doc", priority: "High", impact: "high", urgency: " low ", labels: "docs, ui ,", milestone: "m-1",
   assignee: "@agent-fast-low", dependencies: "task-1", acceptanceCriteria: ["Names every lane", " ", "Creates a task"],
 };
+
+describe("the field a refusal names", () => {
+  it.each([
+    ["invalid request: brief.outcome: String should have at most 200 characters", "outcome"],
+    ["invalid request: brief.blast_radius: Field required", null],
+    ["invalid request: brief.current_state: Field required", "currentState"],
+    ["invalid request: brief.blast_radius.undo: Field required", "undo"],
+    ["invalid request: brief.blast_radius.note: Field required", "blastNote"],
+    ["invalid request: description: Extra inputs are not permitted", null],
+  ])("%s is %s", (reason, field) => expect(refusedField(reason)).toBe(field));
+});
 
 describe("the body of a create", () => {
   it("names the operator and carries every filled field, trimmed, with labels and dependencies split on commas and blank criteria dropped", () => {
     expect(createBody(FULL)).toEqual({
-      title: "Write the quickstart", description: "Explain the lanes.", priority: "High", impact: "high", urgency: "low", labels: ["docs", "ui"], milestone: "m-1",
+      title: "Write the quickstart", brief: {
+        outcome: "Explain the lanes", why: "Readers get lost", current_state: "No quickstart", rollback: "Revert the doc", scope: ["Write it", "Link it"],
+        out_of_scope: ["Translations"], stop_conditions: ["A lane is unnamed"], blast_radius: { reach: 1, data: 0, undo: 2, detect: 1, note: "Docs only" },
+      }, priority: "High", impact: "high", urgency: "low", labels: ["docs", "ui"], milestone: "m-1",
       assignee: "@agent-fast-low", dependencies: ["task-1"], acceptanceCriteria: ["Names every lane", "Creates a task"], actor: "operator",
     });
   });
 
   it("is the title alone when nothing else was filled", () => {
-    expect(createBody({ ...EMPTY_DRAFT, title: "Write the docs" })).toEqual({ title: "Write the docs", actor: "operator" });
+    expect(createBody({ ...EMPTY_DRAFT, title: "Write the docs" })).toEqual({ title: "Write the docs", actor: "operator", brief: {} });
   });
 });
 

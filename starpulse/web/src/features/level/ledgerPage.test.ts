@@ -8,14 +8,14 @@ const reply = (body: unknown, status = 200) => Promise.resolve(new Response(JSON
 const answer = (occurrences: unknown) => reply({ data: { occurrences } });
 
 describe("fetchLedger", () => {
-  it("asks for a page of one event's rows older than the oldest held and returns its rows and whether more remain", async () => {
+  it("asks for the page of one event's rows past those held and returns its rows and whether more remain", async () => {
     const fetcher = vi.fn((_url: string, _init?: RequestInit) => answer({ rows: [occurrence(1), occurrence(2)], more: true }));
 
-    const page = await fetchLedger("MERGED", 1234, fetcher);
+    const page = await fetchLedger("MERGED", 40, fetcher);
 
     const sent = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
     expect(fetcher.mock.calls[0][0]).toBe("/graphql");
-    expect(sent.variables).toEqual({ event: "MERGED", before: 1234, limit: 20 });
+    expect(sent.variables).toEqual({ event: "MERGED", offset: 40, limit: 20 });
     expect(page).toEqual({ rows: [row(1), row(2)], more: true });
   });
 

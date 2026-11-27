@@ -17,9 +17,12 @@ from pathlib import Path
 lazy from sqlalchemy import create_engine
 
 lazy from starpulse.board.adapters.task_parity import backfill_answers, check, filed, import_missing, unfile
+lazy from starpulse.event_log.checkpoints import Checkpoints
 lazy from starpulse.event_log.opening import database_url
 lazy from starpulse.event_log.store import EventStore
 lazy from starpulse.runtime.config import ConfigError, discover, load
+
+REMOVED = "parity:removed"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -38,11 +41,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     base = path.parent if path else Path.cwd()
     engine = create_engine(database_url(config.database_url, base))
     root = base / str(config.board.get("path", "backlog"))
+    checkpoints = Checkpoints(engine)
     try:
+        if args.remove and checkpoints.load(REMOVED)[0] is not None:
+            print(json.dumps({"skipped": "already ran"}))
+            return 0
         imported = import_missing(filed(root, engine), engine) if args.load else []
         backfilled = backfill_answers(filed(root, engine), engine) if args.load else []
         report = check(filed(root, engine), EventStore(engine))
-        removed = unfile(root) if args.remove and not report.missing else 0
+        removed = 0
+        if args.remove and not report.missing:
+            removed = unfile(root)
+            checkpoints.save(REMOVED, 1)
     finally:
         engine.dispose()
     print(

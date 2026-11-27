@@ -18,7 +18,7 @@ export interface LedgerMarks {
 
 const ROW = "key at tasks sha pr { repo number url } child appliedBy applies runs fails pinned";
 const MARKS = `mergeStrip { since bucket buckets { merges failed reruns } } mergePins { ${ROW} }`;
-export const OCCURRENCES = `query($event: String!, $before: Float, $limit: Int) { occurrences(event: $event, before: $before, limit: $limit) { more rows { ${ROW} } } }`;
+export const OCCURRENCES = `query($event: String!, $offset: Int!, $limit: Int!) { occurrences(event: $event, offset: $offset, limit: $limit) { more rows { ${ROW} } } }`;
 const OCCURRENCE_CHANGES = `subscription($event: String!) { occurrenceChanges(event: $event) { head more rows { ${ROW} } ${MARKS} } }`;
 
 type Occurrence = Pick<LedgerRow, "key" | "at" | "tasks" | "runs" | "fails" | "pinned"> & {

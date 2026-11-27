@@ -188,6 +188,22 @@ machine_events = Table(
     Index("ix_starpulse_machine_events_run", "run", "machine", "occurred_at"),
 )
 
+#: The daily report: one row per machine, local day (America/Phoenix, `YYYY-MM-DD`), state left and state entered, with
+#: the moves counted and the seconds each had spent since the move before it. Written as a move is recorded and never
+#: rebuilt; a first state on a machine has `from_state` '' and an unplaced one has `to_state` ''. Read by
+#: `HistoryStore.daily_report`, which serves `POST /api/daily-reports`.
+daily_report = Table(
+    "starpulse_daily_report",
+    metadata,
+    Column("machine", String, nullable=False),
+    Column("day", String, nullable=False),
+    Column("from_state", String, nullable=False),
+    Column("to_state", String, nullable=False),
+    Column("count", Integer, nullable=False, server_default="0"),
+    Column("seconds", Float, nullable=False, server_default="0"),
+    PrimaryKeyConstraint("machine", "day", "from_state", "to_state", name="pk_starpulse_daily_report"),
+)
+
 #: Every qa verdict a lens gave a task, kept per round so a later PASS never hides an earlier CHANGES.
 task_verdicts = Table(
     "starpulse_task_verdicts",

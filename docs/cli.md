@@ -250,7 +250,7 @@ Start button (`POST /api/start`), which reaches the scheduler's starter (`sessio
 starter; see [serving.md](serving.md)), and the task modal names the claiming session by its Claude session id and link. A fleet on
 another multiplexer (herdr) therefore changes nothing here.
 
-The server serves the same facts to a mod over `POST /graphql`: the `tasks` query answers the open `lanes` and, for each held task, `skill` (`{name, states, current, next}`: the skill machine its phase holds it in, its state ids in order, the state it holds, and its `next` edge; `null` off the In Progress phases) and `interactive` (true once an accepted `PUT /api/tasks/{id}` with `interactive: true` flipped it; `false` before), and the `taskChanges` subscription sends each later change to a task.
+The server serves the same facts to a mod over `POST /graphql`: the `tasks` query answers the open `lanes` and a `TaskPage` (`items`, `total`, `position`; `offset` and `limit` cut a page, every task when `limit` is null) and, for each held task, `skill` (`{name, states, current, next}`: the skill machine its phase holds it in, its state ids in order, the state it holds, and its `next` edge; `null` off the In Progress phases) and `interactive` (true once an accepted `PUT /api/tasks/{id}` with `interactive: true` flipped it; `false` before), and the `taskChanges` subscription sends each later change to a task.
 
 ## The pull-request store
 

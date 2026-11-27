@@ -91,7 +91,7 @@ class LedgerMethods:
     def _head(self, ledgers: dict[str, list[dict]]) -> dict[str, list[dict]]:
         """`ledgers` with each event's rows cut to the newest page; older ones come from `ledger_rows`."""
         since = self._clock() - LEDGER_WINDOW
-        return {event: page(rows, before=None, limit=PAGE, since=since)[0] for event, rows in ledgers.items()}
+        return {event: page(rows, offset=0, limit=PAGE, since=since)[0] for event, rows in ledgers.items()}
 
     def _merge_strip(self, ledgers: dict[str, list[dict]]) -> dict | None:
         """The 24-hour strip of the merge ledger (`ledger.strip`), counted over every row rather than the page sent;
@@ -122,19 +122,19 @@ class LedgerMethods:
         view = self._ledger_view(full)
         return {"mergeStrip": view["mergeStrip"], "mergePins": view["mergePins"]}
 
-    def ledger_rows(self, event: str, before: float | None, limit: int) -> dict | None:
-        """The `occurrences` query: the next `limit` rows older than `before` (None: the newest), `{rows, more, mergeStrip, mergePins}`, none
-        from beyond `LEDGER_WINDOW`; None when no workflow is tied to `event`."""
+    def ledger_rows(self, event: str, offset: int, limit: int) -> dict | None:
+        """The `occurrences` query: the `limit` rows after the newest `offset`, `{rows, more, total, mergeStrip, mergePins}`,
+        none from beyond `LEDGER_WINDOW`; None when no workflow is tied to `event`."""
         with self._lock:
-            return self._ledger_page(event, before, limit)
+            return self._ledger_page(event, offset, limit)
 
-    def _ledger_page(self, event: str, before: float | None, limit: int) -> dict | None:
+    def _ledger_page(self, event: str, offset: int, limit: int) -> dict | None:
         if event not in self._ties:
             return None
-        found, more = page(
-            self._ledger_full.get(event, ()), before=before, limit=limit, since=self._clock() - LEDGER_WINDOW
+        found, more, total = page(
+            self._ledger_full.get(event, ()), offset=offset, limit=limit, since=self._clock() - LEDGER_WINDOW
         )
-        return {"rows": found, "more": more, **self._marks_of(event)}
+        return {"rows": found, "more": more, "total": total, **self._marks_of(event)}
 
     def _marks_of(self, event: str) -> dict:
         """The last build's strip and pins for the merge ledger; the other events carry neither."""
@@ -147,7 +147,7 @@ class LedgerMethods:
         change to those after it, `{rows, mergeStrip, mergePins}` each; None when no workflow is tied to `event`. Only this event's changes
         reach the queue, and no `taskChanges` delta carries a row."""
         with self._lock:
-            if (found := self._ledger_page(event, None, PAGE)) is None:
+            if (found := self._ledger_page(event, 0, PAGE)) is None:
                 return None
             changes: queue.Queue = queue.Queue()
             self._watchers.append((event, changes))
