@@ -24,6 +24,8 @@ _TABLE = {
     },
 }
 SESSION_EVENTS = tuple(_TABLE["events"])
+#: The events that put a session to work: those the table moves to `active`.
+WOKE = frozenset(event for event, rules in _TABLE["events"].items() if any(rule["to"] == "active" for rule in rules))
 HARNESS = compile_document(_TABLE, Path("session-events"))
 #: The session table as the page draws it, keyed by name like a board adapter's machines.
 SESSION_MACHINES = {HARNESS.name: describe(HARNESS.machine)}

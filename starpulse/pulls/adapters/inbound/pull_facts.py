@@ -44,7 +44,10 @@ def _posted(name: str, result: str) -> Edit:
         if name not in {check["name"] for check in checks}:
             return {}
         posted = [{**check, "result": result} if check["name"] == name else check for check in checks]
-        rollup = {"sha": record["headRefOid"], "state": rollup_state(posted), "at": now}  # the rollup the posted results make, as GitHub's
+        state = rollup_state(posted)
+        if state == "passed":  # the record may list only the checks posted so far: a pass is the head rollup's to say (`HeadChecks`, `settle_checks`)
+            return {"requiredChecks": posted, "fetchedAt": max(now, record["fetchedAt"])}
+        rollup = {"sha": record["headRefOid"], "state": state, "at": now}
         return {"requiredChecks": posted, "rollup": rollup, "fetchedAt": max(now, record["fetchedAt"])}  # `PullStore._guarded` reads these
 
     return edit
