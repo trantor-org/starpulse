@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from starpulse.board.adapters import native_docs, native_milestones
+from starpulse.board.adapters.native_doc_index import index_of
 from starpulse.board.adapters.native_scan import _strings
 
 _LISTS = ("dependencies", "references", "documentation")
@@ -32,8 +33,7 @@ def _named(frontmatter: Mapping[str, Any]) -> list[str]:
 
 def _uuid_of(root: Path, key: str, tasks: Callable[[str], str]) -> str:
     if _DOC.fullmatch(key):
-        found = native_docs._find(root, key)
-        front = found[2] if found else None
+        front = native_docs.front(root, index_of(root), key)
     elif _MILESTONE.fullmatch(key):
         found = native_milestones._find(root, key)
         front = found[1] if found else None

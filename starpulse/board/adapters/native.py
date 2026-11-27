@@ -29,7 +29,8 @@ import yaml
 from sqlalchemy import and_, delete, func, insert, or_, select
 from sqlalchemy.engine import Engine
 
-from starpulse.board.adapters import item_uuid, native_docs, native_milestones, qa_verdicts, ref_uuids
+from starpulse.board.adapters import item_uuid, native_doc_import, native_docs, native_milestones, qa_verdicts, ref_uuids
+from starpulse.board.adapters.native_doc_index import DocIndex, index_of
 from starpulse.board.adapters.holder_idle import GRACE_EXIT, UNREACHABLE_EXIT, HolderInGrace, HolderUnreachable
 from starpulse.board.adapters.native_scan import (
     _CRITERIA,
@@ -913,14 +914,15 @@ def _unlinked(changes: Mapping[str, Any]) -> Mapping[str, Any]:
     return changes
 
 
-def _doc_linker(root: Path, base: Path) -> _Linker:
+def _doc_linker(index: DocIndex, base: Path) -> _Linker:
     """`changes` with each doc id in its `documentation` list read as that open doc's file, keeping one link per file; an
     id no open doc has, or an entry that is a JSON object or array (a command's reply), raises ValueError.
 
     The file is named from the repository the board sits in (the nearest folder above it holding `.git`), as a task's
     other links are, else from `base`.
     """
-    read = native_docs.reader(root)
+    read = native_docs.reader(index.root, index)
+    root = index.root
 
     def prefix() -> Path:
         board = root.resolve()
@@ -1648,7 +1650,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     _python_path(settings.get("python_path"), base)
     root = base / str(settings.get("path", DEFAULT_PATH))
     _create(root, base.resolve().name)
-    link = _doc_linker(root, base)
+    docs_index = index_of(root)
+    link = _doc_linker(docs_index, base)
     migrations: Mapping[str, str] = {}
     labelled: Mapping[str, str] = {}
     if "machine" in settings:
@@ -1714,11 +1717,12 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "retired": _retired_reader(retired),
             "retired_projected": retired.projected,
             "retired_page": retired.page,
-            "read_doc": native_docs.reader(root),
-            "create_doc": native_docs.creator(root),
-            "edit_doc": native_docs.editor(root),
-            "archive_doc": native_docs.archiver(root),
-            "restore_doc": native_docs.restorer(root),
+            "read_doc": native_docs.reader(root, docs_index),
+            "create_doc": native_docs.creator(root, docs_index),
+            "edit_doc": native_docs.editor(root, docs_index),
+            "archive_doc": native_docs.archiver(root, docs_index),
+            "restore_doc": native_docs.restorer(root, docs_index),
+            "move_doc": native_docs.mover(root, docs_index),
             "milestones": native_milestones.lister(root),
             "read_milestone": native_milestones.reader(root),
             "create_milestone": native_milestones.creator(root),
@@ -1738,6 +1742,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
 
     def attach(log: EventLog) -> None:
         retired.engine = log.engine  # the retired tasks live in the view's history store
+        docs_index.engine = log.engine
+        native_doc_import.import_files(root, docs_index)  # a doc file added on disk since the last start gets its row
         history.attach(log.engine)
         view.attach(log.engine)
         if settings.get("complete_done"):

@@ -5331,7 +5331,7 @@
       },
       "DocCreateRequest": {
         "additionalProperties": false,
-        "description": "`PUT /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`.",
+        "description": "`PUT /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`; `extension` (default `md`) is the file's type.",
         "properties": {
           "title": {
             "type": "string"
@@ -5359,6 +5359,17 @@
             "default": null
           },
           "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "extension": {
             "anyOf": [
               {
                 "type": "string"
@@ -5426,7 +5437,7 @@
       },
       "DocPutRequest": {
         "additionalProperties": false,
-        "description": "`PUT /api/docs/{id}`: replace the `title`, `type` or `body` named, if the doc still reads `base`, the `revision`\nof the record the caller read. `archived: false` first returns an archived doc to `folder` under the board's docs\n(the docs folder itself when absent), unchanged.",
+        "description": "`PUT /api/docs/{id}`: replace the `title`, `type` or `body` named, if the doc still reads `base`, the `revision`\nof the record the caller read. `archived: false` first returns an archived doc to `folder` under the board's docs\n(the docs folder itself when absent), unchanged; a `folder` on an open doc moves it there.",
         "properties": {
           "base": {
             "type": "string"

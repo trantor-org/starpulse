@@ -225,7 +225,7 @@ def serve_page(
                 archive=base / config.event_log_archive_dir,
                 board=board_dir,
             )
-            + docs_exposition(board_dir)
+            + docs_exposition(board_dir, log.engine)
         ),
         sweeper_metrics=sweeper_metrics_of(log),
         bridge_metrics=lambda read=(bridge_metrics_of(log), wake_metrics_of(log)): "".join(part() for part in read),

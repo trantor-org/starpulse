@@ -482,3 +482,16 @@ replay differs), `gaps`, `reconciled` (tasks whose History fell behind their fil
 or that has none, is a gap the earlier writes left: it is imported as the board shows it and listed in `gaps`. The exit
 code is 0 when every task is equal, 1 when one differs, and 2 for a config or board that cannot be read. A second run
 imports nothing and verifies again. `--dry-run` imports into a scratch store and reports, leaving the real store untouched.
+
+## Indexing a board's docs
+
+A doc is found by its id through the store's `starpulse_doc_index` table (id, title, type and path of every file under
+`docs/` and `archive/docs/`), never by walking the tree. `serve` gives every doc file with no row its row at start;
+the doc writers (create, edit, archive, restore, move) keep the rows current. A doc of another file type (`.csv`,
+`.png`) is indexed by its `doc-N - slug.<ext>` name, with type `other`.
+
+`starpulse doc-index [--config starpulse.toml] [--check]` gives every doc file with no row its row, then lists where
+the files and the index disagree. It is not an agent verb. It prints one JSON line: `indexed` (rows added now),
+`unindexed` (files with no row) and `missing` (rows with no file), as paths under the board. The exit code is 0 when
+they agree, 1 when they do not, and 2 for a config that cannot be read or a board that does not assemble. `--check`
+writes nothing. A file added by hand while `serve` runs shows in `unindexed` until the next start or a `doc-index` run.

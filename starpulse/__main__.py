@@ -39,6 +39,7 @@ COMMANDS: dict[str, Callable[[list[str]], int | None]] = {
     "rehearse": _lazy("starpulse.runtime.rehearse"),
     "import-history": _lazy("starpulse.runtime.history_import"),
     "import-board": _lazy("starpulse.runtime.board_import"),
+    "doc-index": _lazy("starpulse.runtime.doc_index"),
     "conform": _lazy("starpulse.runtime.conform"),
     "policy": _lazy("starpulse.runtime.policy"),
     "machines": _lazy("starpulse.runtime.machine_files"),

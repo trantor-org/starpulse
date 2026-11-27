@@ -324,12 +324,13 @@ class MilestonePutRequest(_Request):
 
 
 class DocCreateRequest(_Request):
-    """`PUT /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`."""
+    """`PUT /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`; `extension` (default `md`) is the file's type."""
 
     title: str
     type: str | None = None
     folder: str | None = None
     body: str | None = None
+    extension: str | None = None
 
 
 class DocListRequest(_Request):
@@ -341,7 +342,7 @@ class DocListRequest(_Request):
 class DocPutRequest(_Request):
     """`PUT /api/docs/{id}`: replace the `title`, `type` or `body` named, if the doc still reads `base`, the `revision`
     of the record the caller read. `archived: false` first returns an archived doc to `folder` under the board's docs
-    (the docs folder itself when absent), unchanged."""
+    (the docs folder itself when absent), unchanged; a `folder` on an open doc moves it there."""
 
     base: NonBlank
     title: str | None = None
