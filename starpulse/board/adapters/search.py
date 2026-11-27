@@ -54,9 +54,7 @@ _MARK = "char(2), char(3)"
 #: The column index of the first field with a match, -1 when none shows one; `snippet` takes it as its column.
 _HIT_COLUMN = (
     "CASE "
-    + " ".join(
-        f"WHEN instr(snippet({_TABLE}, {at}, {_MARK}, '', 1), char(2)) THEN {at}" for at in range(len(_FIELDS))
-    )
+    + " ".join(f"WHEN instr(snippet({_TABLE}, {at}, {_MARK}, '', 1), char(2)) THEN {at}" for at in range(len(_FIELDS)))
     + " ELSE -1 END"
 )
 _LOCATED = f"{_HIT_COLUMN} AS field, snippet({_TABLE}, {_HIT_COLUMN}, '', '', '…', 16) AS snippet"
@@ -175,6 +173,8 @@ _QUERY_VECTORS = 256
 _SCAN_THREADS = 4
 _SCAN_POOL = ThreadPoolExecutor(_SCAN_THREADS, thread_name_prefix="search-scan")
 _FILLING_MAX = 4
+#: Seconds the reranker is given to score the candidates of one duplicate search.
+_RERANK_TIMEOUT = 30.0
 #: Seconds `keep_embedding` waits after a failed pass before the next.
 _RETRY = 60.0
 _INSERT = text(
@@ -229,7 +229,8 @@ def _scan(matrix: np.ndarray, query: np.ndarray) -> list[Future[np.ndarray]]:
     # the caller runs its ranked query.
     step = max(1, -(-len(matrix) // _SCAN_THREADS))
     return [
-        _SCAN_POOL.submit(np.einsum, "ij,j->i", matrix[at : at + step], query) for at in range(0, max(len(matrix), 1), step)
+        _SCAN_POOL.submit(np.einsum, "ij,j->i", matrix[at : at + step], query)
+        for at in range(0, max(len(matrix), 1), step)
     ]
 
 
@@ -313,6 +314,7 @@ class SearchIndex:
         self._url = settings.embeddings_url if settings else None
         self._model = settings.model if settings else None
         self._recipe = f"{self._model} {_EMBEDDED_TEXT}"
+        self._rerank = settings if settings and settings.rerank_url else None
         self._token = os.environ.get(settings.token_env) if settings and settings.token_env else None
         if settings and settings.token_env and not self._token:
             logger.warning("StarPulse: %s is not set, so embeddings requests carry no credentials", settings.token_env)
@@ -640,14 +642,34 @@ class SearchIndex:
             return vector
         return None
 
+    def rerank(self, query: str, documents: list[str]) -> list[float] | None:
+        """How well each of `documents` answers `query`, by the configured reranker (`POST {model, query, documents}`,
+        `results[].relevance_score` by `index`); None when none is configured."""
+        if self._rerank is None:
+            return None
+        settings = self._rerank
+        body = {
+            "model": settings.rerank_model,
+            "query": settings.rerank_query.replace("{query}", query),
+            "documents": [settings.rerank_document.replace("{document}", document) for document in documents],
+        }
+        try:
+            with urllib.request.urlopen(self._request(settings.rerank_url, body), timeout=_RERANK_TIMEOUT) as response:
+                scored = {item["index"]: float(item["relevance_score"]) for item in json.load(response)["results"]}
+            return [scored[index] for index in range(len(documents))]
+        except (OSError, http.client.HTTPException, ValueError, KeyError, TypeError) as exc:
+            raise EmbeddingError(f"{settings.rerank_url}: {exc}") from exc
+
+    @staticmethod
+    def _request(url: str, body: dict[str, object], token: str | None = None) -> urllib.request.Request:
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return urllib.request.Request(url, json.dumps(body).encode(), headers, method="POST")
+
     def _embed(self, texts: list[str], timeout: float = _TIMEOUT) -> list[list[float]]:
         """One vector per text from the endpoint (OpenAI-compatible: `POST {model, input}`, `data[].embedding`)."""
-        headers = {"Content-Type": "application/json"}
-        if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
-        request = urllib.request.Request(
-            self._url, json.dumps({"model": self._model, "input": texts}).encode(), headers, method="POST"
-        )
+        request = self._request(self._url, {"model": self._model, "input": texts}, self._token)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 data = sorted(json.load(response)["data"], key=lambda item: item["index"])

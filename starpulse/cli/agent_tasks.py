@@ -453,6 +453,7 @@ def _created_task(args: argparse.Namespace) -> dict[str, Any]:
     """The title and details a `create` command line names, each field only when given."""
     given = {
         "brief": _brief(args.brief, args.description),
+        "duplicateQueries": args.duplicate_queries,
         "priority": args.priority,
         "impact": args.impact,
         "urgency": args.urgency,
@@ -514,8 +515,12 @@ def _create_batch(args: argparse.Namespace, environ: Mapping[str, str], base: st
         message = f"{len(refused)} of {len(specs)} tasks refused: " + "; ".join(
             f"#{position} {error}" for position, error in refused.items()
         )
-        raise agent_wire.CliError("refused", message, created=created, refused=refused)
-    return {"task": created}
+        searched = {str(at): found for at, result in enumerate(results, 1) if (found := result.get("duplicateSearch"))}
+        raise agent_wire.CliError(
+            "refused", message, created=created, refused=refused, **({"duplicateSearch": searched} if searched else {})
+        )
+    checked = [result for result in results if "open" in result]
+    return {"task": created, **({"checked": checked[0]} if checked else {})}
 
 
 def _task_edit_call(

@@ -23,6 +23,12 @@ def create_flags(sub: argparse.ArgumentParser) -> None:
         help="the task's brief as a JSON object, `-` for stdin: `outcome`, `why`, `current_state`, `scope`, "
         "`out_of_scope`, `blast_radius`, `stop_conditions`, and `rollback` when `blast_radius.undo` is 2 or more",
     )
+    sub.add_argument(
+        "--duplicate-search-queries",
+        action="append",
+        dest="duplicate_queries",
+        help="words to search the board for a task that does this work, which the server records; repeat for several",
+    )
     sub.add_argument("--description", help=argparse.SUPPRESS)
     sub.add_argument("--priority", help="`high`, `medium` or `low`")
     sub.add_argument("--impact", help="how much the work matters: `high`, `medium` or `low`")

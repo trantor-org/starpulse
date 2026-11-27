@@ -1746,9 +1746,17 @@ export interface CreateRequest {
   adrNeeded?: string | null;
   assignee?: string | null;
   brief?: Brief | null;
+  /**
+   * Answer the duplicate search's record and file nothing.
+   */
+  checkDuplicates?: boolean;
   definitionOfDone?: string[] | null;
   dependencies?: string[] | null;
   documentation?: string[] | null;
+  /**
+   * Words to search the board for a task that does this work: the server searches them, the citations in the text and its meaning, and records what it finds as `duplicateSearch`.
+   */
+  duplicateQueries?: string[] | null;
   duplicateResolution?: string | null;
   duplicateSearch?: string | null;
   follows?: string | null;
@@ -1839,9 +1847,17 @@ export interface CreateSpec {
   adrNeeded?: string | null;
   assignee?: string | null;
   brief: Brief;
+  /**
+   * Answer the duplicate search's record and file nothing.
+   */
+  checkDuplicates?: boolean;
   definitionOfDone?: string[] | null;
   dependencies?: string[] | null;
   documentation?: string[] | null;
+  /**
+   * Words to search the board for a task that does this work: the server searches them, the citations in the text and its meaning, and records what it finds as `duplicateSearch`.
+   */
+  duplicateQueries?: string[] | null;
   duplicateResolution?: string | null;
   duplicateSearch?: string | null;
   follows?: string | null;

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy.exc import OperationalError
 
 from starpulse.board.adapters.native_scan import dependencies
+from starpulse.board.adapters.search import EmbeddingError
 from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.markdown import ARCHIVE_REQUEST, FREEZE_REQUEST, MOVE_REQUEST, REQUESTED_BY, UNFREEZE_REQUEST
 from starpulse.board.model.seam import (
@@ -46,6 +47,7 @@ from starpulse.views.application.commands.guard import (
     who_of,
     with_request,
 )
+from starpulse.views.application.commands.duplicates import Duplicates, Linked, duplicate_search
 from starpulse.views.application.commands.lifecycle import park_task
 from starpulse.views.application.commands.moves import (
     Dispatcher,
@@ -350,6 +352,36 @@ def _create_details(request: CreateSpec) -> dict[str, Any]:
     return details
 
 
+def _searched(
+    spec: CreateSpec, who: Who, title: str, details: dict[str, Any], duplicates: Duplicates | None
+) -> tuple[int, dict[str, Any]] | str | None:
+    """The duplicate search of the create `spec` names: its record, which `details` then carries as `duplicate_search`,
+    or the refusal; None when the create is no search's to judge.
+
+    An agent's create names queries, or a `duplicateSearch` it was given, or a `source` the board holds one task for;
+    one with none is refused, since the guard on its resolution has no candidates to hold it to.
+    """
+    queries = spec.duplicateQueries or []
+    if not queries and not spec.source and not spec.checkDuplicates:
+        if duplicates is not None and who.actor == AGENT and not spec.duplicateSearch:
+            return 409, {"error": "a create names `duplicateQueries` (`--duplicate-search-queries` on `backlog-task create`): words to search the board for a task that does this work"}
+        return None
+    if duplicates is None:
+        if queries or spec.checkDuplicates:
+            return 409, {"error": "this server keeps no search index, so it cannot search for a duplicate"}
+        return None
+    text = "\n".join([title, details.get("description", ""), *details.get("references", [])])
+    try:
+        record, opened = duplicate_search(duplicates, queries, text, source=spec.source or "")
+    except Linked as linked:
+        return 409, {"error": f"LINKED {linked}; not filing a second task for the work an open task carries"}
+    except EmbeddingError as exc:
+        return 409, {"error": f"the duplicate search failed: {type(exc).__name__}: {exc}"}
+    if spec.checkDuplicates:
+        return 200, {"duplicateSearch": record, "open": opened}
+    return record
+
+
 def _create(
     spec: CreateSpec,
     who: Who,
@@ -357,6 +389,7 @@ def _create(
     feed: BoardFeed | None,
     siblings: Mapping[str, str],
     cohort: bool = False,
+    duplicates: Duplicates | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Create the task `spec` names through `create`, in the lane its `status` names or else the board's starting
     lane, with each `ref:<label>` dependency replaced by the id `siblings` holds for the label."""
@@ -364,6 +397,11 @@ def _create(
     if not title or len(title) > _TITLE_MAX:
         return 400, {"error": f'a create needs {{"title": "<1 to {_TITLE_MAX} characters>"}}'}
     details = _create_details(spec)
+    searched = _searched(spec, who, title, details, duplicates)
+    if isinstance(searched, tuple):
+        return searched
+    if searched is not None:
+        details["duplicateSearch"] = searched
     if "dependencies" in details:
         dependencies = [
             siblings.get(item[len(_REF) :], item) if item.startswith(_REF) else item for item in details["dependencies"]
@@ -382,13 +420,13 @@ def _create(
             raise
         return 503, {"error": "the database is locked; send the create again"}
     if not written.ok:
-        return 409, {"error": written.output, "skill": written.skill}
+        return 409, {"error": written.output, "skill": written.skill, **({"duplicateSearch": searched} if searched else {})}
     return 201, {"task": written.output}
 
 
 @with_request(CreateRequest, "Creating a task")
 def create_task(
-    request: CreateRequest, create: TaskCreator, feed: BoardFeed | None = None
+    request: CreateRequest, create: TaskCreator, feed: BoardFeed | None = None, duplicates: Duplicates | None = None
 ) -> tuple[int, dict[str, Any]]:
     """Create the task `request` names, or each of its `tasks`: the HTTP status and JSON body, which holds the new
     task's id.
@@ -403,17 +441,19 @@ def create_task(
 
     The card appears in its column when the board adapter next reports the task, not on this answer.
     """
-    return _REPLAYS.run(request.request_key, lambda: _created(request, create, feed))
+    return _REPLAYS.run(request.request_key, lambda: _created(request, create, feed, duplicates))
 
 
-def _created(request: CreateRequest, create: TaskCreator, feed: BoardFeed | None) -> tuple[int, dict[str, Any]]:
+def _created(
+    request: CreateRequest, create: TaskCreator, feed: BoardFeed | None, duplicates: Duplicates | None
+) -> tuple[int, dict[str, Any]]:
     who = who_of(request)
     if request.tasks is None:
-        return _create(request, who, create, feed, {})
+        return _create(request, who, create, feed, {}, duplicates=duplicates)
     siblings: dict[str, str] = {}
     results = []
     for spec in request.tasks:
-        status, body = _create(spec, who, create, feed, siblings, cohort=len(request.tasks) > 1)
+        status, body = _create(spec, who, create, feed, siblings, cohort=len(request.tasks) > 1, duplicates=duplicates)
         if status == 201 and spec.ref:
             siblings[spec.ref] = body["task"]
         results.append(body)

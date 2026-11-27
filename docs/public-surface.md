@@ -41,8 +41,8 @@ internal and can change in any release.
 - The config file's keys, among them
   the `[analytics]` table's `roots`, `injected_openings`, `operator_tools`, `claims`,
   `completion_skill`, `completion_call`, `eval_attribute`, `ladder`, `phases`, `default_repo`, the `[analytics.weights]` table, the optional `[analytics.labeller]` table's `url`, `model`, `instructions`,
-  `criteria` and `timeout`, and the `[search]` table's optional `embeddings_url`, `model` and
-  `token_env` ([Config file](serving.md#config-file)),
+  `criteria` and `timeout`, and the `[search]` table's optional `embeddings_url`, `model`, `token_env`,
+  `rerank_url`, `rerank_model`, `rerank_query` and `rerank_document` ([Config file](serving.md#config-file)),
   and the machine YAML with its JSON Schema (`machine.schema.json`).
 - A machine state's optional `label` (the name a person reads, the id when absent) and `aliases` (names retired from the state that
   history still holds), which `starpulse machine lanes` prints.

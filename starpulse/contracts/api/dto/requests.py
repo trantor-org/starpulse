@@ -179,6 +179,12 @@ class CreateSpec(_Request):
     adrNeeded: str | None = None
     duplicateSearch: str | None = None
     duplicateResolution: str | None = None
+    duplicateQueries: list[str] | None = Field(
+        None,
+        description="Words to search the board for a task that does this work: the server searches them, the citations "
+        "in the text and its meaning, and records what it finds as `duplicateSearch`.",
+    )
+    checkDuplicates: bool = Field(False, description="Answer the duplicate search's record and file nothing.")
     follows: str | None = None
     task: str | None = None
     size: str | None = None
@@ -210,7 +216,7 @@ class CreateSpec(_Request):
             raise ValueError(f"must be one of {', '.join(TIERS)}")
         return value and value.lower()
 
-    @field_validator(*CREATE_LISTS)
+    @field_validator(*CREATE_LISTS, "duplicateQueries")
     @classmethod
     def _kept(cls, value: list[str] | None, info: ValidationInfo) -> list[str] | None:
         if value is None:

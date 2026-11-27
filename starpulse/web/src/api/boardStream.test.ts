@@ -7,7 +7,7 @@ const state = (id: string, initial = false, final = false) => ({ id, name: id, i
 const MACHINE = { name: "board", states: [state("ready", true), state("done", false, true)], transitions: [], submachines: [], launches: {}, writers: {} };
 const task = (id: string, lane: string) => ({
   id, title: id, lane, profile: "p", impact: "low", urgency: "low", tier: "standard", source: "", assignee: null, labels: [], milestone: "", type: "task",
-  dependencies: [], workable: true, createdAt: 100, movedAt: 200, description: "", prs: [], lanePath: [], criteria: [], pauseReason: "", readable: "", released: null,
+  dependencies: [], workable: true, createdAt: 100, movedAt: 200, description: "", prs: [], lanePath: [], criteria: [], released: null,
   sessionActivity: null, skill: null, phase: null, substate: null, planRevisions: 0,
 });
 const READ = {
@@ -95,6 +95,21 @@ describe("openStream", () => {
     await vi.advanceTimersByTimeAsync(24 * 3600 * 1000);
     expect(lanes(skies.at(-1)!)).toEqual(["TASK-1:done", "TASK-2:ready"]);
     expect(s.seen.length).toBe(requests);
+    stream.close();
+  });
+
+  it("asks neither its first read nor its task changes for pauseReason or readable, which no card draws", async () => {
+    const queries: string[] = [];
+    const s = server();
+    const stream = openStream({ snapshot: () => {}, live: () => {} }, (url, init) => {
+      if (url === "/graphql") queries.push(JSON.parse(String(init?.body)).query);
+      return s.post(url, init);
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const asked = queries.filter((q) => /\btasks\b|taskChanges/.test(q));
+    expect(asked.some((q) => q.includes("taskChanges"))).toBe(true);
+    expect(asked.some((q) => q.startsWith("query"))).toBe(true);
+    for (const q of asked) expect(q).not.toMatch(/\b(pauseReason|readable)\b/);
     stream.close();
   });
 

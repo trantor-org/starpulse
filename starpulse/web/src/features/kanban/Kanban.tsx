@@ -145,7 +145,6 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
       </div>
       {links && links.length > 0 && <div className="uw"><span className="nw">⧗ waits on</span>{" "}{links.map((id, i) => <Fragment key={id}>{i > 0 && ", "}<span className="nw">{id}</span></Fragment>)}</div>}
       <div className="t">{task.title}</div>
-      {task.readable && <span className="legacy" title={task.readable}>legacy format</span>}
       {fault && <span className="fault" title={fault}>actor error</span>}
       {claim ? (
         <div className="mach sess">

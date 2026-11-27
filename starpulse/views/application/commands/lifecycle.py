@@ -1,13 +1,20 @@
 """Park a task for a typed reason as a request the task actor carries out."""
 
 import logging
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from starpulse.board.model.board_feed import BoardFeed
-from starpulse.board.model.markdown import ASK_REQUEST, WAIT_REQUEST, section_drop, section_set
+from starpulse.board.model.markdown import (
+    ASK_REQUEST,
+    WAIT_REQUEST,
+    needs_attention_text,
+    section_drop,
+    section_set,
+)
 from starpulse.board.model.seam import (
     TaskEditor,
     TaskReader,
@@ -38,6 +45,10 @@ class _RefusalError(Exception):
     def __init__(self, status: int, body: dict[str, str]) -> None:
         super().__init__(body["error"])
         self.answer = (status, body)
+
+
+_START_CRITERIA = re.compile(r"^## Start Criteria[ \t]*$", re.M)
+_FENCE = re.compile(r"^```.*?^```", re.M | re.S)
 
 
 def _lifecycle_edit(
@@ -191,10 +202,19 @@ def _wait_on_events(feed: BoardFeed, task: str, current: dict[str, Any], found: 
     }
 
 
-def _without_question(current: dict[str, Any]) -> dict[str, Any]:
-    """The edit that drops a Needs attention task's question when the task parks on the task that makes it moot."""
-    dropped = section_drop(current["description"], "Needs attention")
-    return {"description": dropped} if dropped != current["description"].strip() else {}
+def _waiting_description(current: dict[str, Any]) -> dict[str, Any]:
+    """The edit a task makes to its description when it parks on a task: its question is moot and its Start Criteria retire."""
+    fenced: list[str] = []
+
+    def hold(found: re.Match[str]) -> str:
+        fenced.append(found.group())
+        return f"\0{len(fenced) - 1}\0"
+
+    text = section_drop(_FENCE.sub(hold, current["description"]), "Needs attention")
+    if re.search(_START_CRITERIA, text):
+        text = re.sub(_START_CRITERIA, "## Retired Start Criteria", section_drop(text, "Retired Start Criteria"))
+    text = re.sub(r"\0(\d+)\0", lambda found: fenced[int(found.group(1))], text)
+    return {"description": text} if text != current["description"].strip() else {}
 
 
 def _wait_on_operator(reason: Any) -> str:
@@ -202,6 +222,29 @@ def _wait_on_operator(reason: Any) -> str:
     if not _nonblank(reason):
         raise _RefusalError(400, {"error": "operator needs the reason, in text, that only the operator can clear"})
     return f"{ASK_REQUEST} {reason.strip()}"
+
+
+def _ask_key(reason: str) -> str:
+    """What an ask asks, from its blocker on: the leading account of what happened varies between identical asks."""
+    blocker = reason.find("Blocker:")
+    return " ".join(reason[blocker:].split()).casefold()
+
+
+def _without_repeat(reason: str, current: dict[str, Any]) -> dict[str, Any]:
+    """The edit a park for the operator makes, refused when the task's standing `## Needs attention` ask is this one.
+
+    The refusal cites the operator's newest answer to it, else says the ask awaits one."""
+    paragraphs = [p.strip() for p in needs_attention_text(current["description"]).split("\n\n") if p.strip()]
+    if not paragraphs or _ask_key(paragraphs[0]) != _ask_key(reason):
+        return {}
+    answers = [p for p in paragraphs[1:] if p.startswith("Operator answer")]
+    raise _RefusalError(
+        409,
+        {
+            "error": "this ask is already recorded in the task's `## Needs attention` section; "
+            + (f"act on its answer: {answers[-1]}" if answers else "it awaits the operator's answer, not a second ask")
+        },
+    )
 
 
 def _nonblank(value: Any) -> bool:
@@ -220,6 +263,18 @@ def _park_lane(feed: BoardFeed, reason: str) -> str | None:
     return feed.roles.attention if reason == "operator" else feed.roles.waiting
 
 
+def _not_parkable(feed: BoardFeed, task: str, state: str) -> tuple[int, dict[str, str]]:
+    """The refusal for a park that does not reach a task in `state`, with the way on for the lane it is in."""
+    way = {
+        feed.roles.ready: f"; start it first (`starpulse task dispatch {task}`), then park it",
+        feed.roles.attention: "; the operator's answer returns it to work",
+    }
+    return 409, {
+        "error": f"only an In Progress task can be parked (one waiting on a task or an event settles in Waiting): "
+        f"{task} is {state}{way.get(state, '')}"
+    }
+
+
 def park_task(
     task: str, park: Park, comment: str, who: Who, feed: BoardFeed, read: TaskReader, edit: TaskEditor
 ) -> tuple[int, dict[str, Any]]:
@@ -229,34 +284,46 @@ def park_task(
     dependencies (a `TASK-N#K` entry also records the criterion needed), `until` writes the Start Criteria block and a
     `Wait requested:` comment, and `operator` writes an `Ask requested:` comment holding the question. The task actor
     moves the task to Waiting or Needs attention, and the board's rules judge that move.
+
+    A Review or Needs attention task is parked on a task or an event the same way, as a request. A Ready task waiting
+    on tasks and a Waiting task waiting on events are gated by the edit with no request, and the park itself moves a
+    Ready one to Waiting. A wait on one criterion parks In Progress work only, and an ask the task already records is
+    refused whatever lane it is in.
     """
     reasons = [key for key in _PARK_REASONS if key in park.model_fields_set]
     if len(reasons) != 1:
         return 400, _BAD_PARK
     if (agent := held_task(feed, task)) is None:
         return not_held(feed, task)
-    reason = reasons[0]
-    parkable = (
-        (feed.roles.working,) if reason == "operator" else (feed.roles.working, feed.roles.attention, feed.roles.review)
-    )
-    if agent["state"] not in parkable:
-        return 409, {
-            "error": f"only an In Progress task can be parked (a Review or Needs attention one only on a task or an event): {task} is {agent['state']}"
-        }
-    column, value = _park_lane(feed, reason), getattr(park, reason)
+    reason, roles = reasons[0], feed.roles
+    state, value = agent["state"], getattr(park, reasons[0])
+    settles = (roles.ready, roles.review, roles.waiting)
+    parkable = {
+        "untilTask": (roles.working, roles.attention, *settles),
+        "until": (roles.working, roles.attention, roles.review, roles.waiting),
+        "operator": (roles.working,),
+    }[reason]
+    if state not in parkable:
+        return _not_parkable(feed, task, state)
+    if reason == "untilTask" and state != roles.working and (crit := [n for n in value if "#" in str(n)]):
+        return 409, {"error": f"a criterion wait ({crit[0]}) parks In Progress work only; wait on the whole task"}
+    column = _park_lane(feed, reason)
     if column is None:
         return 409, {"error": f"this board's machine has no lane to park {task} in for {reason}"}
+    requested = state in (roles.working, roles.attention, roles.review)
     try:
         asked = {
             "untilTask": lambda: comment,
-            "until": lambda: f"{WAIT_REQUEST} {comment or 'its start criteria'}",
+            "until": lambda: f"{WAIT_REQUEST} {comment or 'its start criteria'}" if requested else comment,
             "operator": lambda: _wait_on_operator(value),
         }[reason]()
     except _RefusalError as refusal:
         return refusal.answer
     plans = {
-        "untilTask": lambda current: _wait_on_tasks(feed, task, current, value) | _without_question(current),
+        "untilTask": lambda current: _wait_on_tasks(feed, task, current, value) | _waiting_description(current),
         "until": lambda current: _wait_on_events(feed, task, current, value),
-        "operator": lambda current: {},
+        "operator": lambda current: _without_repeat(value, current),
     }
-    return _lifecycle_edit(feed, task, column, who, asked, read, edit, plans[reason], moves=False)
+    return _lifecycle_edit(
+        feed, task, column, who, asked, read, edit, plans[reason], moves=state == roles.ready
+    )

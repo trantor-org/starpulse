@@ -31,6 +31,7 @@ from starpulse.views.adapters.inbound.api.answering import answer, client, on_wo
 from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, WriteRoute
 from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole, whole_body
 from starpulse.views.application.commands.links import delete_link, put_link
+from starpulse.views.application.commands.duplicates import Duplicates
 from starpulse.views.application.commands.moves import (
     start_task,
 )
@@ -120,6 +121,7 @@ def retired(request: Request) -> Response:
 def routes(api: Api) -> list[ApiRoute]:
     feed, board, services = api.feed, api.board, api.services
     assign, create = board.assign, board.create
+    duplicates = Duplicates(services.search, feed.roles, board.read) if services.search else None
 
     def cited(task: str) -> list[dict[str, Any]]:
         return _stored_record(api, task)[1].get("record", {}).get("pulls", [])
@@ -149,7 +151,9 @@ def routes(api: Api) -> list[ApiRoute]:
         ReadRoute("/retired", retired, params=frozenset({"before", "fields", "limit", "milestone", "task"})),
         *(WriteRoute(path, ("POST",), guarded(kind, whole_body(handler))) for path, (handler, kind) in writes.items()),
         WriteRoute(
-            "/tasks", ("PUT",), guarded("create", whole_body(lambda client, raw: create_task(client, raw, create, feed)))
+            "/tasks",
+            ("PUT",),
+            guarded("create", whole_body(lambda client, raw: create_task(client, raw, create, feed, duplicates))),
         ),
         WriteRoute(
             "/tasks/{id:path}/links",

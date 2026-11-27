@@ -52,8 +52,6 @@ export interface KanbanTask {
   live: { machine: string; state: string; at: number; source?: string | null; skill?: string } | null;
   /** The phase machine the task is in and its step, when it is in one: see `climb`. */
   phase?: PhaseAt | null;
-  /** The first `readable` guard rule the description breaks, empty when it reads well: the card draws the legacy-format badge for a non-empty one, the dialog none. */
-  readable?: string;
   /** Ready again after waiting: its last Board move was out of Waiting, so a machine state from before it no longer describes the card. */
   released: boolean;
   /** The freeze the task actor holds the task in, who asked and why; absent or null when the task runs free. */
@@ -415,7 +413,6 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, frozen: a.frozen ?? null, sessionActivity: a.session_activity ?? null, moves: a.moves ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
       phase: climb(sky, a.id),
-      ...(a.readable ? { readable: a.readable } : {}),
       ...(a.criteria ? { acceptanceCriteria: numbered(a.criteria) } : {}),
       ...(a.definition_of_done ? { definitionOfDone: numbered(a.definition_of_done) } : {}),
     };
