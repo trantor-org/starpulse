@@ -164,6 +164,21 @@ def _carrier(base: str, task_id: str) -> str | None:
     return None if held.casefold() in {"", task_id.casefold()} else held
 
 
+_MOVES = "query($id: ID!) { task(id: $id) { moves { to allowed reason skill writers actors { actor allowed reason skill } } } }"
+
+
+def _read_moves(base: str, task_id: str) -> dict[str, dict[str, Any]]:
+    """The board's verdict on each column for a task whose stored card carries none, in the shape a snapshot card holds."""
+    listed = agent_wire.graphql(base, _MOVES, {"id": task_id})["task"]["moves"]
+    return {
+        move["to"]: {
+            **{key: move[key] for key in ("allowed", "reason", "skill", "writers")},
+            "actors": {actor["actor"]: {key: actor[key] for key in ("allowed", "reason", "skill")} for actor in move["actors"]},
+        }
+        for move in listed
+    }
+
+
 def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     if getattr(args, "markdown", False):
         return {"task": args.task, "markdown": render_markdown(_read_record(args, environ))}
@@ -195,6 +210,8 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
             "state": lane_id(record["status"]),
             **{field: record[field] for field in ("title", "milestone", "labels", "dependencies")},
         }
+    if "moves" not in agent:  # a stored card leaves its moves to the board's verdicts
+        agent = {**agent, "moves": _read_moves(base, agent["id"])}
     if "description" not in agent:  # a stored card leaves its detail to the record
         agent = {
             **agent,
