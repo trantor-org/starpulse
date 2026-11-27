@@ -2077,7 +2077,15 @@ class TaskActor:
                 now = self._feed.task(name, lean=True)
                 if now and now["state"] == self._feed.roles.working:
                     self._memory.keep(name, resumes=None)
-                    self._attend(name, "it settled idle again after its one nudge with no progress")
+                    if not self._own_prs(now) and self._feed.machine_task("deliver", name):
+                        self._attend(
+                            name,
+                            "its deliver ran but wrote no delivers link, so no pull request is its own",
+                            ask="Re-run deliver from its worktree to link the pull request, then resume it.",
+                            options=("resume it to re-run deliver", "link the pull request by hand"),
+                        )
+                    else:
+                        self._attend(name, "it settled idle again after its one nudge with no progress")
             return
         if refusal:
             latest = (self._comments({"id": name}) or [""])[-1].strip()
