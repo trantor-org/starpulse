@@ -151,6 +151,14 @@ class ReadMethods:
         row = self._found(task_id)[1]
         return row is not None and not row["archived"]
 
+    def finished(self, ids: Collection[str]) -> list[str]:
+        """The ids among `ids` a dependency no longer waits on, in their order: each task archived or Done of any age,
+        read under the id a rename gave it, in any case, in one read; an id the Board does not hold still waits."""
+        current = {task_id: self._aliases.get(task_id, task_id) for task_id in ids}
+        named = {name for key in current.values() for name in (key, key.upper(), key.lower())}
+        done = {task_id.upper() for task_id in self._read_model.finished(named, self._roles.done)}
+        return [task_id for task_id, key in current.items() if key.upper() in done]
+
     def cited(self, task_id: str) -> list[str]:
         """The pages of the pull requests the task has a `delivers` or `cites` link to, open or settled; none for a task the Board does not hold."""
         return [url for _, url in self._links(task_id)]

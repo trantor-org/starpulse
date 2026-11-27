@@ -129,6 +129,10 @@ class ReadModel:
         """The ids of unarchived Done Tasks of any age, in id order."""
         return self._ids(queries.held_done(done))
 
+    def finished(self, ids: Collection[str], done: str) -> set[str]:
+        """The ids among `ids` of Tasks a dependency no longer waits on: archived, or Done of any age."""
+        return set(self._ids(queries.finished(ids, done)))
+
     def milestone_done(self, done: str, since: float) -> dict[str, int]:
         """How many Done Tasks last changed before `since` each milestone holds, the ones `snapshot` leaves out."""
         with self._reading() as db:

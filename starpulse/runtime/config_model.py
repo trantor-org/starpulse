@@ -403,13 +403,6 @@ class ConfigFile(_Table):
 
     model_config = ConfigDict(title="Top level")
 
-    tracker_url: str | None = Field(
-        default=None,
-        description=(
-            "The tracker's web address: a task links to `<tracker_url>/tasks/<id>`. Unset, it opens in the page's "
-            "own Kanban."
-        ),
-    )
     database_url: str | None = Field(
         default=None,
         description=(

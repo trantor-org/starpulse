@@ -3,16 +3,18 @@
 import contextlib
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 
-from starpulse.board.model import write_steps
+from starpulse.board.model import lane_writes, write_steps
 from starpulse.event_log import lane_events
 from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.stays import LaneRow
 from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from sqlalchemy import Connection
+
     from starpulse.board.model.seam import Written
     from starpulse.event_log.event_log import EventLog
 from starpulse.board.model.feed.shared import LaneRecorder, logger
@@ -74,14 +76,49 @@ class RecordsMixin:
         `recording_of(task_id)` from the write. A history that cannot be written is logged."""
         if self._lanes is None:
             return
-        task_id, lane = self._keys.canonical(task_id) if self._keys else task_id, lane_id(lane)
-        kind = "" if self._lane_log is None else str((self._read_model.task(task_id) or {}).get("type") or "")
-        event = None if self._lane_log is None else lane_events.change(task_id, lane, at, *who, kind=kind)
         try:
-            if self._lanes.record_lane(f"{task_id}@{lane}@{at}", task_id, lane, at, event=event) and event is not None:
+            if self._lane_change(task_id, lane, at, who)(None):
                 self._lane_log.committed()
         except Exception as exc:  # the history is down; the task is placed and its change recorded then
             logger.warning("StarPulse: cannot record the lane change of %s: %s", task_id, exc)
+
+    @contextlib.contextmanager
+    def recording_moves(self, who: tuple[str, str, str]) -> Iterator[None]:
+        """Record each move a write inside appends to a Task's History in that append's transaction, naming `who`, so
+        the move and its lane row land together: a process that ends before `record_written` still left the row."""
+        if self._lanes is None:
+            yield
+            return
+        logged: list[bool] = []
+
+        def recorder(task_id: str, lane: str, at: float) -> Callable[[Connection], bool]:
+            change = self._lane_change(task_id, lane, at, who)
+
+            def record(connection: Connection) -> bool:
+                logged.append(change(connection))
+                return logged[-1]
+
+            return record
+
+        with lane_writes.recording(recorder):
+            yield
+        if any(logged):
+            self._lane_log.committed()
+
+    def _lane_change(
+        self, task_id: str, lane: str, at: float, who: tuple[str, str, str]
+    ) -> Callable[[Connection | None], bool]:
+        """The record of `task_id`'s move to `lane` at `at` by `who`, run in a connection's transaction or its own; True
+        when it logged a `lane_events` entry."""
+        task_id, lane = self._keys.canonical(task_id) if self._keys else task_id, lane_id(lane)
+        kind = "" if self._lane_log is None else str((self._read_model.task(task_id) or {}).get("type") or "")
+        event = None if self._lane_log is None else lane_events.change(task_id, lane, at, *who, kind=kind)
+        lanes = self._lanes
+
+        def record(connection: Connection | None) -> bool:
+            return bool(lanes.record_lane(f"{task_id}@{lane}@{at}", task_id, lane, at, event=event, connection=connection)) and event is not None
+
+        return record
 
     def record_write(self, task: str | None, who: tuple[str, str, str], write: Callable[[], Written]) -> Written:
         """Run `write` of `task` (None: the task the write makes, named by its output) holding the task's `recording_of`,
@@ -90,7 +127,8 @@ class RecordsMixin:
         its id is new, and the creator's own lock orders the ids."""
         with self.recording_of(task) if task else contextlib.nullcontext():
             write_steps.step("feed")
-            written = write()
+            with self.recording_moves(who):
+                written = write()
             if written.ok and written.lane:
                 at = written.at or time.time()
                 self.record_written(task or written.output, written.lane, at, who)

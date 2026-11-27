@@ -863,8 +863,11 @@ class TaskActor:
                 self._idle is not None
             ):  # a settle while down is replayed by `follow_holder_idle`; `confirm` spares a busy holder
                 for agent in tasks:
-                    if agent["state"] == self._feed.roles.working and self._awaits(agent):
+                    if agent["state"] != self._feed.roles.working:
+                        continue
+                    if self._awaits(agent):
                         self._memory.keep(agent["id"], awaited=True)
+                    self._settle_graced(agent["id"])  # a busy hold, its grace deadline lost with the stop, settles again
             open_ids = {agent["id"] for agent in tasks}
             self._derived = {name: digest for name, digest in self._derived.items() if name in open_ids}
             self._derived_moved.set()
@@ -2606,12 +2609,10 @@ class TaskActor:
         again: Callable[[], None] | None = None,
         session: str = "",
     ) -> Written:
-        # the lane is recorded under the actor; no other task's write holds this one up
-        with self._feed.recording_of(name):
-            written = self._edit_retrying(name, changes, comment, over, again)
-            if written.ok and written.lane:
-                self._feed.record_written(name, written.lane, written.at or time.time(), (ACTOR, session, ""))
-        return written
+        # the lane is recorded under the actor, in the History append of its move; no other task's write holds this one up
+        return self._feed.record_write(
+            name, (ACTOR, session, ""), lambda: self._edit_retrying(name, changes, comment, over, again)
+        )
 
     def _judged(self, name: str, changes: Mapping[str, Any], comment: str) -> Written:
         try:

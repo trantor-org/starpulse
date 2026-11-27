@@ -165,6 +165,11 @@ async def _task(_: Any, info: GraphQLResolveInfo, id: str) -> dict | None:
     return await _worker(info, partial(info.context["feed"].held, lean=lean), id)
 
 
+@query.field("finished")
+async def _finished(_: Any, info: GraphQLResolveInfo, ids: list[str]) -> list[str]:
+    return await _worker(info, info.context["feed"].finished, ids)
+
+
 @query.field("occurrences")
 async def _occurrences(
     _: Any, info: GraphQLResolveInfo, event: str, offset: int = 0, limit: int = 50

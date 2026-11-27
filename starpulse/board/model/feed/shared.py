@@ -172,10 +172,17 @@ class LaneRecorder(Protocol):
     """Where a feed keeps each lane change it applies, idempotent on the event id (`HistoryStore`)."""
 
     def record_lane(
-        self, event_id: str, task: str, status: str, at: float, *, event: Mapping[str, Any] | None = None
+        self,
+        event_id: str,
+        task: str,
+        status: str,
+        at: float,
+        *,
+        event: Mapping[str, Any] | None = None,
+        connection: Any = None,
     ) -> bool | None:
-        """Keep one lane change, and with it the lane `event` (the `board:lanes` fields) in the same transaction; True
-        when it wrote a row, False for a repeat of the task's last lane or a known id."""
+        """Keep one lane change, and with it the lane `event` (the `board:lanes` fields) in the same transaction, the
+        caller's `connection` when given; True when it wrote a row, False for a repeat of the task's last lane or a known id."""
 
 
 class BoardStore(Protocol):

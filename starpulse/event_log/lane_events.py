@@ -1,7 +1,7 @@
 """The board:lanes stream contract: one entry per task lane change.
 
 A board write that moves a task records the change when it is written, under the request's actor
-(`HistoryStore.record_lane`, one transaction); `BoardFeed` records the change of any other placement (a file edited by
+(`HistoryStore.record_lane`, one transaction, which a native move shares with its History append); `BoardFeed` records the change of any other placement (a file edited by
 hand, a board adapter whose writer does not say the lane it set) as `external`. Both use the
 `<task>@<lane>@<entered>` event id, and a lane the history already holds is no change, so the log and the history
 agree on one entry per change.

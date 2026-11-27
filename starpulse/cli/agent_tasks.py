@@ -84,7 +84,7 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     board = board_columns(snapshot, kept, args.state)
     harness = configured(DEFAULT, os.environ)
     views = [_active(task, snapshot, harness) for column in board["columns"] for task in column["tasks"]]
-    settled = iter(_without_done_dependencies(agent_wire.server_url(args.server, environ), views, snapshot))
+    settled = iter(_without_done_dependencies(agent_wire.server_url(args.server, environ), views))
     for column in board["columns"]:
         column["tasks"] = [next(settled) for _ in column["tasks"]]
     finished = roles_of(snapshot).done
@@ -98,8 +98,7 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
     return board
 
 
-#: Dependencies one `/api/task-records` request asks for: a record costs about 3 ms, so 8 stay inside the 50 ms p95.
-_RECORDS_PAGE = 8
+_FINISHED = "query Finished($ids: [ID!]!) { finished(ids: $ids) }"
 
 #: Done tasks one `/api/done` request asks for.
 _COLD_PAGE = 100
@@ -220,32 +219,25 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
                 {"text": item["text"], "checked": item["checked"]} for item in record.get("acceptanceCriteria") or []
             ],
         }
-    (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
+    (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)])
     shown = _described(_keyed(_active(view, snapshot, configured(DEFAULT, os.environ)), reply if record else {}), agent["description"], base)
     return {**shown, "members": record.get("members") or {}}
 
 
-def _without_done_dependencies(
-    base: str, views: list[dict[str, Any]], snapshot: dict[str, Any]
-) -> list[dict[str, Any]]:
-    """`views` with each dependency the board holds as Done or archived struck from `waiting_on`: the snapshot holds no Done task
-    past its hot day or retired, so their records answer, `_RECORDS_PAGE` dependencies to a read."""
-    done = roles_of(snapshot).done
+def _without_done_dependencies(base: str, views: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`views` with each dependency the board holds as Done or archived struck from `waiting_on`: the snapshot holds no
+    Done task past its hot day or retired, so one `finished` query settles every dependency it leaves. A server that
+    refuses it, as one release behind does, leaves every dependency waiting and is named on stderr."""
     unmet = sorted({dependency for view in views for dependency in view["waiting_on"]})
-    finished: set[str] = set()
-    for start in range(0, len(unmet), _RECORDS_PAGE):
-        ids = urllib.parse.urlencode({"ids": ",".join(unmet[start : start + _RECORDS_PAGE])})
-        status, document = agent_wire.get(base, f"/api/task-records?{ids}")
-        if status == 200:
-            records = [item.get("record", {}) for item in document.get("records", ())]
-            finished |= {
-                record["id"].casefold() for record in records if lane_id(record["status"]) in {done, "archived"}
-            }
+    if not unmet:
+        return views
+    try:
+        finished = set(agent_wire.graphql(base, _FINISHED, {"ids": unmet}).get("finished") or [])
+    except agent_wire.CliError as refused:
+        print(f"starpulse: dependencies left unsettled: {refused}", file=sys.stderr)
+        return views
     return [
-        {
-            **view,
-            "waiting_on": [dependency for dependency in view["waiting_on"] if dependency.casefold() not in finished],
-        }
+        {**view, "waiting_on": [dependency for dependency in view["waiting_on"] if dependency not in finished]}
         for view in views
     ]
 
@@ -264,7 +256,7 @@ def _show_cold(base: str, task_id: str, snapshot: dict[str, Any]) -> dict[str, A
     # settled rows read archived whatever their file says: a Done file is Done, only another status is truly archived
     state = lane if lane == done or not document.get("archived") else ARCHIVED
     agent = cold_agent(record["id"], record, state, document.get("entered"))
-    (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
+    (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)])
     described = _described(_keyed(view, document), agent["description"], base)
     return {
         **described,
