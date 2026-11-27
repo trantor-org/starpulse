@@ -440,16 +440,22 @@ class Supervisor:
                         )
                     del waiting[p.ready]
                     self._ready(p, serving, ended, failures)
+                for entry in [e for e in ended if e[0].old.poll() is not None]:
+                    ended.remove(entry)
+                    self._release(*entry)  # its replacement goes on now, not when the slowest one is ready
         finally:
             for p in waiting.values():
                 self._abandon(p)
-            for p, deadline in ended:
-                try:
-                    self._reap([p.old], deadline)
-                finally:
-                    self._close(p)
+            for entry in ended:
+                self._release(*entry)
         if failures:
             raise ReloadError("; ".join(failures))
+
+    def _release(self, p: _Beside, deadline: float) -> None:
+        try:
+            self._reap([p.old], deadline)
+        finally:
+            self._close(p)
 
     def _ready(self, p: _Beside, serving: Any, ended: list[tuple[_Beside, float]], failures: list[str]) -> None:
         serving.unregister(p.ready)

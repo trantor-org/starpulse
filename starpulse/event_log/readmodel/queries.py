@@ -74,6 +74,7 @@ def citing(ref: str) -> Select[Any]:
     """The unarchived Tasks with a `delivers` or `cites` link to the change `ref`, in id order: a seek of the links' reference."""
     return (
         select(tasks.c.id)
+        .distinct()
         .join(task_links, task_links.c.task == tasks.c.uuid)
         .where(tasks.c.archived == false(), task_links.c.ref == ref, task_links.c.role.in_(("delivers", "cites")))
         .order_by(tasks.c.id)

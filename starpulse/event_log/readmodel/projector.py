@@ -202,6 +202,7 @@ class Projector:
         while batch := self._store.read_after("task", position, BATCH):
             folded_rows: dict[str, tuple[Row | None, int]] = {}
             with self._engine.begin() as db:
+                db.exec_driver_sql("BEGIN IMMEDIATE")  # a refold's swap waits here, so the comparison below holds through the write
                 if (self._checkpoints.load(CHECKPOINT, conn=db)[0] or 0) != position:
                     break  # a refold swapped the rows since this batch was read: the next pass folds from the swap's cursor
                 self._fold(batch, folded_rows, lambda task: rows.load_at(db, task))

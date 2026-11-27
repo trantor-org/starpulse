@@ -283,9 +283,9 @@ def _lint_record(agent: Mapping[str, Any]) -> tuple[Any, ...]:
 
 def _view(
     agent: Mapping[str, Any],
-) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...], str, tuple[tuple[str, str], ...]]:
+) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[bool, ...], str, tuple[tuple[str, str], ...], tuple[str, ...]]:
     """The parts of a task's record the actor re-derives on: its lane, dependencies, pull requests, checked criteria,
-    a digest of its final summary and its freeze. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
+    a digest of its final summary, its freeze and the pull requests it delivers. A Done task the feed publishes as a dot (`done_dot`) holds neither dependencies nor pull requests."""
     ticks = tuple(criterion["checked"] for criterion in agent.get("criteria", ()))
     return (
         agent["state"],
@@ -294,6 +294,7 @@ def _view(
         ticks,
         hashlib.sha1((agent.get("final_summary") or "").strip().encode(), usedforsecurity=False).hexdigest()[:8],
         tuple(sorted((agent.get("frozen") or {}).items())),
+        tuple(agent.get("delivered", ())),
     )
 
 
@@ -1611,8 +1612,13 @@ class TaskActor:
                 return self._fault(agent, f"fact {fact}", error)
             if held is None:
                 continue
-            if fact == "deps_unresolved" and target and self._feed.roles.outranks(agent["state"], target):
-                continue  # the lane outranks the one the dependency leads to: the task stays where it is
+            if (
+                fact == "deps_unresolved"
+                and target
+                and self._feed.roles.outranks(agent["state"], target)
+                and needs_attention_text(agent["description"])
+            ):
+                continue  # the lane outranks the one the dependency leads to and its question is pending: a park drops the question
             evidence, comment = held
             if fact == "move_requested":
                 target = self._moves.get((agent["state"], f"{event}:{derivation.requested_lane(evidence)}"))
