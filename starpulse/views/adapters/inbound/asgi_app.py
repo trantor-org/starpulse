@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from anyio import CancelScope, CapacityLimiter, to_thread
 from opentelemetry import trace
-from opentelemetry.trace import SpanKind
+from opentelemetry.trace import SpanKind, StatusCode
 from starlette.applications import Starlette
 from starlette.convertors import PathConvertor, register_url_convertor
 from starlette.middleware import Middleware
@@ -314,6 +314,8 @@ class _Traced:
                 if message["type"] == "http.response.start":
                     marks["computed"] = time.time_ns()
                     span.set_attribute("http.response.status_code", message["status"])
+                    if message["status"] >= 500:
+                        span.set_status(StatusCode.ERROR)
                 await send(message)
 
             try:

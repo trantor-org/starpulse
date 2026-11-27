@@ -36,9 +36,7 @@ class ClaudeCodeSessions:
         return self._launch(task, verb, profile)
 
     def activity(self, assignee: str, now: float) -> dict[str, Any]:
-        return claude_sessions.session_activity_of(
-            self.transcripts, Path(claude_sessions.DEFAULT_SESSIONS).expanduser(), assignee, now=now
-        )
+        return claude_sessions.session_activity_of(self.transcripts, self._sessions, assignee, now=now)
 
     def transcript_written(self, session: str) -> float | None:
         return self._written(session)
