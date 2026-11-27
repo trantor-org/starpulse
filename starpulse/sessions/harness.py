@@ -5,6 +5,9 @@ from importlib import import_module
 
 from starpulse.sessions.ports.harness import SessionHarness
 
+#: The adapter a config that names none runs sessions in.
+DEFAULT = "claude"
+
 #: The adapters that ship, each a `module:class` taking the environment and the transcripts directory.
 ADAPTERS = {"claude": "starpulse.sessions.adapters.outbound.claude_code:ClaudeCodeSessions"}
 

@@ -260,9 +260,10 @@ class Config:
                 merged[domain] = (*merged.get(domain, ()), *(f"{instance.name}/{w}" for w in workflows))
         return merged
 
-    def session_harness(self) -> SessionHarness:
-        """The harness adapter `harness` names, over this process's environment and the board's `transcripts` directory."""
-        return configured(self.harness, os.environ, self.board.get("transcripts"))
+    def session_harness(self, transcripts: str | None = None) -> SessionHarness:
+        """The harness adapter `harness` names, over this process's environment and the `transcripts` directory the caller
+        names, else the board's."""
+        return configured(self.harness, os.environ, transcripts or self.board.get("transcripts"))
 
     def qualified_processes(self) -> dict[str, tuple[tuple[str, tuple[str, ...]], ...]]:
         """Every instance's processes with workflows as `<instance>/<workflow>`, per domain name, in first-seen order."""

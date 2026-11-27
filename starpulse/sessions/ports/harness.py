@@ -1,13 +1,23 @@
 """What StarPulse's runtime, scheduler and views ask of the harness a session runs in: the configured adapter answers, never a read of its files by the core."""
 
 from collections.abc import Callable, Collection, Sequence
+from pathlib import Path
 from typing import Any, Protocol
 
+from starpulse.sessions.ports.identity import SessionIdentity
 from starpulse.sessions.ports.notify import Line, Notifier
 
 
 class SessionHarness(Protocol):
     name: str
+    transcripts: Path
+    """The directory the harness writes each session's transcript under."""
+    skills_dir: str
+    """Where the harness discovers skills, relative to a project or the home directory."""
+
+    def identity(self) -> SessionIdentity:
+        """How this harness tells one session from another."""
+        ...
 
     def launch(self, task: str, verb: str, profile: str | None) -> list[str]:
         """The command that starts `task`'s session, `verb` its prompt and `profile` the agent it runs as."""

@@ -19,6 +19,7 @@ from starpulse.bridge.subjects import token
 from starpulse.bridge.subscriptions import parse_rules
 from starpulse.contracts import task_graphql
 from starpulse.runtime.nats_server import DEFAULT_RESUME
+from starpulse.sessions.harness import DEFAULT as DEFAULT_HARNESS
 
 #: An environment variable's name: the setting holds the name, never the value.
 EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]
@@ -497,7 +498,7 @@ class ConfigFile(_Table):
         ),
     )
     harness: str = Field(
-        default="claude",
+        default=DEFAULT_HARNESS,
         description="The harness adapter a session runs in: its session records, transcripts and inbox sockets are read through it. `claude` is the only one that ships.",
     )
     harnesses_file: str | None = Field(

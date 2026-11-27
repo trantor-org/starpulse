@@ -118,7 +118,6 @@ lazy from starpulse.board.adapters import project_machines
 lazy from starpulse.cli import doctor, skill_install
 lazy from starpulse.contracts.adapters import TaskKeys
 lazy from starpulse.contracts.analytics import Analytics
-lazy from starpulse.event_log.claude_sessions import DEFAULT_TRANSCRIPTS
 lazy from starpulse.event_log.opening import open_event_log
 lazy from starpulse.event_log.readmodel.read_model import ReadModel
 lazy from starpulse.harness_telemetry.model.claude_code_config import ClaudeCode
@@ -471,7 +470,7 @@ def _session_records(args: argparse.Namespace, environ: Mapping[str, str]) -> di
         config = load(path)
     except (ConfigError, OSError, ValueError) as exc:
         raise agent_wire.CliError("refused", f"{path}: {exc}") from exc
-    root = Path(args.transcripts or config.board.get("transcripts", DEFAULT_TRANSCRIPTS)).expanduser()
+    root = config.session_harness(args.transcripts).transcripts
     records = session_records(root, args.session)
     if records is None:
         raise agent_wire.CliError("not_found", f"no transcript of session {args.session} under {root}")
