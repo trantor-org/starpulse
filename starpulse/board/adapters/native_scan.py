@@ -1,12 +1,8 @@
 """The native board's scan: a project's task files in, the board contract out."""
 
-import contextlib
 import logging
 import os
 import re
-import selectors
-import socket
-import threading
 from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime
@@ -31,14 +27,11 @@ from starpulse.board.model.markdown import needs_attention_reason
 from starpulse.board.model.policy import Policy, waits_of
 from starpulse.contracts.task_keys import TaskKeys
 from starpulse.contracts.tiers import DEFAULT_TIER, TIERS
-from starpulse.event_log.watch import open_directory_watch
 from starpulse.machine_engine.model.state_roles import StateRoles
 from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_machine, board_moves, lane_id
 
 if TYPE_CHECKING:
-    from starpulse.board.model.board_feed import BoardFeed
     from starpulse.contracts.adapters import Move
-    from starpulse.event_log.event_log import EventLog
     from starpulse.machine_engine.model.machine_definition import Compiled
     from starpulse.machine_engine.model.snapshot import Qualify
 
@@ -200,10 +193,6 @@ def dependencies(text: str) -> list[str]:
     return list(_strings(frontmatter.get("dependencies"))) if isinstance(frontmatter, dict) else []
 
 
-#: Each adapter whose thread is running, with that thread, so a caller can end what it started.
-_live: dict[NativeScan, threading.Thread] = {}
-
-
 class NativeScan:
     """Reads one project's task files and hands each new or changed one to `put` as a `BoardTask`.
 
@@ -246,18 +235,17 @@ class NativeScan:
         # keyed by the listing's path string, so a scan of unchanged files builds no Path
         self._seen: dict[str, tuple[int, int]] = {}
         self._ids: dict[str, str] = {}
-        self._stop = threading.Event()
-        self._wake: socket.socket | None = None
-        self._scanning = threading.RLock()  # the poll thread and `settle()` both scan
 
     def scan(self) -> int:
         """Publish every task file that is new or changed since the last scan, and retract a task whose file is gone;
         how many files that read or forgot.
 
-        One `os.scandir` pass over the folders: a file whose time and size match the last scan is not read.
-        Scans are serialized, so two callers never forget the same file twice."""
-        with self._scanning:
-            return len(self._scan())
+        One `os.scandir` pass over the folders: a file whose time and size match the last scan is not read."""
+        return len(self._scan())
+
+    def start(self) -> None:
+        """Scan once: no watch follows, since a task is read from its History, and a file is only the legacy import."""
+        self.scan()
 
     def _scan(self) -> set[str]:
         present: set[str] = set()
@@ -270,53 +258,6 @@ class NativeScan:
         gone = self._seen.keys() - present
         self._finish(gone, bool(touched))
         return touched | gone
-
-    def scan_paths(self, paths: Iterable[str]) -> None:
-        """Publish the files `paths` name that are new or changed, and retract a task whose file is gone.
-
-        What a directory watch names: a path in a task folder is stat-ed alone, a path that is a folder is listed, and any
-        other path is ignored. Nothing else is read, so a board of thousands of files costs only the files that changed."""
-        settled_in = {str(self.root / folder): settled for folder, settled in _FOLDERS}
-        gone: set[str] = set()
-        changed = False
-        with self._scanning:
-            for path in sorted(set(paths)):
-                if path in settled_in:
-                    listed = _listing(Path(path))
-                    for member, fingerprint in listed:
-                        if self._seen.get(member) != fingerprint:
-                            changed |= self._place(member, settled_in[path], fingerprint)
-                    gone |= {seen for seen in self._seen if os.path.dirname(seen) == path} - {m for m, _ in listed}
-                elif path.endswith(".md") and (folder := os.path.dirname(path)) in settled_in:
-                    exists, read = self._read_if_changed(path, settled_in[folder])
-                    changed |= read
-                    if not exists:
-                        gone.add(path)
-            gone &= self._seen.keys()
-            for path in gone:
-                changed |= self._moved_to(path)
-            self._finish(gone, changed)
-
-    def _moved_to(self, gone: str) -> bool:
-        """Place the file of the same name in another task folder, where a move left `gone`; whether one was read.
-
-        The watch can name the delete before the create, or lose the create: a task whose file only moved must not
-        read as on no store, to a reader that asks between the two."""
-        return any(  # a list, so every folder is read, not only up to the first hit
-            [
-                self._read_if_changed(str(self.root / folder / os.path.basename(gone)), settled)[1]
-                for folder, settled in _FOLDERS
-            ]
-        )
-
-    def _read_if_changed(self, path: str, settled: Literal["completed", "archived"] | None) -> tuple[bool, bool]:
-        """Whether the file `path` exists, and whether it was new or changed since the last scan and so read."""
-        try:
-            stat = os.stat(path)
-        except OSError:
-            return False, False
-        fingerprint = (stat.st_mtime_ns, stat.st_size)
-        return True, fingerprint != self._seen.get(path) and self._place(path, settled, fingerprint)
 
     def _finish(self, gone: Iterable[str], changed: bool) -> None:
         for path in list(gone):
@@ -445,51 +386,6 @@ class NativeScan:
                 moves[target] = type(move).model_validate({**move.model_dump(), **refused})
         return moves
 
-    def start(self, scanned: Callable[[], None] = lambda: None) -> threading.Thread:
-        """Watch the task folders, scan once, and read each path the watch names after, on a daemon thread, which it
-        returns; `scanned` runs once, after the first scan. The watch opens before that scan, so a write between them is
-        read twice, never missed. A folder made later, or a watch that lost events, is a scan of everything."""
-        wake, ended = socket.socketpair()
-        self._wake = wake
-
-        def run() -> None:
-            watch = open_directory_watch(self.root / folder for folder, _ in _FOLDERS)
-            try:
-                self.scan()
-                scanned()
-                if watch is None:
-                    logger.warning("NativeScan: no file watch on %s; its task files are read at start only", self.root)
-                    self._stop.wait()
-                    return
-                with selectors.DefaultSelector() as selector:
-                    selector.register(watch.fileno(), selectors.EVENT_READ)
-                    selector.register(ended, selectors.EVENT_READ)
-                    while not self._stop.is_set():
-                        if watch.fileno() not in {key.fd for key, _ in selector.select()}:
-                            continue
-                        paths = watch.drain()
-                        if watch.sync() or paths is None:
-                            self.scan()
-                        else:
-                            self.scan_paths(paths)
-            finally:
-                if watch is not None:
-                    watch.close()
-                wake.close()
-                ended.close()
-                _live.pop(self, None)
-
-        thread = threading.Thread(target=run, name="native-scan", daemon=True)
-        _live[self] = thread
-        thread.start()
-        return thread
-
-    def stop(self) -> None:
-        """End the thread `start` began: it leaves its loop at once, as it waits on the watch."""
-        self._stop.set()
-        with contextlib.suppress(OSError, AttributeError):
-            self._wake.send(b"x")
-
 
 def _listing(folder: Path) -> list[tuple[str, tuple[int, int]]]:
     """Each `.md` file in `folder`, in name order, with its modification time and size; none when the folder is gone."""
@@ -535,18 +431,13 @@ def project_board(
     settings: Mapping[str, Any],
     base: Path,
     writers: Callable[[BacklogConfig, StateRoles], Mapping[str, Any]],
-    retired: Callable[[bool], Iterable[str] | None] = lambda _force=False: None,
-    refusal: Callable[[Mapping[str, Any], str, str], Mapping[str, Any] | None] = lambda *_: None,
-    readable: Callable[[Mapping[str, Any], str], str] = lambda *_: "",
     statuses: tuple[str, ...] = (),
 ) -> SimpleNamespace:
-    """The parts of the Board of the Markdown project in `root`, kept current by a directory watch, with the writers `writers` builds.
+    """The parts of the Board of the Markdown project in `root`, with the writers `writers` builds.
 
     Any lane reaches any other unless `settings["machine"]` names a machine file (relative to `base`), whose transitions
-    and `writers` then decide which moves are offered and to whom. `retired` is the scan's reader of retired task text;
-    `refusal` is the update a board rule that refuses a task's move to a lane makes to the move; `readable` answers
-    what the board's `readable` rules find broken in a task's description, "" when it reads well. `statuses` are the
-    lanes the policy holds, which replace the config file's.
+    and `writers` then decide which moves are offered and to whom. `statuses` are the lanes the policy holds, which
+    replace the config file's.
     """
     config = read_config(root, statuses)
     require_project(root, config)
@@ -554,9 +445,8 @@ def project_board(
     lane_ids = [lane_id(status) for status in config.statuses]
     if board_file:
         compiled, drawn, cues = _machine(board_file, config, waits_of(settings.get("policy_rows") or Policy()))
-        declared = compiled.writers
     else:
-        compiled, drawn, cues, declared = None, board_machine(config.statuses), [], {}
+        compiled, drawn, cues = None, board_machine(config.statuses), []
     roles = StateRoles.of_machine(compiled) if compiled else StateRoles.of_statuses(config.statuses)
 
     states = {state["id"] for state in drawn["states"]}
@@ -568,27 +458,8 @@ def project_board(
             drawn_flows["board"].setdefault("mainLine", [lane for lane in lane_ids if lane in states])
         return {"board": drawn, **drawn_flows}
 
-    scans: list[NativeScan] = []
-
-    def start(feed: BoardFeed, group: str, log: EventLog) -> None:
-        # Built here, not at load: a `Move` is an adapter model, and a board read never starts the watch.
-        moves = board_moves(drawn, declared, lane_ids)
-        scan = NativeScan(
-            root,
-            lambda _task: None,
-            moves,
-            retired=retired,
-            refusal=refusal,
-            roles=roles,
-            readable=readable,
-            statuses=statuses,
-        )
-        scans.append(scan)
-        scan.start()
-
     return SimpleNamespace(
         machines=machines,
-        start=start,
         keys=native_keys(config.prefix),
         cues=lambda qualify: cues,
         waits=compiled.waits if compiled else {},

@@ -1,9 +1,10 @@
-"""The task History the native board serves its reads from: a task's replayed row, the alias a task answers to, and the
-dependency graph. Task files are a rendering of it (D2) and are never read as state once a log is attached."""
+"""The task History the native board serves its reads and writes from: a task's replayed row, the alias a task answers to,
+and the dependency graph. A task is held nowhere else: no file of it is written (D2)."""
 
 import copy
 import threading
 from collections.abc import Collection
+from typing import Any
 
 from sqlalchemy import Engine
 
@@ -14,6 +15,8 @@ from starpulse.event_log.store import EventStore
 
 #: How many replayed rows are kept, the least recently read dropped first.
 _KEPT = 2048
+#: A `since` no task changed at or after, so `open` leaves out every Done task.
+_FOREVER = 1e18
 
 
 class TaskView:
@@ -26,10 +29,6 @@ class TaskView:
         self._rows: dict[str, Row] = {}
         self._aliases: dict[str, str] = {}
         self._lock = threading.Lock()
-
-    @property
-    def attached(self) -> bool:
-        return self._store is not None
 
     def attach(self, engine: Engine) -> None:
         self._store, self._model = EventStore(engine), ReadModel(engine)
@@ -45,6 +44,24 @@ class TaskView:
         with self._lock:
             self._aliases = {alias.casefold(): task for task, aliases in found.items() for alias in aliases}
         return list(found.items())
+
+    def open(self, done: str | None) -> list[dict[str, Any]]:
+        """The unarchived tasks not in the `done` lane, as the read model has folded them: each one's id, milestone, labels,
+        dependencies, references and meta."""
+        return [] if self._model is None else self._model.snapshot(done or "", _FOREVER)
+
+    def finished(self, done: str | None) -> list[str]:
+        """The ids of the unarchived tasks in the `done` lane, of any age, as the read model has folded them."""
+        return [] if self._model is None or not done else self._model.held_done(done)
+
+    def taken(self) -> list[str]:
+        """Every id a task has a History under, and every alias a task lists: the names a new task cannot take."""
+        store = self._store
+        if store is None:
+            return []
+        with self._lock:
+            aliases = {*self._aliases, *(alias.casefold() for alias in (self._model.aliased() if self._model else ()))}
+        return [*store.heads(KIND), *aliases]
 
     def dependencies_of(self, ids: Collection[str]) -> dict[str, list[str]]:
         return self._model.dependencies_of(ids) if self._model is not None else {}

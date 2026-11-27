@@ -151,7 +151,7 @@ reports carries its `type` (empty when it has none).
 
 `[[board.guards]]` in the config file (the native board's `guards` setting) declares record-level rules every task write
 must satisfy, whichever writer makes it: `starpulse task move` and the other agent verbs, the page, and a workflow.
-They are enforced where the native board lands a task file, so a move from the CLI and the same move from the page
+They are enforced where the native board lands a task write, so a move from the CLI and the same move from the page
 meet the same rule and are refused with the same `reason` and `skill`, and nothing is written. The `warn_actors` setting
 (a list of actors, empty by default) is the one exception: a move by an actor it lists that breaks a lane rule (`on` with
 `to` or `from`) lands, and the answer carries `"ok": true` and `warnings`, the `reason` of each rule it broke. A `write`

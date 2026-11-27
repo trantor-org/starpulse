@@ -477,9 +477,7 @@ budget and the board to its soft memory limit.
 
 ## Task History
 
-The native board appends every Task write to the Task's `task` stream (`board/task_history.py`) first and renders the
-task file after. A verb reads its base from the History, appends with a compare-and-set at the head it read, and writes the
-file only once the append lands; one wrapper around the board's `writer`, `assign`, `edit`, `archive`, `restore`,
+The native board appends every Task write to the Task's `task` stream (`board/task_history.py`) first; no task file is written. A verb reads its base from the History and appends with a compare-and-set at the head it read; one wrapper around the board's `writer`, `assign`, `edit`, `archive`, `restore`,
 `complete`, `retire` and `create` covers every entry path: the `starpulse task` verbs, `PUT /api/tasks`, `PUT /api/tasks/{id}`, the page, the
 Scheduler and the task actor, which all call those verbs.
 
@@ -567,9 +565,8 @@ type = "native"
 # validate = "my_checks:task_write"  # may refuse a task write before it lands (see docs/adapters.md)
 # transcripts = "~/.claude/projects"  # where Claude Code writes each session's transcript; the harness telemetry reads a session's last turn there, and a terminal halt (a synthetic error reply opening `Autocompact is thrashing`) ends the session with a `SESSION_ENDED` event; only the transcript's last 64 KiB is read
 # types = ["spike", "bug"]  # the names a task's `type` may take; a write setting any other is refused with this list in its reason, so with no list any non-empty type is accepted and a board names none of its own
-# task_file_name = "title"   # the name a created task's file is written under: "title" is `task-1 - Draw-the-board.md`, "slug" is `task-1-draw-the-board.md`, lowercase, its slug capped at 19 characters
-# complete_done = false     # true: a task landing in Done, and each Done task left in `tasks/` at start, moves on to `completed/`, which the reader and search still find
-# complete_keep_labels = "" # a regex: a Done task with a label that fully matches it stays in `tasks/`, Done and writable, where `complete_done` would move it; a start returns such a file already in `completed/` to `tasks/`
+# complete_done = false     # true: a task landing in Done, and each Done task left in `tasks/` at start, is archived, which the reader and search still find
+# complete_keep_labels = "" # a regex: a Done task with a label that fully matches it stays on the board, Done and writable, where `complete_done` would archive it
 
 # Task fields this deployment adds to StarPulse's own, checked on write and kept in the read model (see Task read model):
 # [board.fields]

@@ -23,6 +23,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from starpulse.board.adapters.board_import import import_board
+from starpulse.board.adapters.task_parity import scanned
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.store import EventStore
 from starpulse.event_log.tables import events
@@ -56,7 +57,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(f"the board does not assemble: {exc}")
     history = history_store(config, base, machines)
     lanes = history.lane_changes()
-    records = {task: record for task in dict.fromkeys(lane[1] for lane in lanes) if (record := board.read(task))}
+    filed = {item.task.lower(): item.record for item in scanned(Path(board.source))}
+    records = {task: filed[task.lower()] for task in dict.fromkeys(lane[1] for lane in lanes) if task.lower() in filed}
     with history.engine.connect() as db:
         rows = db.execute(
             select(events.c.event_id, events.c.fields).where(events.c.stream == STREAM).order_by(events.c.id)
