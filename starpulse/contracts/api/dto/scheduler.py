@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from starpulse.contracts.api._base import _Api
+from starpulse.contracts.api._base import _Api, _Request
 
 
 class SchedulerDimension(_Api):
@@ -66,7 +66,7 @@ class SchedulerPause(_Api):
     reason: str
 
 
-class QuietHours(_Api):
+class QuietHours(_Request):
     """A daily window in which the scheduler admits nothing: `start` up to `end`, `HH:MM` in `timezone`; an `end` before
     `start` runs past midnight."""
 
