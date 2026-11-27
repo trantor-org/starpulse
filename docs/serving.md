@@ -702,6 +702,10 @@ applied_by = "pin-bump"
 # embeddings_url = "http://localhost:8080/v1/embeddings"  # optional: POSTed `{model, input}`, answered with `data[].embedding`
 # model = "nomic-embed-text"                             # required with embeddings_url: the model the endpoint is asked for
 # token_env = "EMBEDDINGS_TOKEN"                         # optional: the environment variable holding the endpoint's bearer token
+# rerank_url = "http://localhost:8005/v1/rerank"         # optional: reranks the duplicate search's nearest tasks (no token is sent)
+# rerank_model = "Qwen/Qwen3-Reranker-0.6B"              # required with rerank_url
+# rerank_query = "<Query>: {query}"                      # optional: the instruct template for the query, with its {query} placeholder
+# rerank_document = "<Document>: {document}"             # optional: the template for each candidate, with its {document} placeholder
 
 # Optional: map the steps a shipped skill names to this project's own command lines (see `command run` in docs/cli.md).
 # Each name maps to an argv, run with no shell. Placeholders: {task}, {worktree}, {NAME} (from --arg NAME=VALUE), and the

@@ -4159,6 +4159,26 @@
             ],
             "default": null
           },
+          "duplicateQueries": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Words to search the board for a task that does this work: the server searches them, the citations in the text and its meaning, and records what it finds as `duplicateSearch`."
+          },
+          "checkDuplicates": {
+            "default": false,
+            "description": "Answer the duplicate search's record and file nothing.",
+            "type": "boolean"
+          },
           "follows": {
             "anyOf": [
               {
@@ -4545,6 +4565,26 @@
               }
             ],
             "default": null
+          },
+          "duplicateQueries": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Words to search the board for a task that does this work: the server searches them, the citations in the text and its meaning, and records what it finds as `duplicateSearch`."
+          },
+          "checkDuplicates": {
+            "default": false,
+            "description": "Answer the duplicate search's record and file nothing.",
+            "type": "boolean"
           },
           "follows": {
             "anyOf": [

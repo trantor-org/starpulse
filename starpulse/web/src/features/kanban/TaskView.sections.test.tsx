@@ -9,9 +9,6 @@ import { LIFECYCLE_ROLES } from "../../tests/lifecycleRoles";
 import { card, props, record, task } from "../../tests/taskViewFixtures";
 
 const draw = (over: Partial<Parameters<typeof TaskView>[0]> = {}) => renderToStaticMarkup(<TaskView {...props(over)} />);
-const drawCard = (readable: string) => renderToStaticMarkup(
-  <Card task={card("TASK-5", "ready", { readable })} now={160} marks={{}} names={{}} roles={LIFECYCLE_ROLES} onOpen={() => {}} dismiss={() => {}} compact={false} />,
-);
 const sectionOf = (html: string, name: string) => new RegExp(`<details[^>]*data-section="${name}"[^>]*>`).exec(html)?.[0] ?? "";
 
 beforeEach(() => localStorage.clear());
@@ -65,25 +62,11 @@ describe("the task dialog's description", () => {
 });
 
 describe("the dialog's controls", () => {
-  it("draws no badge, find box or expand/collapse-all control, even for a failing verdict", () => {
-    const html = draw({ task: { ...task, readable: "Outcome is missing" }, record: { ...record, description } });
+  it("draws no find box or expand/collapse-all control", () => {
+    const html = draw({ record: { ...record, description } });
 
-    expect(html).not.toContain("legacy format");
-    expect(html).not.toContain('class="legacy"');
     expect(html).not.toMatch(/type="search"|role="search"/);
     expect(html).not.toMatch(/expand all|collapse all/i);
-  });
-});
-
-describe("a board card's badge", () => {
-  it("draws the legacy-format badge, carrying the verdict, for a failing readable verdict", () => {
-    const html = drawCard("the description has no Outcome heading");
-
-    expect(html).toContain('<span class="legacy" title="the description has no Outcome heading">legacy format</span>');
-  });
-
-  it("draws no badge when the description reads well", () => {
-    expect(drawCard("")).not.toContain("legacy");
   });
 });
 

@@ -37,7 +37,7 @@ export interface StreamHandlers {
 
 const TASK =
   "id title lane profile impact urgency tier source assignee labels milestone type dependencies workable createdAt movedAt description " +
-  "prs { repo number state isDraft mergeable checks threads mergedAt mergeSha } lanePath { from } criteria { text checked } pauseReason readable " +
+  "prs { repo number state isDraft mergeable checks threads mergedAt mergeSha } lanePath { from } criteria { text checked } " +
   "released { at session last_renewal ttl idle } sessionActivity { state last_turn_at } skill { name states current next { kind name } } phase substate";
 const SETTLED = "id state at created title model milestone labels";
 const MACHINE_TASK = "machine id title model task state steps active trail { state event at id }";
@@ -60,13 +60,12 @@ interface GqlPull {
   mergedAt: string | null;
   mergeSha: string | null;
 }
-type GqlTask = Pick<RawTask, "id" | "title" | "profile" | "impact" | "urgency" | "tier" | "source" | "assignee" | "labels" | "milestone" | "type" | "dependencies" | "workable" | "description" | "criteria" | "readable" | "released" | "skill"> & {
+type GqlTask = Pick<RawTask, "id" | "title" | "profile" | "impact" | "urgency" | "tier" | "source" | "assignee" | "labels" | "milestone" | "type" | "dependencies" | "workable" | "description" | "criteria" | "released" | "skill"> & {
   lane: string;
   createdAt: number;
   movedAt: number;
   prs: GqlPull[];
   lanePath: { from: string | null }[];
-  pauseReason: string;
   sessionActivity: RawTask["session_activity"];
   phase: string | null;
   substate: string | null;
@@ -93,9 +92,9 @@ const pullOf = (p: GqlPull): Pull => ({
 });
 
 /** A task as the page's card holds it: the view's fields renamed to the card's, its `runs` the scheduler runs that name it. */
-const taskOf = ({ lane, createdAt, movedAt, prs, lanePath, pauseReason, sessionActivity, ...t }: GqlTask, runs: TaskRun[]): RawTask => ({
+const taskOf = ({ lane, createdAt, movedAt, prs, lanePath, sessionActivity, ...t }: GqlTask, runs: TaskRun[]): RawTask => ({
   ...t, state: lane, model: t.profile ?? "", created: createdAt, entered: movedAt, workable_since: t.workable ? movedAt : null,
-  previous: lanePath.at(-1)?.from ?? null, prs: prs.map(prUrl), pause_reason: pauseReason, session_activity: sessionActivity, runs,
+  previous: lanePath.at(-1)?.from ?? null, prs: prs.map(prUrl), session_activity: sessionActivity, runs,
 });
 const settledOf = ({ id: _id, ...s }: GqlSettled): Settled => s;
 
