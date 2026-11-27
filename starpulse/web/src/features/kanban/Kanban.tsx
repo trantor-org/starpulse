@@ -702,11 +702,13 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   useScrollRest(columns, ".body");
   // what the operator chose is kept for the next visit; a deep link's filters are the first thing kept
   useEffect(() => savePrefs(storage, prefs), [storage, prefs]);
-  // once the view has taken a deep link's filters they leave the address, or a reload would undo what was changed since
+  // once the view has taken a deep link's filters they leave the address, or a reload would undo what was changed since; its task
+  // stays until the snapshot lands and its modal opens, so a reload during a slow first load still opens it
+  const loaded = hud.tree !== null;
   useEffect(() => {
-    const clean = withoutFilters(location.search);
+    const clean = withoutFilters(location.search, loaded);
     if (clean !== location.search) history.replaceState(null, "", `${location.pathname}${clean}`);
-  }, []);
+  }, [loaded]);
   /** Answer the start question: a held card flies from its drop point to where the answer puts it, or shakes back on Escape. */
   const answer = useCallback((key: string) => {
     const asked = starts.get().asking;
