@@ -65,15 +65,15 @@ def _store(db: Connection, view: str, seq: int, body: bytes, at: float, deflated
 LIVE = "live"
 
 
-def build(engine: Engine, read_model: str) -> None:
-    """Empty the stored snapshot and its deltas when they were not stored under this definition and read-model stamp: the
-    Board writer stores a snapshot again at its start. One stored under them is left as it is."""
-    empty_unless_stamped(engine, "snapshots", SNAPSHOT_TABLES, read_model)
+def build(engine: Engine) -> None:
+    """Empty the stored snapshot and its deltas when they were not stored under this table definition: the Board writer
+    stores a snapshot again at its start, from the task rows. A machine or fold change leaves it as it is."""
+    empty_unless_stamped(engine, "snapshots", SNAPSHOT_TABLES)
 
 
-def built(engine: Engine, read_model: str) -> bool:
-    """Whether the stored snapshot is the one `build` leaves: stored under this definition and read-model stamp."""
-    return stamped(engine, "snapshots", SNAPSHOT_TABLES, read_model)
+def built(engine: Engine) -> bool:
+    """Whether the stored snapshot is the one `build` leaves: stored under this table definition."""
+    return stamped(engine, "snapshots", SNAPSHOT_TABLES)
 
 
 class SnapshotStore:

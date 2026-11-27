@@ -1,7 +1,6 @@
 """The fold of one `machine:events` entry into its machine's task row: the machine's transition table decides the state,
 and the trail keeps the task's latest steps. Only the Board child's projector calls it."""
 
-import json
 from collections.abc import Mapping
 
 from pydantic import ValidationError
@@ -36,21 +35,6 @@ class Placer:
         self._tables = tables(drawn)
         self._sourced = {name: bool(machine.get("source")) for name, machine in drawn.items()}
         self._trail = {name: TRAIL_SOURCED if sourced else TRAIL for name, sourced in self._sourced.items()}
-
-    def fingerprint(self) -> str:
-        """What decides where an event places a task: each drawn machine's initial and final states and moves, whether a
-        third party moves it, and the task-key scheme. An edit that moves no task (a label, a position) leaves it as it was."""
-        placed = {
-            name: {
-                "initial": table.initial,
-                "finals": sorted(table.finals),
-                "moves": {event: {src: sorted(to) for src, to in by.items()} for event, by in table.moves.items()},
-                "sourced": self._sourced[name],
-            }
-            for name, table in self._tables.items()
-        }
-        keys = self._keys and [self._keys.key.pattern, self._keys.branch.pattern, self._keys.key_format]
-        return json.dumps([placed, keys], sort_keys=True)
 
     def place(self, before: dict | None, event: MachineEvent) -> tuple[str, str, dict] | None:
         """The (machine, task, agent) the event leaves, or None when it places nothing."""

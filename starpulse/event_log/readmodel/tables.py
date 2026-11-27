@@ -113,7 +113,4 @@ snapshot_deltas = Table(
     Column("data", JSON, nullable=False),
 )
 
-#: The two read-model table families, each stamped and swapped alone.
-TASK_TABLES = (tasks, criteria, board_keys)
-MACHINE_TABLES = (machine_tasks,)
 SNAPSHOT_TABLES = (snapshots, snapshot_deltas)

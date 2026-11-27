@@ -79,7 +79,6 @@ def start(
     history_store: Callable[[BoardConfig, Path, Mapping[str, dict]], WriterStore],
     follow: Callable[..., object],
     followers: Followers,
-    refold: Callable[[Projector, Path | None, StopEvent], object] | None = None,
     ready: Callable[[Board, BoardFeed], None] | None = None,
     snapshots: SnapshotStore | None = None,
     go: threading.Event | None = None,
@@ -114,8 +113,6 @@ def start(
             log.engine, config.search
         )  # the one fold indexes search, as the API's second fold once did
         projector = Projector(log.engine, EventStore(log.engine), search, log=log, drawn=feed.machines, keys=board.keys)
-        if refold is not None:
-            refold(projector, path, stop)  # a stale family is replaced by a child while the old rows serve
         follow(projector, feed, stop, log)
 
     if go is None:
@@ -156,7 +153,6 @@ def main(
     follow: Callable[..., object],
     followers: Callable[[argparse.ArgumentParser, BoardConfig], Followers],
     hold: Callable[[threading.Event, Callable[[], None]], None],
-    refold: Callable[[Projector, Path | None, StopEvent], object] | None = None,
 ) -> None:
     """Run the Board writer; `runtime` passes the collaborators it builds (`assemble`, `history_store`, the read model's
     `follow`, `followers` and `hold`), as no context imports it."""
@@ -172,7 +168,7 @@ def main(
     try:
         reload_config = start(
             config, path, base, log, stop, load=load, assemble=assemble, history_store=history_store, follow=follow,
-            followers=followers(parser, config), refold=refold,
+            followers=followers(parser, config),
         )  # fmt: skip
     except ValueError as exc:
         stop.set()  # `worker_board` may have started its read model follower before the start refused
