@@ -179,6 +179,10 @@ machine_events = Table(
     Column("occurred_at", Float, nullable=False),
     Column("sha", String),
     Column("task_uuid", String),
+    #: The state the event left the task in and the hash of the machine version active when it was recorded; null in a
+    #: row recorded before they were kept, and `machine_version` null where the machine had no active version.
+    Column("state", String),
+    Column("machine_version", String),
     Index("ix_starpulse_machine_events_task", "task", "machine", "occurred_at"),
     Index("ix_starpulse_machine_events_task_uuid", "task_uuid", "machine", "occurred_at"),
     Index("ix_starpulse_machine_events_run", "run", "machine", "occurred_at"),

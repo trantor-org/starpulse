@@ -42,6 +42,7 @@ from starpulse.event_log.lane_import import Change
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.readmodel import task_uuid
 from starpulse.event_log.store import EventStore
+from starpulse.event_log.store.machine_registry import TASK_MACHINE, active_version
 from starpulse.event_log.tables import machine_events as _machine_events
 from starpulse.event_log.tables import metadata
 from starpulse.event_log.wake import RETRY_DELAY, StopEvent
@@ -70,6 +71,7 @@ _lane_changes = Table(
     Column("observed_at", Float, nullable=False),
     Column("actor", String),
     Column("task_uuid", String),
+    Column("machine_version", String),
     Index("ix_starpulse_lane_changes_task", "task", "observed_at"),
     Index("ix_starpulse_lane_changes_task_uuid", "task_uuid", "observed_at"),
 )
@@ -139,18 +141,26 @@ def lane_changes(rows: list[tuple[float, str | None, str, str | None]]) -> list[
     ]
 
 
-def machine_steps(machine: dict, rows: list[tuple[float, str]]) -> tuple[list[dict], int]:
+def _after(table: Transitions, before: str, event: str, stored: str | None) -> str:
+    """Where `event` leaves a task that stood in `before`: the state stored with the row, else where `table` places it."""
+    return stored if stored is not None else table.target(before, event) or before
+
+
+def machine_steps(
+    machine: dict, rows: list[tuple[float, str]] | list[tuple[float, str, str | None]]
+) -> tuple[list[dict], int]:
     """A task's `(at, event)` rows on `machine`, oldest first, as `{at, event, state}` and their count.
 
     Each event is placed by the rule the machine level uses (`domain.transitions.Table.target`), so a trace that starts
     mid-life or lacks the judged events still reaches where the task is. A row is never dropped: one the machine
-    cannot place leaves the task where it was, so the count is the row count.
+    cannot place leaves the task where it was, so the count is the row count. A row may carry a third item, the state
+    stored when it was recorded, which is used as it is.
     """
     table = Transitions(machine)
     path: list[dict] = []
     state = table.initial
-    for at, event in rows:
-        state = table.target(state, event) or state
+    for at, event, *stored in rows:
+        state = _after(table, state, event, stored[0] if stored else None)
         path.append({"at": at, "event": event, "state": state})
     return path, len(path)
 
@@ -208,12 +218,39 @@ class HistoryStore:
         }
         with self.engine.begin() as db:
             if row["occurred_at"] < machine_events.EARLIEST_TIME:
-                logger.warning("history: machine event %s timed %s is before %s, not recorded", row["event_id"], row["occurred_at"], machine_events.EARLIEST_TIME)
+                logger.warning(
+                    "history: machine event %s timed %s is before %s, not recorded",
+                    row["event_id"],
+                    row["occurred_at"],
+                    machine_events.EARLIEST_TIME,
+                )
             else:
-                insert = self._insert(_machine_events).values(row | {"task_uuid": task_uuid.of(row["task"])}).on_conflict_do_nothing()
-                db.execute(insert)
+                stamp = {
+                    "task_uuid": task_uuid.of(row["task"]),
+                    "state": self._entered(db, row),
+                    "machine_version": active_version(db, row["machine"]),
+                }
+                db.execute(self._insert(_machine_events).values(row | stamp).on_conflict_do_nothing())
             if cursor is not None:
                 self.checkpoints.save(machine_events.STREAM, cursor, conn=db)
+
+    def _entered(self, db: Connection, row: dict) -> str | None:
+        """The state the event leaves its task or run in on the machine the recorder draws, placed from the state
+        its last stored row left it in (a row recorded before states were kept is placed on the machine); None for a
+        machine the recorder does not draw."""
+        machine = self._machines.get(row["machine"])
+        key = row["task"] or row["run"]
+        if machine is None or key is None:
+            return None
+        c = _machine_events.c
+        rows = db.execute(
+            select(c.occurred_at, c.event, c.state)
+            .where(or_(c.task_uuid == task_uuid.of(key), c.run == key), c.machine == row["machine"])
+            .order_by(*_STEP_ORDER)
+        ).all()
+        path, _ = machine_steps(machine, [tuple(r) for r in rows])
+        before = path[-1]["state"] if path else Transitions(machine).initial
+        return _after(Transitions(machine), before, row["event"], None)
 
     def record_lane(
         self,
@@ -260,6 +297,7 @@ class HistoryStore:
             new_status=status,
             observed_at=at,
             actor=actor,
+            machine_version=active_version(db, TASK_MACHINE),
         )
         return db.execute(change.on_conflict_do_nothing().returning(_lane_changes.c.id)).first() is not None
 
@@ -285,7 +323,9 @@ class HistoryStore:
                 if _holds_move(db, task, name if slash and name else None, status, at):
                     continue
                 row = {"event_id": event_id, "task": task, "old_status": None, "new_status": status, "observed_at": at}
-                db.execute(self._insert(_lane_changes).values(row | {"task_uuid": task_uuid.of(task)}).on_conflict_do_nothing())
+                db.execute(
+                    self._insert(_lane_changes).values(row | {"task_uuid": task_uuid.of(task)}).on_conflict_do_nothing()
+                )
             _rechain(db, {task for _, task in last})
         with self.engine.connect() as db:
             return len(_held_ids(db, ids) - held)
@@ -351,7 +391,9 @@ class HistoryStore:
         c = _lane_changes.c
         with self.engine.connect() as db:
             rows = db.execute(
-                select(c.observed_at, c.old_status, c.new_status, c.actor).where(c.task_uuid == task_uuid.of(task)).order_by(*_LANE_ORDER)
+                select(c.observed_at, c.old_status, c.new_status, c.actor)
+                .where(c.task_uuid == task_uuid.of(task))
+                .order_by(*_LANE_ORDER)
             ).all()
         return lane_changes([tuple(row) for row in rows])
 
@@ -364,11 +406,45 @@ class HistoryStore:
         c = _machine_events.c
         with self.engine.connect() as db:
             rows = db.execute(
-                select(c.occurred_at, c.event)
+                select(c.occurred_at, c.event, c.state)
                 .where(or_(c.task_uuid == task_uuid.of(task), c.run == task), c.machine == flow)
                 .order_by(*_STEP_ORDER)
             ).all()
         return machine_steps(self._machines[flow], [tuple(row) for row in rows])
+
+    def trajectory(self, task: str) -> list[dict]:
+        """The task's points, oldest first, as `{at, machine, event, state, version}`: each machine event on a drawn
+        machine, and each lane the task entered (machine `board`, no event), with the state and machine version stored
+        when it was recorded. A row recorded before they were kept is placed on the drawn machine, and has no version."""
+        uuid = task_uuid.of(task)
+        m, lane = _machine_events.c, _lane_changes.c
+        with self.engine.connect() as db:
+            moves = db.execute(
+                select(m.machine, m.occurred_at, m.event, m.state, m.machine_version)
+                .where(m.task_uuid == uuid)
+                .order_by(*_STEP_ORDER)
+            ).all()
+            lanes = db.execute(
+                select(lane.observed_at, lane.new_status, lane.machine_version)
+                .where(lane.task_uuid == uuid)
+                .order_by(*_LANE_ORDER)
+            ).all()
+        tables = {
+            name: Transitions(machine) for name, machine in self._machines.items() if name in {r[0] for r in moves}
+        }
+        states = {name: table.initial for name, table in tables.items()}
+        points = []
+        for machine, at, event, stored, version in moves:
+            if machine in tables:
+                states[machine] = _after(tables[machine], states[machine], event, stored)
+            points.append(
+                {"at": at, "machine": machine, "event": event, "state": states.get(machine, stored), "version": version}
+            )
+        points += [
+            {"at": at, "machine": TASK_MACHINE, "event": None, "state": state, "version": version}
+            for at, state, version in lanes
+        ]
+        return sorted(points, key=lambda point: point["at"])
 
     def task_events(self, task: str, since: float, now: float) -> list[dict]:
         """The task's events on every machine since epoch `since`, oldest first, as `{at, machine, event, from, to}`.
@@ -379,7 +455,7 @@ class HistoryStore:
         c = _machine_events.c
         floor = since if self._retention is None else max(since, now - self._retention)
         query = (
-            select(c.machine, c.occurred_at, c.event)
+            select(c.machine, c.occurred_at, c.event, c.state)
             .where(c.task_uuid == task_uuid.of(task), c.machine.in_(self._machines))
             .order_by(*_STEP_ORDER)
         )
@@ -390,9 +466,9 @@ class HistoryStore:
         tables = {machine: Transitions(self._machines[machine]) for machine in {row[0] for row in rows}}
         states = {machine: table.initial for machine, table in tables.items()}
         events = []
-        for machine, at, event in rows:
+        for machine, at, event, stored in rows:
             before = states[machine]
-            states[machine] = tables[machine].target(before, event) or before
+            states[machine] = _after(tables[machine], before, event, stored)
             if at >= floor:
                 events.append({"at": at, "machine": machine, "event": event, "from": before, "to": states[machine]})
         return events
