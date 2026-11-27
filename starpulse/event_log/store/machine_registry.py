@@ -24,6 +24,13 @@ from starpulse.machine_engine.model.transitions import lane_id
 
 #: The machine that moves Tasks; the one a Task stream is validated and stamped under.
 TASK_MACHINE = "board"
+
+
+def active_version(db: Connection, machine: str) -> str | None:
+    """The hash of the version `machine` runs under, read on `db`; None before its first activation."""
+    return db.execute(select(machine_active.c.hash).where(machine_active.c.machine == machine)).scalar()
+
+
 #: The payload field of each Event that names a State.
 _STATE_FIELD = {"TaskCreated": "state", "TaskImported": "state", "Transitioned": "to"}
 
@@ -183,7 +190,7 @@ class MachineRegistry:
 
     @staticmethod
     def _active(db: Connection, machine: str) -> str | None:
-        return db.execute(select(machine_active.c.hash).where(machine_active.c.machine == machine)).scalar()
+        return active_version(db, machine)
 
     @staticmethod
     def _record(db: Connection, machine: str, digest: str, document: Mapping[str, Any], held: str | None) -> None:
