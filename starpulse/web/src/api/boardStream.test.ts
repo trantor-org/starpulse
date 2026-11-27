@@ -22,12 +22,18 @@ function server(read: typeof READ = READ) {
   const seen: string[] = [];
   const open: Record<string, ReadableStreamDefaultController<Uint8Array>> = {};
   const gone = new Set<string>();
-  const control = { down: false };
+  const control = { down: false, failRead: false, hold: false, hang: false };
+  const holds: (() => void)[] = [];
   const post = async (url: string, init?: RequestInit) => {
     if (control.down) throw new Error("unreachable");
     const query = url === "/graphql" ? (JSON.parse(String(init?.body)).query as string) : url;
     const field = /subscription[^{]*{\s*(\w+)/.exec(query)?.[1];
     seen.push(field ?? (url === "/graphql" ? "read" : url));
+    if (!field && url === "/graphql") {
+      if (control.hang) return new Promise<Response>((_, fail) => init?.signal?.addEventListener("abort", () => fail(init.signal?.reason)));
+      if (control.failRead || control.hold) await new Promise<void>((go) => holds.push(go));
+      if (control.failRead) return new Response("{}", { status: 500 });
+    }
     if (field && gone.delete(field)) return new Response("{}", { status: 410 });
     if (field) return new Response(new ReadableStream({ start: (c) => void (open[field] = c) }));
     if (url === "/api/jobs") return Response.json(JOBS);
@@ -36,14 +42,18 @@ function server(read: typeof READ = READ) {
   const push = (field: string, data: unknown) =>
     open[field].enqueue(new TextEncoder().encode(`event: next\ndata: ${JSON.stringify({ data: { [field]: data } })}\n\n`));
   const end = (field: string) => open[field].close();
-  return { post, seen, push, end, gone, control, reads: () => seen.filter((q) => q === "read").length };
+  const release = () => holds.splice(0).forEach((go) => go());
+  return { post, seen, push, end, gone, control, release, reads: () => seen.filter((q) => q === "read").length };
 }
 
 const lanes = (sky: Snapshot) => sky.flows.find((f) => f.name === "board")!.agents.map((a) => `${a.id}:${a.state}`);
 
 describe("openStream", () => {
   beforeEach(() => void vi.useFakeTimers());
-  afterEach(() => void vi.useRealTimers());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
 
   it("reads the board once, then fires no request while changes arrive over its subscriptions, whatever the clock", async () => {
     const s = server();
@@ -155,6 +165,65 @@ describe("openStream", () => {
       expect([s.reads(), links]).toEqual([3, ["live", "retrying"]]);
       stream.close();
     });
+
+    it("keeps backing off while the server answers its health but never its board, resetting only once a whole read succeeds", async () => {
+      const s = server();
+      s.control.failRead = true;
+      const stream = openStream({ snapshot: () => {}, live: () => {} }, s.post);
+      await settle();
+      for (const reads of [2, 2]) {
+        s.push("health", health());
+        await settle();
+        s.release();
+        await settle();
+        expect(s.reads()).toBe(reads);
+      }
+
+      await vi.advanceTimersByTimeAsync(250);
+      expect(s.reads()).toBe(3);
+      stream.close();
+    });
+
+    it("does not hand over the Board it held before a drop as the new connection's, when that connection's health arrives ahead of its read", async () => {
+      const links: string[] = [];
+      const { s, skies, stream } = await open(READ, { link: (l) => void links.push(l) });
+      s.push("health", health());
+      await settle();
+      s.control.hold = true;
+      s.end("jobChanges");
+      await settle();
+      const before = skies.length;
+
+      s.push("health", health());
+      await settle();
+      expect([links, skies.length]).toEqual([["live", "retrying", "stale"], before]);
+
+      s.control.hold = false;
+      s.release();
+      await settle();
+      expect([links, skies.length]).toEqual([["live", "retrying", "stale", "live"], before + 1]);
+      stream.close();
+    });
+
+    it("gives up on a board read the server never answers, and reads again", async () => {
+      const timeouts: AbortController[] = [];
+      vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+        const timer = new AbortController();
+        timeouts.push(timer);
+        return timer.signal;
+      });
+      const s = server();
+      s.control.hang = true;
+      const stream = openStream({ snapshot: () => {}, live: () => {} }, s.post);
+      await settle();
+      expect(s.reads()).toBe(1);
+
+      timeouts[0]?.abort(new DOMException("timed out", "TimeoutError"));
+      await settle();
+
+      expect(s.reads()).toBe(2);
+      stream.close();
+    });
   });
 
   describe("its health", () => {
@@ -239,6 +308,21 @@ describe("openStream", () => {
       s.push("taskChanges", gone("TASK-1"));
       await settle();
       expect(last().pulls).toEqual({});
+      stream.close();
+    });
+
+    it("hands over a pull request whose checks change while its task's card stays as it was", async () => {
+      const { s, last, skies, stream } = await shown();
+      const pr = { repo: "o/r", number: 5, state: "OPEN", isDraft: false, mergeable: "MERGEABLE", checks: "pending", threads: 0, mergedAt: null, mergeSha: null };
+      const change = (checks: string) => ({ id: "TASK-1", machine: "board", task: { ...task("TASK-1", "ready"), prs: [{ ...pr, checks }] }, settled: null, machineTask: null });
+      s.push("taskChanges", change("pending"));
+      await settle();
+      const before = skies.length;
+
+      s.push("taskChanges", change("pass"));
+      await settle();
+
+      expect([skies.length, last().pulls?.["TASK-1"]?.[0].checks]).toEqual([before + 1, "pass"]);
       stream.close();
     });
 

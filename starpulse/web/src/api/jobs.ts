@@ -18,7 +18,7 @@ const DOMAINS = "domains { name dags { name } processes { name dags { name } } }
 const SUBSCRIPTION = `subscription ($from: Int!) { jobChanges(from: $from) { jobs { ${JOB_FIELDS} } error ${DOMAINS} } }`;
 
 /** How long the one read may take, its body included, before it rejects and `useJobs` retries. */
-const READ_TIMEOUT_MS = 30_000;
+export const READ_TIMEOUT_MS = 30_000;
 
 export async function readJobs(post: Post = apiFetch): Promise<Jobs | null> {
   const resp = await post("/api/jobs", { method: "POST", body: "{}", signal: AbortSignal.timeout(READ_TIMEOUT_MS) });

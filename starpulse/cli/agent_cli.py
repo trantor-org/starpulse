@@ -269,7 +269,7 @@ def _runs(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
 
 
 _TASK_CHANGES = """subscription ($from: Int!) { taskChanges(from: $from) {
-  id machine task { id title lane } settled { id state } machineTask { machine id title }
+  id machine task { id title lane } settled { id state } machineTask { machine id title task }
 } }"""
 
 
@@ -312,7 +312,7 @@ def _watch(args: argparse.Namespace, environ: Mapping[str, str]) -> Iterator[dic
         raise agent_wire.CliError("not_found", f"{args.machine} is not a machine; the server draws {', '.join(flows)}")
     position = agent_wire.graphql(base, "query { tasks { position } }", {})["tasks"]["position"]
     for change in _frames(base, position):
-        if args.machine in (None, change["machine"]) and args.task in (None, change["id"]):
+        if args.machine in (None, change["machine"]) and args.task in (None, change["id"], (change.get("machineTask") or {}).get("task")):
             yield {"event": "task", "data": change}
 
 
@@ -1148,7 +1148,7 @@ def _parser() -> argparse.ArgumentParser:
         (0, 2, 3, 4),
     )
     watch.add_argument("--machine", help="only changes on this machine (`board`, `in-progress`)")
-    watch.add_argument("--task", help="only changes to this task (`PROJ-45`)")
+    watch.add_argument("--task", help="only changes to this task (`PROJ-45`) and the machine tasks that cite it")
     command = verbs.add_parser("command", description="the project's commands", help="the project's commands")
     command_verbs = command.add_subparsers(dest="verb", required=True, metavar="verb")
     command_run = leaf(

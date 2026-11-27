@@ -3,7 +3,7 @@
 import type { Cue, Dag, Delta, Domain, Jobs, LedgerRow, Machine, MergeStrip, Pool, Pull, RawTask, Roles, Settled, Snapshot, TaskRun } from ".";
 import { apiFetch } from "./apiFetch";
 import { openHealth, type Health, type Watch } from "./health";
-import { followJobs, readJobs } from "./jobs";
+import { followJobs, READ_TIMEOUT_MS, readJobs } from "./jobs";
 import { openLedger, type LedgerMarks } from "./ledgerStream";
 import { LOST_MS, retryWait } from "./retry";
 import { keep, same } from "./same";
@@ -163,8 +163,9 @@ function upsertCard(held: Held, t: GqlTask): boolean {
   const before = held.cards.get(t.id);
   const card = keep<RawTask | undefined>(before, taskOf(t, held.runs.get(t.id) ?? []))!;
   const pulls = keep(held.pulls[t.id], t.prs.map(pullOf));
-  if (pulls !== held.pulls[t.id]) held.pulls = pulls.length ? { ...held.pulls, [t.id]: pulls } : Object.fromEntries(Object.entries(held.pulls).filter(([id]) => id !== t.id));
-  if (card === before) return false;
+  const pullsChanged = pulls !== held.pulls[t.id];
+  if (pullsChanged) held.pulls = pulls.length ? { ...held.pulls, [t.id]: pulls } : Object.fromEntries(Object.entries(held.pulls).filter(([id]) => id !== t.id));
+  if (card === before) return pullsChanged;
   held.cards.set(t.id, card);
   return true;
 }
@@ -289,11 +290,12 @@ export function openStream(handlers: StreamHandlers, post: Post = apiFetch, watc
   let attempts = 0;
   let announced = false;
   let connected = false;
+  /** Whether this connection has read its own board: a health event ahead of that must not hand over the Board a dropped connection held. */
+  let fresh = false;
   const goesLost = () => void (lost ??= setTimeout(() => show("offline"), LOST_MS));
   const up = () => {
     clearTimeout(lost);
     lost = undefined;
-    attempts = 0;
     announced = false;
     show(old ? "stale" : "live");
     handlers.live(true);
@@ -337,7 +339,7 @@ export function openStream(handlers: StreamHandlers, post: Post = apiFetch, watc
     skew = h.at - Date.now() / 1000;
     handlers.clock?.(skew);
     if (reading) return;
-    if (redo || old) hand(); // a partial Board stays withheld: it is handed over once the server has read its board
+    if (fresh && (redo || old)) hand(); // a partial Board stays withheld: it is handed over once the server has read its board
     tell();
   };
 
@@ -352,12 +354,12 @@ export function openStream(handlers: StreamHandlers, post: Post = apiFetch, watc
       else drop();
     };
     open = { close: () => ((over = true), streams.forEach((s) => s.close())) };
-    [reading, connected] = [true, false];
+    [reading, connected, fresh] = [true, false, false];
     streams.push(watch({ health: onHealth, end }));
     let read: Read | undefined;
     let jobs: Jobs | null;
     try {
-      const resp = await post("/graphql", { method: "POST", body: JSON.stringify({ query: READ }), signal: stop.signal });
+      const resp = await post("/graphql", { method: "POST", body: JSON.stringify({ query: READ }), signal: AbortSignal.any([stop.signal, AbortSignal.timeout(READ_TIMEOUT_MS)]) });
       read = resp.ok ? ((await resp.json()) as { data?: Read }).data : undefined;
       jobs = await readJobs(post);
       if (!read || !jobs) throw new Error("the board's reads failed");
@@ -366,6 +368,7 @@ export function openStream(handlers: StreamHandlers, post: Post = apiFetch, watc
     }
     if (over) return;
     held = hold(read, jobs);
+    [fresh, attempts] = [true, 0];
     const fold = (kind: Delta["kind"], changed: boolean) => void (changed && hand(kind));
     streams.push(
       follow<GqlChange>(TASK_CHANGES, "taskChanges", read.tasks.position, { change: (c) => fold("task", foldChange(held!, c)), end }, post),
