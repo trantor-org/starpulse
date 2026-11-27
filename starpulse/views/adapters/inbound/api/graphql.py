@@ -19,6 +19,7 @@ import asyncio
 import json
 import math
 import time
+from collections.abc import Callable
 from functools import partial
 from inspect import isawaitable
 from typing import Any
@@ -100,6 +101,8 @@ async def _tasks(
         and (lane is None or agent["state"] == lane_id(lane))
         and (milestone is None or agent["milestone"] == milestone)
     ]
+    listed = {agent["id"]: agent for agent in items}
+    info.context.setdefault("lists", {}).update({id(agent): listed for agent in items})
     return {"position": position, "items": items}
 
 
@@ -230,14 +233,29 @@ def _moved_at(agent: dict, _: GraphQLResolveInfo) -> float:
     return agent["entered"]
 
 
+async def _listed(agent: dict, info: GraphQLResolveInfo, key: Any, read: Callable[[list[dict]], dict[str, Any]]) -> Any:
+    """`read` of the cards, once per query however many fields ask. A card of the tasks list is read with every other
+    card on one worker thread, never a thread hop a card, which a list of hundreds would hold the request pool with."""
+    context = info.context
+    listed = context.get("lists", {}).get(id(agent))
+    scope = agent["id"] if listed is None else id(listed)
+    reads = context.setdefault("reads", {})
+    if (key, scope) not in reads:
+        cards = [agent] if listed is None else list(listed.values())
+        reads[key, scope] = asyncio.ensure_future(_worker(info, read, cards))
+    return (await reads[key, scope]).get(agent["id"])
+
+
 async def _record(agent: dict, info: GraphQLResolveInfo, *, lean: bool = False) -> dict | None:
-    """The task's record, read once per query however many fields ask: a list's cards leave out what it holds. A `lean`
-    read leaves out the verdicts of the board's rules, which only `moves` and `readable` need."""
-    records = info.context.setdefault("records", {})
-    if (agent["id"], lean) not in records:
-        read = info.context["feed"].held
-        records[agent["id"], lean] = asyncio.ensure_future(_worker(info, lambda: read(agent["id"], lean=lean)))
-    return await records[agent["id"], lean]
+    """The task's record: a list's cards leave out what it holds. A `lean` read leaves out the verdicts of the board's
+    rules, which only `moves` and `readable` need."""
+    feed = info.context["feed"]
+
+    def read(cards: list[dict]) -> dict[str, dict | None]:
+        with feed.pinned_rows():
+            return {card["id"]: feed.held(card["id"], lean=lean) for card in cards}
+
+    return await _listed(agent, info, ("record", lean), read)
 
 
 def _read_placing(feed: Any) -> dict:
@@ -346,8 +364,11 @@ async def _spend(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
 async def _prs(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
     """The PR store's records of the pull requests the task cites: a lookup by key, no GitHub read."""
     context = info.context
-    links = await _worker(info, context["feed"].cited, agent["id"])
-    return await _worker(info, task_pulls, context["pulls"], links)
+
+    def read(cards: list[dict]) -> dict[str, list[dict]]:
+        return {card["id"]: task_pulls(context["pulls"], context["feed"].cited(card["id"])) for card in cards}
+
+    return await _listed(agent, info, "prs", read)
 
 
 @pull_request.field("files")
@@ -362,7 +383,8 @@ def _history_key(agent: dict, info: GraphQLResolveInfo) -> str:
 
 @task.field("lanePath")
 async def _lane_path(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
-    return await _worker(info, info.context["api"].history.lane_path, _history_key(agent, info))
+    lane_path = info.context["api"].history.lane_path
+    return await _listed(agent, info, "lanePath", lambda cards: {card["id"]: lane_path(_history_key(card, info)) for card in cards})
 
 
 @task.field("machinePath")
