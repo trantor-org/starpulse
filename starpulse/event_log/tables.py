@@ -236,6 +236,19 @@ task_links = Table(
     Index("ux_starpulse_task_links_delivers", "ref", unique=True, sqlite_where=text("role = 'delivers'")),
 )
 
+#: The native board's doc index: one row per doc file, `path` relative to the board's root (`docs/specs/doc-1 - x.md`, or
+#: `archive/docs/...` once archived), found by `id`, which an archived doc may share. The file holds the content, of any
+#: type; a Markdown file keeps its title and type in its front matter too. Event-log pruning never touches it.
+doc_index = Table(
+    "starpulse_doc_index",
+    metadata,
+    Column("path", String, primary_key=True),
+    Column("id", String, nullable=False),
+    Column("title", String, nullable=False),
+    Column("type", String, nullable=False),
+    Index("ix_starpulse_doc_index_id", "id"),
+)
+
 #: One view's fold of one harness session, as plain JSON: the persisted result the analytics views combine, and no
 #: signal behind it. A session has a `ledger` row (the state its next export folds from), the `steps`, `cost` and
 #: `spend` results, and the skill-cost worker's `counted` row. `folded_through` is the revision of the write that made

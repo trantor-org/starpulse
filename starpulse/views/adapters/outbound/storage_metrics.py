@@ -7,7 +7,10 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from sqlalchemy import Engine
+
 from starpulse.board.adapters import native_docs
+from starpulse.board.adapters.native_doc_index import DocIndex
 
 #: A walk of the Board is thousands of stats; a scrape past this span reads the last one while the next walk runs.
 CACHE_S = 60.0
@@ -80,13 +83,13 @@ def cached(read: Callable[[], str], span: float = CACHE_S) -> Callable[[], str]:
     return get
 
 
-def docs_exposition(board: Path) -> str:
+def docs_exposition(board: Path, engine: Engine) -> str:
     """`starpulse_docs` per doc type: the open docs on the Board."""
     return "\n".join(
         [
             "# HELP starpulse_docs Open docs on the Board by type.",
             "# TYPE starpulse_docs gauge",
-            *(f'starpulse_docs{{type="{kind}"}} {count}' for kind, count in sorted(native_docs.counts(board).items())),
+            *(f'starpulse_docs{{type="{kind}"}} {count}' for kind, count in sorted(native_docs.counts(DocIndex(board, engine)).items())),
             "",
         ]
     )

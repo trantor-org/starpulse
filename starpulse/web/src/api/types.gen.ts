@@ -2277,10 +2277,11 @@ export interface MilestonePutRequest {
   title?: string | null;
 }
 /**
- * `PUT /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`.
+ * `PUT /api/docs`: file a doc; only the title is required. `type` is `specification`, `guide`, `readme`, `postmortem` or `other`; `extension` (default `md`) is the file's type.
  */
 export interface DocCreateRequest {
   body?: string | null;
+  extension?: string | null;
   folder?: string | null;
   title: string;
   type?: string | null;
@@ -2315,7 +2316,7 @@ export interface DailyReportFilter {
 /**
  * `PUT /api/docs/{id}`: replace the `title`, `type` or `body` named, if the doc still reads `base`, the `revision`
  * of the record the caller read. `archived: false` first returns an archived doc to `folder` under the board's docs
- * (the docs folder itself when absent), unchanged.
+ * (the docs folder itself when absent), unchanged; a `folder` on an open doc moves it there.
  */
 export interface DocPutRequest {
   archived?: false | null;

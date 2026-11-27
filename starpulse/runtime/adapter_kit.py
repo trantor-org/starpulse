@@ -251,6 +251,7 @@ def refusing(**fields: Any) -> Board:
             "edit_doc": _refused,
             "archive_doc": _refused,
             "restore_doc": _refused,
+            "move_doc": _refused,
             "holds": lambda *_: (),
             "unfinished": lambda *_: (),
             "unpublished": lambda *_: None,

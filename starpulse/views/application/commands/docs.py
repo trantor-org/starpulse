@@ -1,5 +1,6 @@
 """The board's docs: list, read, create, upsert and archive."""
 
+from pathlib import PurePosixPath
 from typing import Any
 
 from starpulse.board.model.seam import Board
@@ -43,7 +44,7 @@ def put_doc(request: DocPutRequest, doc: str, board: Board) -> tuple[int, dict[s
     """Upsert the fields `request` names into a doc, if the doc still reads `base`: the HTTP status and JSON body.
 
     A stale `base`, or a write to an archived doc that does not restore it, is 409. `archived: false` returns an
-    archived doc to `folder` first. `changed` names what the write changed; one that changes nothing writes nothing.
+    archived doc to `folder` first; a `folder` on an open doc moves it there. `changed` names what the write changed; one that changes nothing writes nothing.
     """
     with lock:
         if (current := board.read_doc(doc)) is None:
@@ -54,11 +55,17 @@ def put_doc(request: DocPutRequest, doc: str, board: Board) -> tuple[int, dict[s
         restoring = request.archived is False and current["archived"]
         if current["archived"] and not restoring:
             return 409, {"error": f"{ident} is archived: PUT it with archived false to restore it"}
-        if request.folder is not None and not restoring:
-            return 400, {"error": "a folder names where a restored doc goes: send it with archived false"}
+        if request.folder is not None and request.archived is False and not restoring:
+            return 400, {"error": "a folder names where a restored doc goes: an open doc has none to restore"}
         changed = ["archived"] if restoring else []
         if restoring and not (written := board.restore_doc(ident, request.folder or "")).ok:
             return 409, {"error": written.output, "skill": written.skill}
+        if request.folder is not None and not restoring:
+            if not (written := board.move_doc(ident, request.folder)).ok:
+                return 409, {"error": written.output, "skill": written.skill}
+            here = PurePosixPath(current["path"]).parent.as_posix()
+            if request.folder.strip("/") != ("" if here == "." else here):
+                changed.append("folder")
         fields = request.model_dump(exclude_unset=True, exclude={"base", "archived", "folder"})
         if todo := {field: value for field, value in fields.items() if value != current.get(field)}:
             if not (written := board.edit_doc(ident, todo)).ok:

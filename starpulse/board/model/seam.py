@@ -28,6 +28,7 @@ __all__ = [
     "DocCreator",
     "DocEditor",
     "DocReader",
+    "DocMover",
     "DocRestorer",
     "MilestoneArchiver",
     "MilestoneCreator",
@@ -189,6 +190,13 @@ DocEditor = Callable[[str, Mapping[str, Any]], Written]
 DocArchiver = Callable[[str], Written]
 
 
+class DocMover(Protocol):
+    """Move an open doc's file to `folder` (a path of plain names under `docs/`, `docs/` itself when blank), keeping
+    its name. A doc that is archived, or whose destination file exists, is refused."""
+
+    def __call__(self, doc: str, folder: str, /) -> Written: ...
+
+
 class DocRestorer(Protocol):
     """Return an archived doc's file, unchanged, to the board's docs under `folder` (a path of plain names under
     `docs/`, `docs/` itself when blank). An archive keeps no folder, so the caller names where the doc goes; a doc with
@@ -273,6 +281,8 @@ class Board:
     """Archives a doc."""
     restore_doc: DocRestorer
     """Returns an archived doc to the board's docs."""
+    move_doc: DocMover
+    """Moves an open doc to another folder under the board's docs."""
     holds: Callable[[str], Sequence[str]]
     """Why the board withholds a task's `deps_done` from the task actor, given its id; empty when nothing does, and an
     exception holds the task."""
