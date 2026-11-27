@@ -100,13 +100,14 @@ def follow_holder_idle(
     unstarted: Callable[[], list[str]] = list,
     closed: Callable[[], list[str]] = list,
     covered: Callable[[str, float], bool] = lambda _task, _at: False,
+    parked: Callable[[], list[str]] = list,
 ) -> threading.Thread:
     """Call `settled` with the task of each session that settles, and `entered` (`settled` when none) with each task
     moved from a parked lane to In Progress, after this call, within the event's own latency; call `ended` with the task
     of each session whose process ends, `lease_ended` first with that task and the session, `dispatched` with the task and
     session of each dispatch, and `moved` with each task and the lane it entered. The mover may not be the holder, which settled when it
     parked the task and settles no more, so the move is the only event that tells it. A task parked before this call
-    and moved after a server restart is not seen, because the lane map starts empty.
+    and moved after a server restart is seen when `parked` names it: the lane map starts with those tasks in a parked lane.
 
     Once `ready` is set (the actor has indexed its tasks) it also calls `settled` once with each task of `working`
     whose newest harness event before this call, a `SESSION_STOPPED` aside, is a settle (`settled`) or an end (`lease_ended` with the session its entry names, then `ended`):
@@ -152,6 +153,8 @@ def follow_holder_idle(
         def follow() -> None:
             # a failed pass raises, and `run_on_wake` reads again before any settle is called
             tasks, shut = working(), closed()
+            for task in parked():
+                lanes.setdefault(task, "needs_attention")
             newest = {task: _newest(log.engine, task, started) or ("", {}) for task in [*tasks, *shut, *unstarted()]}
             for task in [task for task in tasks if newest[task][0] == SETTLED]:
                 settled(task)

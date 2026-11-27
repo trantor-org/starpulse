@@ -165,6 +165,7 @@ def start_delivery(
             unstarted=actor.unstarted,
             closed=actor.closed,
             covered=actor.nudged_since,
+            parked=actor.parked,
         )
         follow_admitted(actor.admitted, log, stop)
         follow_failed(actor.start_failed, log, stop)

@@ -326,6 +326,10 @@ def _hold_comment(prefix: str, reasons: Sequence[str]) -> str:
     return f"{text}."[:COMMENT_CAP]
 
 
+def _unstarted_why(session: str) -> str:
+    return f"a dispatch of session {session} reported no start within {_START_BOUND_S:.0f} s"
+
+
 class TaskActor:
     """Moves each open task whose lane waits on a fact that holds, once per change of that fact.
 
@@ -820,7 +824,7 @@ class TaskActor:
             session = (last.get("data") or {}).get("session", "")
             self._attend(
                 name,
-                f"a dispatch of session {session} reported no start within {_START_BOUND_S:.0f} s",
+                _unstarted_why(session),
                 "dispatch never started",
                 "Start one by hand or rescope?",
                 ("start a session on it by hand", "rescope the task"),
@@ -1708,6 +1712,13 @@ class TaskActor:
                 agent["id"] for agent in self._feed.open_tasks() if agent["state"] in (roles.working, roles.attention)
             ]
 
+    def parked(self) -> list[str]:
+        """The open tasks in the attention lane, which `follow_holder_idle` reads as parked when a move into the working
+        lane is the first it hears of them."""
+        roles = self._feed.roles
+        with self._lock:
+            return [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == roles.attention]
+
     def closed(self) -> list[str]:
         """The open tasks in an `end_lanes` lane but Ready, whose holders `follow_holder_idle` checks for a settle while down,
         so a move into the lane that the actor missed still ends the session."""
@@ -1946,6 +1957,10 @@ class TaskActor:
                     "task actor: %s stays with %s, which a dispatch of %s did not displace", name, holder, session
                 )
                 return
+            if agent["state"] == roles.attention and _unstarted_why(session) in needs_attention_text(
+                (self._feed.task(name) or {}).get("description", "")
+            ):
+                return  # the replay of the dispatch the task is parked for, which never started
             self._deadlines.arm(_STARTED + name, self._wall() + _START_BOUND_S)
             moving = agent["state"] != roles.working
             if holder and not moving:
