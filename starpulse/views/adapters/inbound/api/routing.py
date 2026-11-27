@@ -38,7 +38,7 @@ if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler i
 
 @dataclass
 class Api:
-    """The seams the routes are made over. `build` is the page build's `build` event, which a stream sends on connect;
+    """The seams the routes are made over. `build` is the page build's id, which the `health` stream sends on connect;
     `page_gauge` the page build's gauge for `/metrics`."""
 
     feed: BoardFeed

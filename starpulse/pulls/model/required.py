@@ -9,7 +9,7 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
-__all__ = ["SELECTION", "contexts", "with_missing"]
+__all__ = ["SELECTION", "contexts", "rollup_state", "with_missing"]
 
 SELECTION = """
   defaultBranchRef { name }
@@ -77,3 +77,9 @@ def with_missing(
     """`required` and a `missing` entry for each context in `wanted` that no check in `posted` carries the name of."""
     seen = set(posted)
     return required + [{"name": name, "result": "missing"} for name in dict.fromkeys(wanted) if name not in seen]
+
+
+def rollup_state(checks: Iterable[dict[str, str]]) -> str:
+    """The rollup state `checks` make: `failing` when any failed, `passed` when all passed, else `pending`."""
+    results = {check["result"] for check in checks}
+    return "failing" if "failing" in results else "passed" if results <= {"pass"} else "pending"

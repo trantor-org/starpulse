@@ -33,14 +33,13 @@ export function DagModal({ data, r, now, close, ledger }: {
   }, []);
   const pool = data.pools.find((p) => p.name === r.d.pool), board = ties(data, r.d.name), box = chartBox(r, roomFor(vw)), rerun = rerunLine(r.d.rerun), live = r.d.active ?? [];
   const runs = jobRuns(r.d, now), where = runner(r.d.name), openRun = runs[0]?.url;
-  const dashboard = data.dashboards[r.d.name.split("/")[0]];
   return (
     <div id="kbm" onClick={(e) => e.target === e.currentTarget && close()}>
       <div className="modal tv dgm" role="dialog" aria-label={r.d.name} style={{ "--dgw": `${Math.max(MIN_WIDTH, Math.ceil(box.w) + CHROME)}px` } as CSSProperties}>
         <button className="x" onClick={close} aria-label="Close">✕</button>
         <div className="tvhead">
           <h2><Orb phase={r.phase} big />{short(r.d.name)}</h2>
-          <div className="k">{r.d.name} · {STATE(r)} · {r.domain}{r.d.pool ? ` · pool ${short(r.d.pool)}` : ""}{dashboard && <> · <a href={dashboard} target="_blank" rel="noreferrer">runner dashboard ↗</a></>}</div>
+          <div className="k">{r.d.name} · {STATE(r)} · {r.domain}{r.d.pool ? ` · pool ${short(r.d.pool)}` : ""}</div>
           {rerun && <div className="rerun k">{rerun}</div>}
         </div>
         <div className="tvbody">

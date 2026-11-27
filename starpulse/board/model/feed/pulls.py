@@ -1,7 +1,7 @@
-"""Feed pull requests and refused claims."""
+"""Feed pull requests."""
 
 
-class ClaimMethods:
+class PullMethods:
     def pull_requests(self) -> dict[str, list[str]]:
         """Each open task's pull request links, for the tasks that cite any."""
         prs = {agent["id"]: agent["prs"] for agent in self.open_tasks()}
@@ -18,10 +18,3 @@ class ClaimMethods:
             self._pulls = pulls
             self._publish("pulls", {"pulls": pulls})
         self._refresh_ledgers()
-
-    def refuse_claim(self, task: str, reason: str, at: float, *, publish: bool = True) -> None:
-        """Keep the board writer's latest refusal of an agent's claim on `task` and, unless `publish` is False, publish it."""
-        with self._lock:
-            self._claims[task] = {"reason": reason, "at": at}
-            if publish:
-                self._publish("claim", {"task": task, "reason": reason, "at": at})

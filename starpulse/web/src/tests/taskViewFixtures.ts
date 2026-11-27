@@ -23,7 +23,7 @@ export const card = (id: string, lane: string, over: Partial<KanbanTask> = {}): 
 export const board = [card("TASK-1", "done"), task];
 export const props = (over: Partial<Parameters<typeof TaskView>[0]> = {}): Parameters<typeof TaskView>[0] => ({
   task, record, lane: "Ready", now: 1000, tasks: board, open: () => {}, profiles: [], milestones: [], refusal: null, startNote: null,
-  names: { ready: "Ready", done: "Done", review: "Review" }, roles: LIFECYCLE_ROLES, capabilities: { edit: true, archive: true }, saving: false, claiming: false,
+  names: { ready: "Ready", done: "Done", review: "Review" }, roles: LIFECYCLE_ROLES, saving: false, claiming: false,
   close: () => {}, hide: () => {}, constellation: () => {}, move: () => {}, start: () => {}, ...over,
 });
 

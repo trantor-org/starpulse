@@ -11,7 +11,7 @@ import { Inline, Md, RepoBase } from "./Markdown";
 import { sessionNickname } from "./nickname";
 import { asOperator, warnsOf } from "./move";
 import { SpendRail } from "./spend";
-import type { Capabilities, Pull, Roles } from "../../api";
+import type { Pull, Roles } from "../../api";
 import {
   LABEL_FIELDS, LABEL_RULE, repoBase, SECTION_NAMES, TIERS, ciHistory, closesOnKey, copyText, copyToClipboard, dependencyRows, detailFields, editKey, fetchRecord, labelRuleError, menuKey, metCount, onScrim, postComment, saveSection, sessionOf, setDetailField, taskActivity, taskBody, toggleItem, unlistedPulls,
   type ActivityEvent, type CiPull, type DepRow, type DocLink, type Item, type LabelField, type MenuState, type Section, type TaskField, type TaskRecord,
@@ -35,7 +35,6 @@ export interface TaskViewProps {
   revisions?: number;
   /** The Waiting stack the task sits in, listed in its own row. */
   stack?: ReactNode;
-  capabilities?: Capabilities;
   names?: Record<string, string>;
   /** Which State plays which part, as the snapshot publishes it: the part, never the State's id, decides what the view offers. */
   roles: Roles;
@@ -331,7 +330,7 @@ export function TaskView(p: TaskViewProps) {
   const readDoc = reading?.task === p.task.id ? reading.doc : null;
   const names = p.names ?? {};
   const { roles } = p;
-  const canEdit = Boolean(p.capabilities?.edit && p.record);
+  const canEdit = Boolean(p.record);
   const change = (field: TaskField, value: TaskRecord[TaskField]) => {
     setDraft((record) => ({ ...record, [field]: value } as TaskRecord));
     setInvalid((fields) => { const next = new Set(fields); next.delete(field); return next; });
@@ -575,7 +574,7 @@ export function TaskView(p: TaskViewProps) {
                     <button type="button" className="frzbtn" onClick={() => setFreezing(false)}>Cancel</button>
                   </form>
                   : <button className="frzbtn" onClick={() => setFreezing(true)}>Freeze…</button>)}
-              {p.capabilities?.archive && <button className="archbtn" onClick={p.archive}>Archive…</button>}
+              <button className="archbtn" onClick={p.archive}>Archive…</button>
               <button className="tvx" onClick={p.close} aria-label="Close">✕</button>
             </div>
           </div>

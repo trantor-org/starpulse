@@ -3,7 +3,6 @@
 import json
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
-from hashlib import blake2b
 from itertools import batched
 from operator import is_
 from typing import Any, NamedTuple
@@ -14,7 +13,7 @@ from starpulse.board.model.feed.shared import LIVE_WINDOW_S
 from starpulse.contracts.api.dto.cue import Pull
 from starpulse.contracts.api.dto.flow import Settled
 from starpulse.contracts.api.dto.task import RawTask
-from starpulse.contracts.api.registry import BODIES, EVENTS
+from starpulse.contracts.api.registry import BODIES
 from starpulse.event_log.lane_events import done_lanes
 
 _ADAPTERS: dict[int, TypeAdapter[Any]] = {}
@@ -69,43 +68,17 @@ def _dump_all(
 
 #: The fields of a Board task the page reads from `/api/task/<id>` when it opens one, so a snapshot leaves them out.
 _TASK_DETAIL = ("description", "criteria", "definition_of_done", "moves")
-#: What an active task's card keeps: its description, criteria and Definition of Done, which the page shows in the
-#: first frame of the task view without a fetch.
-_LIVE_DETAIL = ("moves",)
+#: What an active task's card keeps: its moves, which `starpulse task moves` reads from the snapshot.
+_LIVE_DETAIL: tuple[str, ...] = ()
 #: The states whose cards keep that detail: the tasks an operator opens. The rest (waiting, done, archived)
 #: are most of the board and read `/api/task/<id>` on open.
 _ACTIVE_STATES = frozenset({"ready", "in_progress", "review", "needs_attention", "verifying"})
 
 
-def _move_set_key(moves: dict[str, Any]) -> str:
-    """The name of a set of Board-column verdicts: its content's digest, so a task's key never depends on the others."""
-    return blake2b(json.dumps(moves, sort_keys=True).encode(), digest_size=6).hexdigest()
-
-
 def _slim_task(task: dict[str, Any]) -> dict[str, Any]:
-    """A Board task without its detail, naming its moves' set in `move_set`; an active task keeps its description
-    and criteria."""
+    """A Board task without its detail; an active task keeps its description and criteria."""
     left_out = _LIVE_DETAIL if task.get("state") in _ACTIVE_STATES else _TASK_DETAIL
-    slim = {key: value for key, value in task.items() if key not in left_out}
-    if task.get("moves"):
-        slim["move_set"] = _move_set_key(task["moves"])
-    return slim
-
-
-def _move_sets(tasks: Iterable[dict[str, Any]], held: _Held | None = None, kept: _Held | None = None) -> dict[str, dict[str, Any]]:
-    """The Board-column verdict sets of `tasks` by name, each task's name kept in `held` while the feed holds the same
-    task object, as it replaces a task it changes."""
-    held, kept = {} if held is None else held, {} if kept is None else kept
-    sets = {}
-    for task in tasks:
-        if moves := task.get("moves"):
-            key = ("moves", id(task))
-            entry = held.get(key)
-            if entry is None or entry[0] is not task:
-                entry = (task, _move_set_key(moves))
-            kept[key] = entry
-            sets[entry[1]] = moves
-    return sets
+    return {key: value for key, value in task.items() if key not in left_out}
 
 
 def recent_settled(data: dict[str, Any]) -> dict[str, Any]:
@@ -194,11 +167,9 @@ def _drawn_pulls(pulls: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[
 
 
 def slim_snapshot(data: Any) -> Any:
-    """`data` as the page is sent it: each Board task without its description, criteria and moves (it reads them
-    from `/api/task/<id>` on open, and the moves through the `move_sets` table; an active task keeps its
-    description and criteria), only the recent settled tasks, and
-    each milestone's completed count; `/api/events` draws its `snapshot` frames with it too. A verb or the held-tasks
-    stream reads the whole of `data`, never this."""
+    """`data` as `/api/snapshot` sends it: each Board task without its description, criteria and moves (an active task
+    keeps its moves), only the recent settled tasks, and each milestone's completed count. A verb
+    reads the whole of `data`, never this."""
     flows = data["flows"]
     board = flows[0] if flows and flows[0]["name"] == "board" else None
     drawn = {**data, "milestone_done": milestone_done(data), "settled": recent_settled(data)}
@@ -206,7 +177,6 @@ def slim_snapshot(data: Any) -> Any:
     if data.get("pulls"):
         drawn["pulls"] = _drawn_pulls(data["pulls"])
     if board:
-        drawn["move_sets"] = _move_sets(board["agents"])
         flows = [{**board, "agents": [_slim_task(task) for task in board["agents"]]}, *flows[1:]]
     drawn["flows"] = [flows[0], *map(_drawn_flow, flows[1:])] if board else list(map(_drawn_flow, flows))
     return drawn
@@ -214,7 +184,7 @@ def slim_snapshot(data: Any) -> Any:
 
 #: The snapshot fields `encode_snapshot` keeps the JSON of between builds, each with the emptiest value its model
 #: accepts, which stands in until the JSON is spliced in.
-_PARTS: dict[str, Any] = {"dags": [], "machineStrip": {"entries": []}}
+_PARTS: dict[str, Any] = {"dags": []}
 
 
 class _Day(NamedTuple):
@@ -281,11 +251,10 @@ class SegmentedBody(bytes):
 
 def encode_snapshot(data: Any, held: _Held) -> bytes:
     """`encode("snapshot", slim_snapshot(data))`, the one body the API serves, with the JSON of each board task and
-    machine agent, each task's move-set name, the settled day, and the dags and the machine strip, kept in `held`
-    between calls.
+    machine agent, the settled day, and the dags, kept in `held` between calls.
 
-    `held` maps `id(object)` to the object and its JSON (an agent under `("machine", id)`, a move-set name under
-    `("moves", id)`, a flow's trail names under `("names", flow)`, a `_PARTS` field under `("part", name)`, and the
+    `held` maps `id(object)` to the object and its JSON (an agent under `("machine", id)`, a flow's trail names under
+    `("names", flow)`, a `_PARTS` field under `("part", name)`, and the
     settled day under `("day",)`): the feed replaces a task, agent or settled entry it changes rather than editing it,
     so one met again encodes the same, and one no longer listed is forgotten. Those are most of the snapshot (the
     settled day's entries alone 3.8 of its 4.9 MB), so a build after one change validates and dumps only what changed
@@ -305,7 +274,6 @@ def encode_snapshot(data: Any, held: _Held) -> bytes:
     drawn = {
         **slim_snapshot({**data, "flows": [{**flows[0], "agents": []}, *bare], "settled": {}}),
         "milestone_done": milestone_done(data, day.counted),
-        "move_sets": _move_sets(flows[0]["agents"], held, kept),
     }
     parts = _dump_parts(drawn, held, kept)
     held.clear()
@@ -343,16 +311,3 @@ def _splice(
         pieces += [after + body[cursor:at] + prefix, drawn]
         cursor, after = at + size, suffix
     return [*pieces, after + body[cursor:]]
-
-
-def event(name: str, data: Any) -> str:
-    """The JSON text of the `data` of `/api/events`' event `name`, raising `ValidationError` for one its model refuses."""
-    model = EVENTS[name]
-    if name == "snapshot":  # a rebuilt snapshot the writer stores as a delta is drawn as the served body is
-        data = slim_snapshot(data)
-    elif name == "pulls" and data.get("pulls"):
-        data = {**data, "pulls": _drawn_pulls(data["pulls"])}
-    if name == "move":
-        names, (agent,) = _interned([data["agent"]])
-        data = {**data, "agent": agent, **({"names": names} if names else {})}
-    return model.model_validate(data).model_dump_json(by_alias=True, exclude_unset=True)

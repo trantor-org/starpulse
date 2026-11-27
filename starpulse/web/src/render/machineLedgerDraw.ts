@@ -2,12 +2,12 @@
 // and the path a hovered or pinned task takes through them, all in screen pixels (machineLedger.ts places them). It draws from the frame's
 // context and from what the renderer owns (`LedgerIO`, read as it draws), and keeps what it drew this frame (`Ledger`) for the renderer's
 // hit testing.
-import type { MachineEntry, RawTask } from "../api";
+import type { RawTask } from "../api";
 import { glideStarts, sizes as ledgerSizes, slot as ledgerSlot } from "../features/level/machineLedger";
 import { entryAt, entryPath, rowLabels } from "../features/level/machineLanes";
 import { emptyNote, rowMeta, stuckCount } from "../features/level/machineRows";
 import { thumbOf, windowOf, type Thumb } from "../features/level/machineScroll";
-import { stripLabel, stripScale, ticks, viewSpan, type Tick } from "../features/level/machineStrip";
+import { stripLabel, stripScale, viewSpan } from "../features/level/machineStrip";
 import { sessionsOf, traceSteps, type Spot } from "../features/level/machineTrace";
 import { ACT, LABEL, MACHINE, MUTED, OFF, PHASE, PHASE_TEXT, SUBM, SUBM_TEXT, rgba, tierColor, type Drawing, type DrawCtx, type LTask } from "./draw";
 import { DAG_HI, DAG_INK, MACHINE_RING } from "./boardPalette";
@@ -19,8 +19,8 @@ import { PULSE, glideTime, type Move, type Sky } from "./sky";
 const curveLen = (c: Curve) => sample(c).reduce((a, p, i, ps) => (i ? a + Math.hypot(p.x - ps[i - 1].x, p.y - ps[i - 1].y) : 0), 0);
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
-/** What the scroll rail is under the pointer: the back-to-newest chip, the thumb or a tick of the strip. */
-export type Rail = { kind: "thumb" } | { kind: "chip" } | { kind: "tick"; tick: Tick };
+/** What the scroll rail is under the pointer: the back-to-newest chip or the thumb. */
+export type Rail = { kind: "thumb" } | { kind: "chip" };
 /** What the ledger drew this frame: each task's dot, each state and each name, for the hover, the trace and the names over the veil. */
 type LSpot = Pt & { r: number; color: string; y0: number; y1: number; row?: number };
 type LLabel = { key: string; text: string; x: number; y: number; px: number; ink: number; ga: number; weight: number; hot: boolean; lead?: Pt & { to: number }; y0: number; y1: number };
@@ -58,7 +58,6 @@ export interface Ledger {
   /** Where the rail was drawn this frame, in the ledger's pixels, for the hover and the clicks. */
   railBox: { thumbX: number; laneTop: number; chip: Box | null; stripT: number; sx0: number; sx1: number };
   thumb: Thumb | null;
-  ticks: Tick[];
   rowTop: Map<string, number>;
   /** Where each row is drawn this frame (down the canvas), for the hover. */
   lane: { row: RowView; y: number; to: number }[];
@@ -78,7 +77,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
   const led: Ledger = {
     tasks: [], labs: [], spots: new Map(), rowNames: new Map(), ltasks: new Map(),
     railBox: { thumbX: 0, laneTop: 0, chip: null, stripT: 0, sx0: 0, sx1: 0 },
-    thumb: null, ticks: [], rowTop: new Map(), lane: [], sliding: false,
+    thumb: null, rowTop: new Map(), lane: [], sliding: false,
     drawTop, ltaskOf, pinnedTask, ledgerHas,
   };
   function ledgerHas(s: Spot) {
@@ -339,18 +338,9 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       });
     cx.letterSpacing = "0px";
   }
-  /** The colour a tick takes: the state its machine was entered from, amber for a DAG launch. */
-  function entryColor(e: MachineEntry): string {
-    const sc = io.scene!, top = sc.top!;
-    if (e.dag != null) return DAG_INK;
-    if (!e.from) return MACHINE_RING;
-    if (e.from.machine === top.machine) return sc.mStates[e.from.state]?.color ?? MACHINE_RING;
-    const st = io.S!.flows[e.from.machine]?.machine.states ?? [], j = st.findIndex((s) => s.id === e.from!.state);
-    return j < 0 ? MACHINE_RING : RAMP[Math.round((st.length > 1 ? j / (st.length - 1) : 0) * (RAMP.length - 1))];
-  }
-  /** The thumb, the back-to-newest chip and the strip of the last 24 h of machine entries under the lane, with the rows in view shaded on it. */
+  /** The thumb, the back-to-newest chip and the 24 h strip under the lane, with the rows in view shaded on it. */
   function drawRail() {
-    const top = io.scene!.top!, { fs } = ledgerSizes(dc.scale), sp = 10 * fs, stripT = top.laneBottom, sx0 = top.metaX, sx1 = top.x1, hot = hotRow();
+    const top = io.scene!.top!, { fs } = ledgerSizes(dc.scale), sp = 10 * fs, stripT = top.laneBottom, sx0 = top.metaX, sx1 = top.x1;
     cx.fillStyle = rgba(MUTED, 0.16);
     cx.fillRect(top.metaX - 10, stripT, top.x1 + 20 - top.metaX, 1);
     led.thumb = thumbOf(top.content, { h: stripT - top.laneTop, fs }, io.scrollPos, top.max);
@@ -378,9 +368,8 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       text(label, x0 + w / 2, y0 + h / 2, sp, rgba(LABEL, 0.9), "center", 400);
       cx.letterSpacing = "0px";
     }
-    // the strip: one continuous stretch shaded for the rows in view, a tick per entry, hours along the axis
+    // the strip: one continuous stretch shaded for the rows in view, hours along the axis
     const scale = stripScale(sx0, sx1, io.T), by = stripT + 30 * fs;
-    led.ticks = ticks(io.S!.machineEntries, top.ranked, scale);
     const inView = windowOf(top.rows, io.scrollPos, { h: stripT - top.laneTop, fs }).inView.map((i) => io.S!.flows[top.rows[i].name]?.last ?? null), span = viewSpan(inView, scale.t0);
     if (span) {
       const a = scale.x(span.from), b = scale.x(span.to);
@@ -398,12 +387,7 @@ export function machineLedger(dc: DrawCtx, d: Drawing, io: LedgerIO): Ledger {
       cx.fillRect(x, by, 1, 4);
       if (x - sx0 > 18 && sx1 - x > 18) text(io.hhmm(h), x, by + 11 * fs, sp * 0.95, rgba(MUTED, 0.5), "center", 300);
     }
-    for (const t of led.ticks) {
-      const on = hot === t.entry.row || (io.railHover?.kind === "tick" && io.railHover.tick === t), len = (on ? 13 : 8) * fs;
-      cx.fillStyle = rgba(entryColor(t.entry), on ? 1 : 0.62);
-      cx.fillRect(t.x - 0.75, by - len, 1.5, len);
-    }
-    text("24 h · machine entries", sx0, stripT + 8 * fs, sp, rgba(MUTED, 0.6), "left", 300);
+    text("24 h", sx0, stripT + 8 * fs, sp, rgba(MUTED, 0.6), "left", 300);
     text(stripLabel(span, top.rows.length, top.total, io.hhmm), sx1, stripT + 8 * fs, sp, rgba(MUTED, 0.7), "right", 300);
     cx.letterSpacing = "0px";
   }

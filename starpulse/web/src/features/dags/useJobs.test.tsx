@@ -11,7 +11,7 @@ const job = (name: string, status: Dag["status"], over: Partial<Dag> = {}): Dag 
   name, status, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, steps: [], startUrl: "", ...over,
 });
 const live = (at: string) => ({ active: [{ runId: "r", status: "running" as const, startedAt: at, step: "a", stepStartedAt: "", steps: {} }] });
-const base: DagData = { now: 3600, facts: {}, dashboards: {}, cues: [], flows: [], pools: [], domains: [], dags: [] };
+const base: DagData = { now: 3600, facts: {}, cues: [], flows: [], pools: [], domains: [], dags: [] };
 
 /** A server that answers the one read, then holds the subscription open for the test to push changes into. */
 function server(first: Dag[]) {

@@ -23,7 +23,7 @@ from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_m
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
     from starpulse.event_log.readmodel.read_model import ReadModel
-from starpulse.board.model.feed.claims import ClaimMethods
+from starpulse.board.model.feed.pulls import PullMethods
 from starpulse.board.model.feed.follow import Followed, InstanceRuns, Resumable, follow, retained
 from starpulse.board.model.feed.ledgers import LedgerMethods
 from starpulse.board.model.feed.lifecycle import LifecycleMixin
@@ -59,18 +59,17 @@ __all__ = [
 ]
 
 
-class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMethods, LedgerMethods, ViewMethods):
+class BoardFeed(LifecycleMixin, RecordsMixin, PullMethods, ReadMethods, RunMethods, LedgerMethods, ViewMethods):
     """Each task's latest projected state, as the page's Board snapshot and the deltas after it.
 
     Entries arrive on the consumers' threads and pages read from request threads; one lock holds
     them apart, and a subscriber takes its snapshot and its queue under that lock so no change
     falls between the two. A machine's task whose latest move is older than `window_s` seconds
-    (None: never) is left out of a snapshot. `board_url` is the tracker's address the page links tasks
-    to (None: no links). `machines` are the machines the page draws, the Board's as `board` (None: a Board of
+    (None: never) is left out of a snapshot. `machines` are the machines the page draws, the Board's as `board` (None: a Board of
     Backlog.md's default statuses alone), and `cues` the board adapter's workflow cues. `domains`
     is the config's, each workflow as `<instance>/<workflow>`. `source` names what the Board is read from, for the
     page to show until the board adapter has read it. `commit` is each runs instance's `[runs.commit]` keys, by instance
-    name: they say which run parameters carry a merge's commit or a task, so the Ledger pairs a run with it for certain. `change_url` turns a task link's reference into the page of its pull request. `dashboards` is each instance's Grafana dashboard URL, by instance name. `start_urls` is each instance's runner start page, by instance name: each of its jobs carries it.
+    name: they say which run parameters carry a merge's commit or a task, so the Ledger pairs a run with it for certain. `change_url` turns a task link's reference into the page of its pull request. `start_urls` is each instance's runner start page, by instance name: each of its jobs carries it.
     """
 
     def __init__(
@@ -78,14 +77,11 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         read_model: ReadModel,
         window_s: float | None = None,
         keys: TaskKeys | None = None,
-        board_url: str | None = None,
         machines: Mapping[str, dict] | None = None,
         domains: Mapping[str, Sequence[str]] | None = None,
         cues: Sequence[dict] = (),
         source: str = "the board",
-        capabilities: Mapping[str, bool] | None = None,
         commit: Mapping[str, CommitKeys] | None = None,
-        dashboards: Mapping[str, str] | None = None,
         start_urls: Mapping[str, str] | None = None,
         processes: Mapping[str, Sequence[tuple[str, Sequence[str]]]] | None = None,
         clock: Callable[[], float] = time.time,
@@ -125,7 +121,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._lane_log: EventLog | None = None
         #: The tasks an accepted take-over flipped to interactive, shown in the snapshot.
         self._interactive: set[str] = set()
-        self._capabilities = {"edit": False, "archive": False, "create": False} | dict(capabilities or {})
         self._keys = keys
         self._domains = domains or {}
         self._processes = processes or {}
@@ -142,9 +137,7 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._activity = activity
         #: The page of the change a stored link's reference names (None: no forge owns it), which a task's `prs` carry.
         self._change_url = change_url
-        self._board_url = board_url
         self._commit = commit or {}
-        self._dashboards = dashboards or {}
         self._start_urls = start_urls or {}
         self._ties = self._tied_to_events(cues)
         qualify = qualifier(self._domains)
@@ -179,8 +172,6 @@ class BoardFeed(LifecycleMixin, RecordsMixin, ClaimMethods, ReadMethods, RunMeth
         self._relink_listeners: list[Callable[[str], None]] = []
         #: What the pull request projection kept (`PullRequests.answers`), saved so a restart reads warm.
         self._pull_answers: dict = {}
-        #: Each task's latest refused claim (a board adapter's `refuse_claim` call): its reason and when the writer refused it.
-        self._claims: dict[str, dict] = {}
         self._subscribers: list[queue.Queue] = []
         #: The pages with a Ledger open: the event each watches and the queue of that event's changed rows.
         self._watchers: list[tuple[str, queue.Queue]] = []

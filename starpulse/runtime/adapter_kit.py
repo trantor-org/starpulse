@@ -20,6 +20,7 @@ feeds to see that each is placed.
 
 import json
 import time
+import urllib.request
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from http.client import HTTPResponse
@@ -342,14 +343,20 @@ def url(server: PageServer, path: str) -> str:
     return f"http://127.0.0.1:{server.server_port}{path}"
 
 
-def next_event(resp: HTTPResponse, *, connection: bool = False) -> tuple[str, dict]:
-    """The next named event on the stream, skipping its keep-alive comments and, unless `connection` is set, the `build`
-    each connect names after its snapshot: that is the page's, not a change to what it draws."""
+def subscribe(server: PageServer, query: str, variables: dict[str, Any] | None = None) -> HTTPResponse:
+    """The open `/graphql` stream of the subscription `query`, whose first `next` event `next_event` reads."""
+    body = json.dumps({"query": query, "variables": variables or {}}).encode()
+    request = urllib.request.Request(url(server, "/graphql"), data=body, headers={"content-type": "application/json"})
+    return urllib.request.urlopen(request, timeout=5)
+
+
+def next_event(resp: HTTPResponse) -> tuple[str, dict]:
+    """The next named event on the stream, skipping its keep-alive comments."""
     name = ""
     while line := resp.readline().decode():
         if line.startswith("event: "):
             name = line.removeprefix("event: ").strip()
-        elif line.startswith("data: ") and (connection or name != "build"):
+        elif line.startswith("data: "):
             return name, json.loads(line.removeprefix("data: "))
     raise AssertionError("the stream ended")
 

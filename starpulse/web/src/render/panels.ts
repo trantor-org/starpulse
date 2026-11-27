@@ -15,10 +15,8 @@ export const runner = (name: string) => {
 
 const link = (href: string, text: string) => `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(text)}</a>`;
 
-/** A task's link: the configured tracker's page, or with none this page's own Kanban, which opens on it. */
-export function taskLink(id: string, text: string, sky: Sky, search = globalThis.location?.search ?? ""): string {
-  const board = sky.boardUrl?.replace(/\/$/, "");
-  if (board) return link(`${board}/tasks/${id}`, text);
+/** A task's link: this page's own Kanban, which opens on it. */
+export function taskLink(id: string, text: string, search = globalThis.location?.search ?? ""): string {
   const params = new URLSearchParams(search);
   params.set("view", "kanban");
   params.set("task", id);
@@ -27,7 +25,7 @@ export function taskLink(id: string, text: string, sky: Sky, search = globalThis
 
 /** The panel of one Board task: where it stands, what it waits on, its pull requests and the machines it sits on; its description is the Kanban's. */
 export function taskPanel(o: RawTask, sky: Sky, stateName: (id: string) => string, search = globalThis.location?.search ?? ""): string {
-  const onBoard = (id: string, text: string) => taskLink(id, text, sky, search);
+  const onBoard = (id: string, text: string) => taskLink(id, text, search);
   const machines = Object.values(sky.flows).filter((f) => f.name !== "board").flatMap((f) => f.agents.filter((s) => s.task === o.id).map((s) => `${esc(f.name)} · ${esc(s.state)}`));
   const deps = (o.dependencies ?? []).map((id) => onBoard(id, id));
   const prs = (o.prs ?? []).map((url) => link(url, `#${/(\d+)\/?$/.exec(url)?.[1] ?? url}`));

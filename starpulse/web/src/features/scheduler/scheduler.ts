@@ -2,7 +2,7 @@
 // Off stops admission only: sessions already running keep running, and the card says how many.
 import { apiFetch } from "../../api/apiFetch";
 import { follow } from "../../api/subscribe";
-import type { SchedulerDimension, SchedulerStatus } from "../../api";
+import type { SchedulerDimension, AdminState } from "../../api";
 
 export const ROUTE = "/api/admin";
 export const HARNESSES_ROUTE = "/api/harnesses";
@@ -208,7 +208,7 @@ function harnessOptions(body: unknown): HarnessOption[] {
 
 /** The card's state from an answer, or null when the answer is not a scheduler status. `inFlight`, `next`, `pauses`, `sessionsByHarness`, `sessionCap` and `capacityLimits` are additive: absent is fine, present must hold. */
 function parse(body: unknown): SchedulerState | null {
-  const status = body as Partial<SchedulerStatus> & { inFlight?: unknown; next?: unknown; blockedBy?: unknown; pauses?: unknown; sessionsByHarness?: unknown; sessionCap?: unknown; capacityLimits?: unknown };
+  const status = body as Partial<AdminState> & { inFlight?: unknown; next?: unknown; blockedBy?: unknown; pauses?: unknown; sessionsByHarness?: unknown; sessionCap?: unknown; capacityLimits?: unknown };
   if (!isRecord(body) || typeof status.enabled !== "boolean" || !Array.isArray(status.dimensions)) return null;
   const dimensions = status.dimensions.map(dimension);
   if (dimensions.some((d) => d === null)) return null;

@@ -6,17 +6,7 @@
 <title>StarPulse</title>
 <link rel="icon" href="data:,">
 <script>
-// Ask for the snapshot now: the server answers while the bundle loads. src/api/stream.ts takes this connection over and replays what it held.
-// The snapshot comes as `ref <path>` and its body is fetched at once, so the browser reads it off its main thread.
 (function () {
-  var early = (window.__earlyStream = { src: new EventSource("/api/events?snapshot=ref"), events: [], bodies: {} });
-  ["snapshot", "build", "restarting", "stale", "task", "move", "dags", "pulls", "ledgers", "claim", "scheduler", "level"].forEach(function (type) {
-    early.src.addEventListener(type, function (e) {
-      if (early.adopted) return;
-      early.events.push({ type: type, data: e.data });
-      if (type === "snapshot" && e.data.slice(0, 4) === "ref ") early.bodies[e.data.slice(4)] = fetch(e.data.slice(4), { headers: { "X-StarPulse-Client": "web" } });
-    });
-  });
   // A task the address names: its record is asked for now as well, so its modal does not wait for the bundle, the snapshot or the page's other
   // fetches. src/boot.ts takes the answer over.
   var query = new URLSearchParams(window.location.search), task = query.get("task");

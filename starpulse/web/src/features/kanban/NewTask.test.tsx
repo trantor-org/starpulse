@@ -49,19 +49,10 @@ describe("the New task form", () => {
 });
 
 describe("the New task action beside the task count", () => {
-  const action = (capabilities?: { edit: boolean; archive: boolean; create?: boolean }) =>
-    renderToStaticMarkup(<NewTaskAction capabilities={capabilities} lane="To Do" assignees={[]} milestones={[]} created={() => {}} />);
-
-  it("is a button, drawn when the snapshot says the board can create", () => {
-    const html = action({ edit: true, archive: true, create: true });
+  it("is a button that opens no dialog until pressed", () => {
+    const html = renderToStaticMarkup(<NewTaskAction lane="To Do" assignees={[]} milestones={[]} created={() => {}} />);
 
     expect(html).toContain("+ New task");
     expect(html).not.toContain('role="dialog"');
-  });
-
-  it("is absent when the board cannot create, or the snapshot says nothing", () => {
-    expect(action({ edit: true, archive: true, create: false })).toBe("");
-    expect(action({ edit: true, archive: true })).toBe("");
-    expect(action()).toBe("");
   });
 });

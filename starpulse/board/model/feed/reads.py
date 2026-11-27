@@ -107,7 +107,7 @@ class ReadMethods:
 
     def follow_read_model(self, limit: int = 1000) -> int:
         """Publish a `task` delta for each Task the read model changed since the last call, an archived one as gone, each
-        carrying the count archived today, and return how many; the projector's catch-up is followed by a call, so a page open on `/api/events` sees the change."""
+        carrying the count archived today, and return how many; the projector's catch-up is followed by a call, so a page open on `taskChanges` sees the change."""
         changed = self._read_model.since(self._followed, limit)
         archived_today = self._read_model.archived_since(local_midnight(self._clock())) if changed else None
         for summary in changed:

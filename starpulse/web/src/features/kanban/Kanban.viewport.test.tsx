@@ -14,7 +14,7 @@ const card = (i: number): KanbanTask => ({
   prs: [], description: "", live: null, released: false, moves: {}, entered: 100 - i, created: null, workableSince: null, machines: [],
 });
 const cards = Array.from({ length: 40 }, (_, i) => card(i));
-const hud = { cards, names: {}, roles: LIFECYCLE_ROLES, claims: {}, settled: [], boardUrl: null } as unknown as HudState;
+const hud = { cards, names: {}, roles: LIFECYCLE_ROLES, settled: [] } as unknown as HudState;
 
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {

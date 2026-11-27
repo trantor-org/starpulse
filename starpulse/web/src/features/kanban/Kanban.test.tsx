@@ -335,7 +335,7 @@ describe("a Waiting stack in the task modal", () => {
     const wait = (id: string, ...dependencies: string[]): KanbanTask => ({ ...task, id, lane: "waiting", dependencies, openDeps: dependencies.length, live: null });
     const stack = stacksOf([wait("T-1"), wait("T-2", "T-1")])[0];
     const html = renderToStaticMarkup(
-      <TaskView task={{ ...task, lane: "waiting" }} tasks={[]} roles={LIFECYCLE_ROLES} record={null} lane="" now={0} open={() => {}} profiles={[]} milestones={[]} refusal={null} startNote={null} capabilities={undefined}
+      <TaskView task={{ ...task, lane: "waiting" }} tasks={[]} roles={LIFECYCLE_ROLES} record={null} lane="" now={0} open={() => {}} profiles={[]} milestones={[]} refusal={null} startNote={null}
         saving={false} claiming={false} close={() => {}} hide={() => {}} constellation={() => {}} move={() => {}} start={() => {}}
         stack={<StackList stack={stack} id="T-2" open={() => {}} />} />,
     );

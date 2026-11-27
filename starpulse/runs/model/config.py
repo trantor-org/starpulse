@@ -24,8 +24,6 @@ class RunsInstance:
     """Each domain's ordered `(process, workflows)` packages; an empty tuple is a flat domain."""
     commit: CommitKeys | None = None
     """The `[runs.commit]` table; none: a run pairs with a merge only by the time it started."""
-    dashboard: str | None = None
-    """The Grafana dashboard that shows the instance's runner; none: the page links nothing."""
     start_url: str | None = None
     """The runner's own start page; none: the instance's jobs have no Run in link."""
 

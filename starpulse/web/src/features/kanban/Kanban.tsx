@@ -31,7 +31,7 @@ import { SearchClear } from "../../shared/SearchClear";
 import { useScrollRest } from "../../shared/scrollRest";
 import { TaskView } from "./TaskView";
 import { PRE_DRAW_REST_MS, READ_AHEAD_MS, RecordCache, fetchRecord, fetchRevisions, type TaskRecord } from "./taskViewModel";
-import type { Capabilities, Pull, Roles } from "../../api";
+import type { Pull, Roles } from "../../api";
 
 /** A milestone's header: the key the snapshot carries, or the bucket for tasks with none. */
 const milestoneName = (milestone: string) => milestone || "No milestone";
@@ -104,15 +104,14 @@ function RefusalNote({ refusal, names, dismiss }: { refusal: Refusal; names: Rec
   );
 }
 
-/** A session start that failed, or the agent's claim the writer refused, on the card it returned; a refused claim's session stays open. */
-function StartNote({ id, failed, names, dismiss }: { id: string; failed: Failed; names: Record<string, string>; dismiss: () => void }) {
+/** A session start that failed, on the card it returned. */
+function StartNote({ failed, names, dismiss }: { failed: Failed; names: Record<string, string>; dismiss: () => void }) {
   const lane = names[failed.from] ?? failed.from;
   return (
     <div className="refusal">
-      <div className="k">{failed.refused ? "Claim refused" : "Session did not start"} · back in {lane}</div>
-      {failed.refused ? <>The session's agent could not claim {id}: <Reason text={failed.reason.replace(/\.$/, "")} />. The session stays open.</> : <Reason text={failed.reason} />}
+      <div className="k">Session did not start · back in {lane}</div>
+      <Reason text={failed.reason} />
       <div className="via">
-        {failed.url && <a href={failed.url} target="_blank" rel="noopener" onClick={stop} onPointerDown={stop}>Open session ↗</a>}
         <button className="dismiss" onClick={(e) => { e.stopPropagation(); dismiss(); }} onPointerDown={stop}>dismiss</button>
       </div>
     </div>
@@ -199,7 +198,7 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
           onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.stopPropagation()}>▶</button>
       )}
       {marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
-      {marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart ?? dismiss} />}
+      {marks.failed && <StartNote failed={marks.failed} names={names} dismiss={dismissStart ?? dismiss} />}
     </div>
   );
 }
@@ -381,9 +380,9 @@ export function HeldBy({ holders: held, roles, open, hover }: {
   );
 }
 
-function Modal({ task: streamed, guarded, tasks, records, stack, names, roles, marks, now, profiles, milestones, capabilities, close, open, hide, archive, freeze, constellation, move, start, dismiss, dismissStart, saved }: {
+function Modal({ task: streamed, guarded, tasks, records, stack, names, roles, marks, now, profiles, milestones, close, open, hide, archive, freeze, constellation, move, start, dismiss, dismissStart, saved }: {
   task: KanbanTask; guarded: (id: string) => Promise<KanbanTask["moves"] | null>; tasks: KanbanTask[]; records: RecordCache; stack?: ReactNode; names: Record<string, string>; roles: Roles; marks: Marks; now: number; profiles: string[]; milestones: string[];
-  capabilities?: Capabilities; close: () => void; open: (id: string) => void; hide: () => void; archive: () => void; freeze: (reason: string | null) => void; constellation: () => void;
+  close: () => void; open: (id: string) => void; hide: () => void; archive: () => void; freeze: (reason: string | null) => void; constellation: () => void;
   move: (to: string) => void; start: () => void; dismiss: () => void; dismissStart: () => void; saved: (record: TaskRecord) => void;
 }) {
   // the snapshot's moves leave the board's guards unjudged: the menu offers the verdicts read when the task opens
@@ -423,9 +422,9 @@ function Modal({ task: streamed, guarded, tasks, records, stack, names, roles, m
   const full = useMemo(() => (record ? withRecordPulls(task, record, roles) : task), [task, record, roles]);
   return (
       <TaskView task={full} tasks={tasks} record={record} revisions={revisions} stack={stack} lane={names[task.lane] ?? task.lane} names={names} roles={roles} now={now} open={open}
-        profiles={profiles} milestones={milestones} capabilities={capabilities} saving={!!marks.saving} claiming={!!marks.claim}
+        profiles={profiles} milestones={milestones} saving={!!marks.saving} claiming={!!marks.claim}
         refusal={marks.refusal && <RefusalNote refusal={marks.refusal} names={names} dismiss={dismiss} />}
-        startNote={marks.failed && <StartNote id={task.id} failed={marks.failed} names={names} dismiss={dismissStart} />}
+        startNote={marks.failed && <StartNote failed={marks.failed} names={names} dismiss={dismissStart} />}
         readNote={failed && <div className="editrefusal" role="alert"><b>The full record could not be read.</b> <button className="hidebtn" onClick={() => { setFailed(false); setAttempt((n) => n + 1); }}>Retry</button></div>}
         close={close} hide={hide} archive={archive} freeze={freeze} constellation={constellation} move={move} start={start}
         onSaved={(next) => { setRecord(next); setSaves((n) => n + 1); saved(next); }} />
@@ -759,7 +758,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
   }, [starts, answer, active]);
   // a streamed board ends the moves and refusals it has overtaken, and the claims its agents made or were refused
   useEffect(() => moves.sync(hud.cards), [moves, hud.cards]);
-  useEffect(() => starts.sync(hud.cards, hud.claims), [starts, hud.cards, hud.claims]);
+  useEffect(() => starts.sync(hud.cards), [starts, hud.cards]);
   useEffect(() => {
     document.body.classList.toggle("dragging", lift !== null);
     return () => document.body.classList.remove("dragging");
@@ -995,7 +994,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
         <div className="rt">
           <span className="shown">{view.shown} of {view.total} tasks</span>
           <span className="nt">
-            <NewTaskAction capabilities={hud.capabilities} lane={hud.names[lanes[0]] ?? lanes[0]}
+            <NewTaskAction lane={hud.names[lanes[0]] ?? lanes[0]}
               assignees={assignees.map((o) => o.value).filter(Boolean)} milestones={milestones.map((o) => o.value).filter(Boolean)}
               created={(id) => setToast({ text: `${id} created`, sub: `in ${hud.names[lanes[0]] ?? lanes[0]}` })} />
           </span>
@@ -1072,7 +1071,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
       {active && (
         <ModalHost store={openTask} cards={cards} roles={roles} draw={(task) => {
           const taskStack = stackOf(view, task.id);
-          return <Modal key={task.id} task={task} guarded={moves.guarded} tasks={cards} records={records} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} roles={roles} marks={marksOf(task.id)} now={now} capabilities={hud.capabilities}
+          return <Modal key={task.id} task={task} guarded={moves.guarded} tasks={cards} records={records} open={setOpen} stack={taskStack && <StackList stack={taskStack} id={task.id} open={setOpen} />} names={hud.names} roles={roles} marks={marksOf(task.id)} now={now}
           profiles={profilesOf(started.harnesses)} milestones={milestones.map((o) => o.value).filter(Boolean)} close={() => setOpen(null)}
           hide={() => { setPrefs((p) => hideTask(p, task.id)); setOpen(null); }} archive={() => setArchiving(task)} freeze={(reason) => void postFreeze(task.id, reason).then((r) => setToast(r.ok ? { text: `${task.id} ${reason === null ? "unfreeze" : "freeze"} requested`, sub: "the task actor applies it" } : { text: `${task.id} not changed`, sub: r.reason }))} constellation={() => constellation(task.lane)}
           move={(to) => { if (!dropAsks(task, to, roles)) return void moves.drop(task, to); starts.ask(task, "modal", roles); setOpen(null); }}
@@ -1100,7 +1099,7 @@ function KanbanView({ hud, moves, starts, compact, constellation, searchSlot, ou
 }
 
 /** The `hud` fields the view draws. The rest of the HUD (the clock, the DAGs, the feed) changes on most stream events and none of it is on the Kanban. */
-const SHOWN = ["cards", "names", "roles", "types", "claims", "milestoneDone", "doneCount", "capabilities"] as const;
+const SHOWN = ["cards", "names", "roles", "types", "milestoneDone", "doneCount"] as const;
 
 /** `KanbanView`, drawn again only when a field it shows or another prop changes, so an event that moves no card draws none. */
 export const Kanban = memo(KanbanView, ({ hud: before, ...a }, { hud: after, ...b }) =>

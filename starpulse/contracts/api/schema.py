@@ -74,21 +74,8 @@ from starpulse.contracts.api.dto.results import (
     Started,
     TakenOver,
 )
-from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.contracts.api.dto.search import SearchResults
-from starpulse.contracts.api.dto.snapshot import (
-    BuildEvent,
-    ClaimDelta,
-    DagsDelta,
-    LedgersDelta,
-    MoveDelta,
-    PullsDelta,
-    RestartingEvent,
-    Snapshot,
-    StaleEvent,
-    TaskDelta,
-    VerdictDelta,
-)
+from starpulse.contracts.api.dto.snapshot import Snapshot
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import (
     Spend,
@@ -99,12 +86,6 @@ class ApiContract(_Api):
     """The root of `api.schema.json`: every body as a property, so the generated types name each one."""
 
     snapshot: Snapshot
-    events: list[
-        TaskDelta | MoveDelta | DagsDelta | PullsDelta | ClaimDelta | VerdictDelta | LedgersDelta | SchedulerStatus
-    ]
-    build: BuildEvent
-    restarting: RestartingEvent
-    stale: StaleEvent
     donePage: DonePage
     machines: Machines
     machineDetail: MachineDetail

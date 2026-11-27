@@ -145,7 +145,7 @@ class LedgerMethods:
     def watch_ledger(self, event: str) -> tuple[dict, queue.Queue] | None:
         """A page opening `event`'s Ledger: its newest page (`{rows, more, mergeStrip, mergePins}`) and the queue of every
         change to those after it, `{rows, mergeStrip, mergePins}` each; None when no workflow is tied to `event`. Only this event's changes
-        reach the queue, and no stream of `/api/events` carries a row."""
+        reach the queue, and no `taskChanges` delta carries a row."""
         with self._lock:
             if (found := self._ledger_page(event, None, PAGE)) is None:
                 return None

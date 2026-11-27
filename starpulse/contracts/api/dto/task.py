@@ -163,12 +163,7 @@ class RawTask(_Api):
     )
     moves: dict[str, Move] | None = Field(
         default=None,
-        description="The verdict on each Board column the task may move to, by state id; a snapshot names the set in "
-        "`move_set` instead, and a delta carries it here.",
-    )
-    move_set: str | None = Field(
-        default=None,
-        description="A snapshot's key into its `move_sets` for the task's `moves`; absent when it has none.",
+        description="The verdict on each Board column the task may move to, by state id; a snapshot keeps it for an active task only.",
     )
     entered: float | None = Field(
         default=None,

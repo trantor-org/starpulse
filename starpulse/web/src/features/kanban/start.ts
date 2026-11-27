@@ -1,6 +1,5 @@
 // Starting a session from the Kanban view: the question a move to In progress asks, the profile it picks, and the card that waits
-// in In progress for its agent's claim. The session-start service opens the session; the agent's own claim moves the task, and the
-// board writer's refusal of that claim (a `claim` delta) returns the card to its lane.
+// in In progress for its agent's claim. The session-start service opens the session; the agent's own claim moves the task.
 import { apiFetch } from "../../api/apiFetch";
 import type { Roles } from "../../api";
 import type { KanbanTask } from "./kanbanModel";
@@ -27,8 +26,6 @@ export interface Pick {
 /** The server's answer to a start: the session and when the start began (epoch seconds, the server's clock), or why it failed. */
 export type StartReply = { ok: true; url: string; at: number } | { ok: false; reason: string };
 export type PostStart = (task: string, assignee: string, harness: string) => Promise<StartReply>;
-/** Each task's latest refused claim, as the snapshot and `claim` deltas carry it. */
-export type Claims = Record<string, { reason: string; at: number }>;
 
 /** Where the question was asked from: a dropped card, the task modal's Start session button, or the card's ▶. */
 export type Via = "drop" | "modal" | "play";
@@ -46,12 +43,10 @@ export interface Claiming {
   url: string;
   at: number | null;
 }
-/** A start that failed, or a claim the writer refused (`refused`, with the session still open at `url`); the card is back in `from`. */
+/** A start that failed; the card is back in `from`. */
 export interface Failed {
   from: string;
   reason: string;
-  url: string;
-  refused: boolean;
 }
 export interface StartState {
   /** The harnesses the question offers; none until the server names them. */
@@ -127,7 +122,6 @@ export const NO_HARNESSES: Harnesses = { tiers: [], harnesses: [] };
 
 export class StartStore {
   private state: StartState;
-  private claims: Claims = {};
   private listeners = new Set<() => void>();
   constructor(
     private post: PostStart,
@@ -203,20 +197,18 @@ export class StartStore {
     const reply = await this.post(id, profileOf(asking.pick), asking.pick.harness);
     if (!this.state.claiming[id]) return; // the stream already reported the claim
     if (!reply.ok) {
-      this.set({ claiming: without(this.state.claiming, id), failed: { ...this.state.failed, [id]: { from, reason: reply.reason, url: "", refused: false } } });
+      this.set({ claiming: without(this.state.claiming, id), failed: { ...this.state.failed, [id]: { from, reason: reply.reason } } });
       return;
     }
     this.set({ claiming: { ...this.state.claiming, [id]: { from, phase: "waiting", url: reply.url, at: reply.at } } });
-    this.refuse(id);
   }
 
   dismiss(id: string) {
     this.set({ failed: without(this.state.failed, id) });
   }
 
-  /** The streamed board and its refused claims: a claimed card's mark clears once it leaves its lane, a refusal made after its start returns it. */
-  sync(cards: KanbanTask[], claims: Claims) {
-    this.claims = claims;
+  /** The streamed board: a claimed card's mark clears once it leaves its lane. */
+  sync(cards: KanbanTask[]) {
     const lane = new Map(cards.map((c) => [c.id, c.lane]));
     const moved = (entry: { from: string }, id: string) => lane.has(id) && lane.get(id) !== entry.from;
     const claiming = Object.fromEntries(Object.entries(this.state.claiming).filter(([id, c]) => !moved(c, id)));
@@ -224,18 +216,6 @@ export class StartStore {
     if (Object.keys(claiming).length !== Object.keys(this.state.claiming).length || Object.keys(failed).length !== Object.keys(this.state.failed).length) {
       this.set({ claiming, failed });
     }
-    for (const id of Object.keys(this.state.claiming)) this.refuse(id);
-  }
-
-  /** Return a waiting card when the writer refused its claim at or after its start; an older refusal belongs to an earlier start. */
-  private refuse(id: string) {
-    const entry = this.state.claiming[id];
-    const refusal = this.claims[id];
-    if (!entry || entry.at === null || !refusal || refusal.at < entry.at) return;
-    this.set({
-      claiming: without(this.state.claiming, id),
-      failed: { ...this.state.failed, [id]: { from: entry.from, reason: refusal.reason, url: entry.url, refused: true } },
-    });
   }
 }
 

@@ -249,7 +249,18 @@ def consume_reads(queue: Queue, store: PullStore, reads: PullReads, clock: Calla
                 queue.complete(entry.delivery.delivery_id)
                 continue
             try:
-                refresh(store, reads, entry.delivery, clock())
+                burst = (
+                    [
+                        other.delivery
+                        for other in entries
+                        if other.delivery.event == "push"
+                        and other.delivery.delivery_id != entry.delivery.delivery_id
+                        and _branch(other.delivery) == _branch(entry.delivery)
+                    ]
+                    if entry.delivery.event == "push"
+                    else []
+                )
+                refresh(store, reads, entry.delivery, clock(), burst)
             except Exception:
                 logger.exception("github pull reads: %s", entry.delivery.delivery_id)
                 queue.fail(entry.delivery.delivery_id, "consumer error")

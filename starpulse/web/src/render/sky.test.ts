@@ -30,7 +30,6 @@ const snap = (now: number, tasks: RawTask[], machineTasks: RawTask[], finishedAt
   dags: [{ name: "board-scheduler", status: "succeeded", runId: "r", startedAt: "", finishedAt, schedule: [], stats: null, rerun: null, startUrl: "", steps: [] }],
   domains: [{ name: "Board", dags: [{ name: "board-scheduler" }, { name: "worktree-reap" }] }],
   cues: [{ dag: "apply-on-merge", event: "MERGED", state: "done", on: "each merge to main" }],
-  boardUrl: "http://board",
   settled: {},
   error: null,
   now,
@@ -108,7 +107,6 @@ describe("the sky", () => {
     expect([countText(5), countText(4, 4), countText(6, 4), countText(0, 0)]).toEqual(["5", "4 today", "6 · 4 today", "0 today"]);
   });
 
-
   it("reads the relationships the drawing needs from the Board snapshot", () => {
     const S = merge(snap(1000, [task("PROJ-1", "ready")], []));
 
@@ -119,14 +117,6 @@ describe("the sky", () => {
     ]);
     expect(S.subs).toEqual({ in_progress: ["in-progress", "auditing-docs"] });
     expect(S.child).toEqual({ "in-progress": { pr_opened: { machine: "triaging-cr-reviews", when: "while a PR is open" } } });
-    expect(S.boardUrl).toBe("http://board");
-  });
-
-  it("carries each task's latest refused claim, and none when the snapshot names none", () => {
-    const claims = { "TASK-D1": { reason: "TASK-D3 is not Done", at: 900 } };
-
-    expect(merge({ ...snap(1000, [task("TASK-D1", "ready")], []), claims }).claims).toEqual(claims);
-    expect(merge(snap(1000, [task("TASK-D1", "ready")], [])).claims).toEqual({});
   });
 });
 

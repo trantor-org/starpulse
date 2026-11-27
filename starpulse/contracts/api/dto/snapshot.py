@@ -1,24 +1,13 @@
-"""The snapshot `/api/snapshot` sends, its pieces, and the `/api/events` deltas and events."""
-
-from typing import Literal
+"""The snapshot `/api/snapshot` sends and its pieces."""
 
 from pydantic import Field
 
-from starpulse.contracts.adapters import Move, Pool
+from starpulse.contracts.adapters import Pool
 from starpulse.contracts.api._base import _Api
 from starpulse.contracts.api.dto.cue import Cue, Pull
 from starpulse.contracts.api.dto.dag import DagBody, Domain
 from starpulse.contracts.api.dto.flow import FlowSnapshot, Settled
 from starpulse.contracts.api.dto.ledger import LedgerRow, MergeStrip
-from starpulse.contracts.api.dto.task import RawTask
-
-
-class Capabilities(_Api):
-    """What the board writes beyond moves: the page draws Edit, Archive… and New task only for what its board does."""
-
-    edit: bool
-    archive: bool
-    create: bool | None = None
 
 
 class Roles(_Api):
@@ -41,57 +30,19 @@ class Roles(_Api):
     )
 
 
-class Claim(_Api):
-    reason: str
-    at: float
-
-
-class MachineEntryFrom(_Api):
-    machine: str
-    state: str
-
-
-class MachineEntry(_Api):
-    at: float
-    machine: str
-    row: str
-    # `from` is a Python keyword.
-    origin: MachineEntryFrom | None = Field(alias="from")
-    dag: str | None
-
-
-class MachineStrip(_Api):
-    """The last 24 hours of machine entries, counted over every machine."""
-
-    entries: list[MachineEntry]
-
-
 class Snapshot(_Api):
     graphs: list[str] = Field(description="Every lifecycle machine the server draws, and `runs`.")
     domains: list[Domain] | None = Field(default=None, description="The DAG domains.")
-    dashboards: dict[str, str] | None = Field(
-        default=None, description="The Grafana dashboard of each runs instance that has one, by instance name."
-    )
     cues: list[Cue] | None = Field(default=None, description="The DAGs cued by a Board event.")
-    boardUrl: str | None = Field(default=None, description="The Backlog board a task links into.")
     dags: list[DagBody]
     pools: list[Pool] | None = Field(default=None, description="The concurrency pools the DAGs run on.")
     flows: list[FlowSnapshot]
-    machineStrip: MachineStrip | None = None
     pulls: dict[str, list[Pull]] | None = Field(default=None, description="Each open task's pull requests, by task id.")
-    claims: dict[str, Claim] | None = Field(
-        default=None,
-        description="Each task's latest In Progress claim the board writer refused an agent, and when (epoch seconds).",
-    )
     mergeStrip: MergeStrip | None = None
     mergePins: list[LedgerRow] | None = Field(
         default=None, description="The pinned merge rows of the last day that the newest page leaves out."
     )
     roles: Roles | None = Field(default=None, description="Which State plays which part on the board.")
-    capabilities: Capabilities | None = Field(
-        default=None,
-        description="What the board writes: the task modal draws Edit and Archive only when its board does.",
-    )
     settled: dict[str, Settled]
     milestone_done: dict[str, int] | None = Field(
         default=None,
@@ -106,9 +57,6 @@ class Snapshot(_Api):
     archived_today: int | None = Field(
         default=None, description="How many tasks were archived since local midnight, the window of the Done count."
     )
-    move_sets: dict[str, dict[str, Move]] | None = Field(
-        default=None, description="Each distinct set of Board-column verdicts a task's `move_set` names, by key."
-    )
     interactive: dict[str, bool] | None = Field(
         default=None,
         description="Each task an accepted take-over made interactive, by task id; a task never taken over is absent.",
@@ -120,80 +68,3 @@ class Snapshot(_Api):
         "snapshot without it follows.",
     )
     now: float
-
-
-class TaskDelta(_Api):
-    """A Board task that moved (`agent` null once it left the lanes)."""
-
-    id: str
-    agent: RawTask | None
-    settled: Settled | None
-    archived_today: int | None = Field(
-        default=None, description="On an archived task's delta, how many tasks were archived since local midnight."
-    )
-
-
-class MoveDelta(_Api):
-    """A task a machine event placed on another machine."""
-
-    machine: str
-    id: str
-    agent: RawTask
-    names: list[str] | None = Field(default=None, description="The names the agent's trail points index, each once.")
-
-
-class DagsDelta(_Api):
-    """A runs instance's workflows."""
-
-    dags: list[DagBody]
-    pools: list[Pool] | None = None
-    error: str | None
-
-
-class PullsDelta(_Api):
-    pulls: dict[str, list[Pull]]
-
-
-class ClaimDelta(_Api):
-    task: str
-    reason: str
-    at: float
-
-
-class VerdictDelta(_Api):
-    """One qa lens's verdict on a task, as the ingest took it."""
-
-    task: str
-    lens: str
-    round: int
-    outcome: Literal["PASS", "CHANGES"]
-    reason: str
-    at: float
-
-
-class LedgersDelta(_Api):
-    """The merge strip and pins since the last event, whole. A Ledger's rows are not here: a page that has one open
-    reads the `occurrenceChanges` subscription on `POST /graphql`."""
-
-    mergeStrip: MergeStrip | None
-    mergePins: list[LedgerRow]
-
-
-class BuildEvent(_Api):
-    """The page build the server serves, sent right after each connect's snapshot: a hash of the built page's `index.html`,
-    which names every chunk it loads by its digest. A page that holds another build than the one it is named is out of date."""
-
-    id: str
-
-
-class StaleEvent(_Api):
-    """No Board writer is folding: the one that was stopped, and no other has stored since. A page shows its Board as stale
-    until the next change arrives; a page that connects while none is folding is sent this after its snapshot."""
-
-    at: float  #: when the writer stopped, in epoch seconds
-
-
-class RestartingEvent(_Api):
-    """The server was told to stop and will not answer after this: sent to every open stream before it exits."""
-
-    at: float  #: when the server announced it, in epoch seconds

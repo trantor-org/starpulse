@@ -14,7 +14,7 @@ const card = (id: string, lane: string, moves: KanbanTask["moves"] = {}): Kanban
   prs: [], description: "", live: null, released: false, moves, entered: 100, created: null, workableSince: null, machines: [],
 });
 const LANES = { ready: "Ready", waiting: "Waiting", in_progress: "In Progress", review: "Review", needs_attention: "Needs attention", done: "Done" };
-const board = (cards: KanbanTask[], names: Record<string, string> = LANES) => ({ cards, names, roles: names === LANES ? LIFECYCLE_ROLES : { lanes: Object.keys(names) }, claims: {}, settled: [], boardUrl: null }) as unknown as HudState;
+const board = (cards: KanbanTask[], names: Record<string, string> = LANES) => ({ cards, names, roles: names === LANES ? LIFECYCLE_ROLES : { lanes: Object.keys(names) }, settled: [] }) as unknown as HudState;
 
 let host: HTMLDivElement, root: Root, post: ReturnType<typeof vi.fn>;
 const show = (hud: HudState) => {

@@ -10,7 +10,7 @@ const job = (name: string, status: RunStatus, over: Partial<Dag> = {}): Dag => (
   name, status, runId: "", startedAt: "", finishedAt: "", schedule: [], stats: null, rerun: null, startUrl: "", steps: [], ...over,
 });
 const data: DagData = {
-  now: 3600, facts: {}, dashboards: {}, cues: [], flows: [], pools: [], domains: [],
+  now: 3600, facts: {}, cues: [], flows: [], pools: [], domains: [],
   dags: [
     job("temporal/task_lifecycle", "running", {
       runId: "r1", startedAt: "1970-01-01T00:50:00Z",

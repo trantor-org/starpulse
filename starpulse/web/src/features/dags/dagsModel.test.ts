@@ -19,7 +19,7 @@ const board: Machine = {
 };
 
 const data: DagData = {
-  now: 1000, facts: {}, dashboards: {},
+  now: 1000, facts: {},
   dags: [
     dag("runs/pr-watch", "succeeded", { finishedAt: "1970-01-01T00:10:00Z", schedule: [], stats: null, rerun: null, startedAt: "1970-01-01T00:09:00Z" }),
     dag("runs/triage", "failed", { steps: [step("scan"), step("fix", ["scan"], "failed")], finishedAt: "1970-01-01T00:12:00Z" }),

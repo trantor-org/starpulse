@@ -20,7 +20,7 @@ const card = (id: string, extra: Partial<KanbanTask> = {}): KanbanTask => ({
 
 let host: HTMLDivElement, root: Root;
 const mount = (cards: KanbanTask[]) => {
-  const hud = { cards, names: { verifying: "Verifying" }, roles: ROLES, claims: {}, boardUrl: null } as unknown as HudState;
+  const hud = { cards, names: { verifying: "Verifying" }, roles: ROLES } as unknown as HudState;
   const moves = new MoveStore(async () => ({ ok: true }) as never);
   act(() => root.render(<Kanban hud={hud} moves={moves} starts={new StartStore((async () => ({})) as never, moves)} compact={false} constellation={() => {}} searchSlot={null} outlineSlot={null} onQuery={() => {}} />));
 };

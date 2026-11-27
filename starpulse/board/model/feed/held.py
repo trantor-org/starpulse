@@ -1,8 +1,8 @@
 """The Board writer's held snapshot: built whole once, then each change the feed publishes is folded into it.
 
-A side field (pulls, claims, dags, the ledger marks) is replaced from its change's own payload, a `snapshot` change
+A side field (pulls, dags, the ledger marks) is replaced from its change's own payload, a `snapshot` change
 and a local midnight build the snapshot whole again, and the writer's clock tick (`TICK`) ages what time alone moves:
-the machine window and the merge strip.
+the Done window and the merge strip.
 
 A task delta re-reads its Task through the whole build's query (`drawn_task`), not from the delta's own agent: a
 guarded move, the Definition of Done and the readable verdict differ between the two, and the held snapshot must equal
@@ -43,32 +43,27 @@ _FLUSH = ("flush", {})
 _TAKE_OVER = "take-over"
 
 #: The kinds of change the fold takes; `tick` is the writer's clock.
-FOLDS = frozenset({"task", "move", "pulls", "claim", "dags", "ledgers", "snapshot", "tick"})
+FOLDS = frozenset({"task", "move", "pulls", "dags", "ledgers", "snapshot", "tick"})
 #: The change that updates each snapshot key; `build` is a key the writer's whole build holds, which no change moves.
 RULES: dict[str, tuple[str, ...]] = {
     "flows": ("task", "move", "snapshot", "tick"),
-    "machineStrip": ("task", "move", "snapshot", "tick"),
     "settled": ("task", "snapshot"),
     "cold_done": ("task", "snapshot"),
     "milestone_done": ("task", "snapshot", "tick"),
     "archived_today": ("task", "snapshot", "tick"),
-    "now": ("task", "move", "pulls", "claim", "dags", "ledgers", "tick"),
+    "now": ("task", "move", "pulls", "dags", "ledgers", "tick"),
     "pulls": ("pulls", "snapshot"),
-    "claims": ("claim", "snapshot"),
     "dags": ("dags", "snapshot"),
     "pools": ("dags", "snapshot"),
     "error": ("dags", "snapshot"),
     "mergeStrip": ("ledgers", "snapshot", "tick"),
     "mergePins": ("ledgers", "snapshot", "tick"),
     "domains": ("snapshot",),
-    "dashboards": ("snapshot",),
     "cues": ("snapshot",),
     "reading": ("snapshot",),
     "graphs": ("build",),
     "roles": ("build",),
-    "capabilities": ("build",),
-    "interactive": ("task", "move", "pulls", "claim", "dags", "ledgers", "tick"),
-    "boardUrl": ("build",),
+    "interactive": ("task", "move", "pulls", "dags", "ledgers", "tick"),
 }
 
 
@@ -268,9 +263,6 @@ class HeldSnapshot:
                 self._lanes[data["machine"]][data["id"]] = data["agent"]
         elif kind == "pulls":
             fields["pulls"] = data["pulls"]
-        elif kind == "claim":
-            claims = fields.get("claims", self.snapshot["claims"])
-            fields["claims"] = {**claims, data["task"]: {"reason": data["reason"], "at": data["at"]}}
         elif kind == "dags":
             fields.update({key: data[key] for key in ("dags", "pools", "error")})
         elif kind == "ledgers":
@@ -340,7 +332,6 @@ class HeldSnapshot:
         self.snapshot = {
             **self.snapshot,
             "flows": [{**flow, **derived.get(flow["name"], {})} for flow in flows],
-            **self._feed.machine_fields(flows, derived, now),
             "settled": dict(self._settled),
             "milestone_done": dict(sorted(Counter(self._cold.values()).items())),
             "archived_today": self.snapshot["archived_today"] if archived_today is None else archived_today,

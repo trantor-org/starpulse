@@ -36,12 +36,4 @@ class WriteRoute(NamedTuple):
     handler: Endpoint
 
 
-class StreamRoute(NamedTuple):
-    """A GET at `path` (under `/api`) that opens a stream, or is refused with a response, answered by the Starlette
-    endpoint `handler`."""
-
-    path: str
-    handler: Endpoint
-
-
-ApiRoute = ReadRoute | WriteRoute | StreamRoute
+ApiRoute = ReadRoute | WriteRoute

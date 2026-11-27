@@ -114,7 +114,7 @@ def _instance(table: RunsInstanceFile) -> RunsInstance:
         raise ConfigError(f"runs instance {table.name}: {exc}") from exc
     flat, processes = _domains(table.domains)
     commit = CommitKeys(**table.commit.model_dump()) if table.commit is not None else None
-    return RunsInstance(table.name, table.type, table.url, flat, processes, commit, table.dashboard, table.start_url)
+    return RunsInstance(table.name, table.type, table.url, flat, processes, commit, table.start_url)
 
 
 def _domains(

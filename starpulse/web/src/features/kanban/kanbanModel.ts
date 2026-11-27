@@ -412,7 +412,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.assignee ?? "", profile: a.profile ?? "", dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs, runs: a.runs ?? [], description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.flow === "ci" ? ciState(latest.state, prs) : latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source, skill: skillOf(sky.flows, latest.flow) } : null,
-      released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, frozen: a.frozen ?? null, sessionActivity: a.session_activity ?? null, moves: a.moves ?? (a.move_set ? sky.moveSets[a.move_set] : undefined) ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
+      released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, frozen: a.frozen ?? null, sessionActivity: a.session_activity ?? null, moves: a.moves ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
       phase: climb(sky, a.id),
       ...(a.readable ? { readable: a.readable } : {}),

@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from concurrent.futures import Executor
 from typing import TYPE_CHECKING, Any
 
-from starpulse.machine_engine.model.machine_ties import all_entries, derive, entry_inputs, within
+from starpulse.machine_engine.model.machine_ties import derive
 from starpulse.machine_engine.model.snapshot import declared
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -31,8 +31,6 @@ logger = logging.getLogger(__name__)
 
 
 class ViewMethods:
-    _entries: tuple[tuple, list[dict], dict] | None = None  # the machine entries of the inputs `machine_fields` last read, and the tasks they were drawn for
-
     def cold_page(self, before: float | None, limit: int, milestone: str | None = None) -> tuple[list[dict], bool]:
         """`GET /api/done`: the next `limit` cold done stubs entered before `before` (None: the newest), and whether
         older ones remain, of `milestone` alone when given. The page ends after the last stub sharing its final
@@ -163,15 +161,6 @@ class ViewMethods:
         ]
         return flows, derive(flows, now)
 
-    def machine_fields(self, flows: list[dict], derived: dict[str, dict], now: float) -> dict:
-        """The snapshot's `machineStrip`: the last 24 hours before `now` of machine entries, counted over every machine."""
-        inputs = entry_inputs(flows, derived)
-        memo = self._entries
-        if memo is None or memo[0] != inputs:
-            known = {} if memo is None else memo[2]
-            self._entries = memo = inputs, all_entries(flows, derived, known), known  # a local, as a build on another thread may store
-        return {"machineStrip": {"entries": within(memo[1], now, LEDGER_WINDOW)}}
-
     def build_ledgers_on(self, worker: Executor) -> None:
         """Rebuild the Ledger on `worker` from now on, so the thread that applied the update returns at once; updates that
         arrive while a build waits for the worker share the one build, which reads the latest."""
@@ -268,11 +257,10 @@ class ViewMethods:
             return self._snapshot(now, modelled)
 
     def _modelled_fields(self, now: float) -> dict[str, Any]:
-        """The snapshot's fields read from a store: the flows, the machine strip and the Done account."""
+        """The snapshot's fields read from a store: the flows and the Done account."""
         flows, derived = self._flows(now)
         return {
             "flows": [{**f, **derived.get(f["name"], {})} for f in flows],
-            **self.machine_fields(flows, derived, now),
             **self.done_fields(),
         }
 
@@ -294,14 +282,10 @@ class ViewMethods:
             "pools": self._drawn_pools(),
             "pulls": self._pulls,
             **self._ledger_marks(self._ledger_full),
-            "claims": dict(self._claims),
             "roles": self._roles.wire(),
-            "capabilities": dict(self._capabilities),
-            "dashboards": dict(self._dashboards),
             "interactive": dict.fromkeys(self._interactive, True),
             "error": self._error(),
             "reading": self._replaying(),
             **declared(self._domains, self._cues, self._processes),
-            "boardUrl": self._board_url,
             "now": now,
         }

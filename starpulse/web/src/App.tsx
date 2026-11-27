@@ -188,7 +188,7 @@ export function App() {
       <Navigator shell={shell} hud={hud} jobsData={jobsData} view={view} phone={phone} slot={setSearchSlot} dgSlot={setDgSlot} outlineSlot={setOutlineSlot} drillSlot={drill ? setDrillSlot : null} choose={choose} open={open}
         spot={(t) => renderer.current?.spot(t)} selectTask={(id) => renderer.current?.selectTask(id)} />
       <Crumb path={hud.path} states={hud.states} sources={hud.tree?.sources} open={open} off={view !== "constellation"} />
-      {view === "constellation" && hud.tree !== null && hud.cards.length === 0 && hud.capabilities?.create && (
+      {view === "constellation" && hud.tree !== null && hud.cards.length === 0 && (
         <section id="first-run" aria-label="Get started">
           <strong>No tasks yet.</strong> Create one:
           <code>uvx starpulse task create "My first task"</code>

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { build } from "../../render/scene";
 import { merge, Moves } from "../../render/sky";
-import { revealGoal, windowOf } from "./machineScroll";
-import { stripScale, tickAt, ticks } from "./machineStrip";
 import type { FlowSnapshot, Machine, Snapshot } from "../../api";
 
 const NOW = 1_800_000_000;
@@ -40,19 +38,10 @@ describe("the machine ledger's lane", () => {
     expect(top.max).toBe(0);
   });
 
-  it("narrows the rows, and the rows the strip ticks, to the machines a pinned task has a session in", () => {
+  it("narrows the rows to the machines a pinned task has a session in", () => {
     const top = laid(sky(45), { task: "DEMO-7", machines: ["kid30", "kid3", "gone"] });
     expect(top.rows.map((r) => r.name)).toEqual(["kid3", "kid30"]);
     expect(top.ranked).toEqual(["kid3", "kid30"]);
     expect([top.total, top.task]).toEqual([2, "DEMO-7"]);
-  });
-
-  it("scrolls a tick's row into view when the tick is clicked", () => {
-    const top = laid(sky(45));
-    const scale = stripScale(top.metaX, top.x1, NOW), found = ticks([{ at: NOW - 60 * 40, machine: "kid40", row: "kid40", from: null, dag: null }], top.ranked, scale);
-    const click = tickAt(found, found[0].x)!;
-    const i = top.rows.findIndex((r) => r.name === click.entry.row), view = { h: top.laneBottom - top.laneTop, fs: 1 };
-    expect(i).toBeGreaterThan(19);
-    expect(windowOf(top.rows, revealGoal(top.rows, i, view, top.max), view).inView).toContain(i);
   });
 });

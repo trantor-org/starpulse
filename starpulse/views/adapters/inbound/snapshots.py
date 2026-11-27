@@ -2,12 +2,9 @@
 
 The API builds no snapshot (the StarPulse API Worker Only Serves ADR): a request serves the stored body, and a stream
 attaches at the sequence the body reflects and takes the rows past it. One thread wakes with the event log, reads the
-rows the writer added, and puts them on the streams open. An event stream that sends its snapshot by reference
-(`ref /api/events/body/<key>`) holds the body only until the page fetches it or the stream ends.
+rows the writer added, and puts them on the streams open.
 """
 
-import hashlib
-import itertools
 import json
 import logging
 import queue
@@ -43,9 +40,6 @@ class Snapshots:
         #: another process writes the snapshot.
         self.caught_up: Callable[[float], bool] = lambda _timeout: True
         self._lock = threading.Lock()
-        #: The bodies event streams sent by reference and pages have not fetched yet, by key.
-        self._refs: dict[str, Encoded] = {}
-        self._keys = itertools.count()
         #: The body `take` last decoded and what it decoded to, under `_taking`; a body stored again at an unmoved
         #: sequence is another `Encoded`.
         self._taken: tuple[Encoded, Served] | None = None
@@ -155,23 +149,6 @@ class Snapshots:
             while stream.unfinished_tasks and time.monotonic() < deadline:
                 # adr-exempt: pending
                 time.sleep(0.005)
-
-    def hold(self, encoded: Encoded) -> str:
-        """Hold `encoded` for one fetch at `/api/events/body/<key>`, and return the key."""
-        key = hashlib.sha1(encoded.body + str(next(self._keys)).encode()).hexdigest()  # one per stream: bodies repeat
-        with self._lock:
-            self._refs[key] = encoded
-        return key
-
-    def body(self, key: str) -> Encoded | None:
-        """The body held under `key`, released as it is read; None once read, released or never held."""
-        with self._lock:
-            return self._refs.pop(key, None)
-
-    def release(self, key: str) -> None:
-        """Drop the body held under `key`, when the stream that sent it ends before the page fetched it."""
-        with self._lock:
-            self._refs.pop(key, None)
 
     def metrics(self) -> str:
         """`starpulse_snapshot_build_seconds`, the count and total time of the builds so far, as Prometheus text: the API

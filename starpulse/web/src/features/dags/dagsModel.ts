@@ -10,8 +10,6 @@ export interface DagData {
   dags: Dag[];
   domains: Domain[];
   pools: Pool[];
-  /** The Grafana dashboard of each runs instance that has one, by instance name. */
-  dashboards: Record<string, string>;
   cues: Cue[];
   flows: { name: string; machine: Machine }[];
   now: number;
@@ -76,7 +74,6 @@ export const dagData = (sky: Sky): DagData => ({
     return { name: g.name, dags: g.dags.map(member), ...(g.processes && { processes: g.processes.map((p) => ({ name: p.name, dags: p.dags.map(member) })) }) };
   }),
   pools: sky.pools,
-  dashboards: sky.dashboards,
   cues: sky.cues,
   flows: Object.values(sky.flows).map((f) => ({ name: f.name, machine: f.machine })),
   now: sky.now,

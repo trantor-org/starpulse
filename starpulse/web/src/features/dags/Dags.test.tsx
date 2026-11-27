@@ -10,7 +10,7 @@ import { rows } from "./dagsModel";
 import css from "../../style.css?raw";
 import type { Dag, DagStep, Machine, RunStatus } from "../../api";
 import { DAG_COLOR } from "../../render/draw";
-import { applyDelta } from "../../api/stream";
+import { keep } from "../../api/same";
 
 // every row draws one Strip, so the Strips drawn say which rows rendered
 const drawn = vi.hoisted(() => ({ names: [] as string[] }));
@@ -29,7 +29,7 @@ const board: Machine = {
   writers: { pr_opened: [{ actor: "runs/pr-watch", trigger: "schedule" }] },
 };
 const data: DagData = {
-  now: 3600, facts: {}, dashboards: {},
+  now: 3600, facts: {},
   dags: [
     dag("runs/pr-watch", "succeeded", { startUrl: "http://runner.test/pr-watch" }),
     dag("runs/triage", "failed", { steps: [step("scan"), step("fix", ["scan"], "failed")] }),
@@ -337,16 +337,16 @@ describe("a row's step strip for a wide fan", () => {
   });
 });
 
-describe("a DAGs delta", () => {
+describe("a jobs change", () => {
   it("re-renders only the rows of the DAGs it changed, and the rows whose slot moved", async () => {
     const wire = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T; // a delta arrives as freshly parsed JSON
-    const snap = { dags: data.dags, pools: data.pools } as unknown as Parameters<typeof applyDelta>[0];
     // never starts after deploy did, so it joins the bottom of Processing and no other row changes slot
-    const next = applyDelta(snap, { kind: "dags", dags: wire(data.dags.map((d) => (d.name === "runs/never" ? { ...d, status: "running" as const, startedAt: "1970-01-01T00:58:00Z" } : d))), pools: wire(data.pools), error: null });
+    const dags = keep(data.dags, wire(data.dags.map((d) => (d.name === "runs/never" ? { ...d, status: "running" as const, startedAt: "1970-01-01T00:58:00Z" } : d))), (d) => d.name);
+    const pools = keep(data.pools, wire(data.pools), (p) => p.name);
     await draw();
     drawn.names.length = 0;
 
-    await draw({ ...data, dags: next.dags, pools: next.pools ?? data.pools });
+    await draw({ ...data, dags, pools });
 
     expect(drawn.names).toEqual(["runs/never"]);
     expect(q(".drow[data-dag='runs/never']").className).toContain("p-running");

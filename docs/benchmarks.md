@@ -7,9 +7,9 @@ latency budget, a fourth holds that page open idle to see it degrade, and a fift
 | Script | Measures | Needs |
 | --- | --- | --- |
 | `ic_event_log.py` | concurrent fail-open appends to an instance's SQLite WAL log while a reader polls by cursor, at 10 thousand and 1 million rows | a scratch file path |
-| `page_latency.py` | the p50 and p95 of every read route, the event stream's first snapshot, and in Chrome the first paint (navigation to the frame that draws the board), each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
+| `page_latency.py` | the p50 and p95 of every read route, the `health` subscription's first event, and in Chrome the first paint (navigation to the frame that draws the board), each view switch, a task modal, the Star Map's fly-to, each stream event to paint and the page's frames, against 50 ms (16.7 ms a frame) | a running StarPulse and Google Chrome |
 | `soak.py` | one tab held open for hours: every 10 minutes the budget probed and the task modal opened and closed, every few minutes the JS heap, DOM nodes, listeners, idle frames per second, and the server's RSS, threads and open files; against a running StarPulse, or a seeded one it starts and feeds events | Google Chrome, a built page for the seeded server, or a running StarPulse |
-| `load.py` | a Locust crowd of viewers, each holding the event stream open and reading the `/api` routes: per-route p50, p95 and p99 and the stream's first snapshot, against 50 ms | a running StarPulse |
+| `load.py` | a Locust crowd of viewers, each holding the `health` subscription open and reading the `/api` routes: per-route p50, p95 and p99 and the subscription's first event, against 50 ms | a running StarPulse |
 
 Run them from the repository root after `uv sync`; `page_latency.py`, `soak.py` and `load.py` also need `uv sync --group bench`.
 
@@ -168,17 +168,16 @@ uv run --group bench locust -f bench/load.py --host http://127.0.0.1:8766
 ```
 
 `page_latency.py` times one viewer; this times the same budget under a crowd. Each Locust user is one open page: it
-holds `/api/events?snapshot=ref` open, reads the snapshot body its first event names, then reads a random `/api` route
+holds the `health` subscription (a POST to `/graphql`) open, then reads a random `/api` route
 from `page_latency.py`'s `READS` and `GRAPHQL` (a POST to `/graphql`) every 0.5 to 2 seconds. The first viewer probes every route once (the `discovery`
 row, not judged) and skips one that does not answer 200, as a server with no milestones, docs or scheduler does not; the
-viewers that spawn meanwhile wait for its answer. Every judged read, the body row (`/api/events/body/<id>`) and the
-`/api` routes alike, asks for gzip and leaves the body compressed: a viewer's browser inflates it on the viewer's
+viewers that spawn meanwhile wait for its answer. Every judged read asks for gzip and leaves the body compressed: a viewer's browser inflates it on the viewer's
 machine, and inflating a crowd's bodies in Locust's one process timed that process, not the server (the 5 MB
 `/api/snapshot` takes about 28 ms of the one thread every viewer shares). `-u` is
 the crowd, `-r` how many join a second, `-t` the run; without `--headless` Locust serves its web UI on port 8089 and
 charts the crowd live.
 
-At the end Locust prints each route's p50 to p100 and `/api/events first snapshot`, connect to the end of the
-stream's first `snapshot` event. The run exits 1, printing an `OVER BUDGET` line per cause, when a route's p95 is over
+At the end Locust prints each route's p50 to p100 and `/graphql health first event`, connect to the end of the
+subscription's first event. The run exits 1, printing an `OVER BUDGET` line per cause, when a route's p95 is over
 50 ms or one of its requests failed. Every viewer holds a server thread for its stream, so a high `-u` also measures
 how the server shares its threads; host load moves the tail as it does `page_latency.py`'s.

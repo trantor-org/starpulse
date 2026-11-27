@@ -1,7 +1,5 @@
 """The route tables: the model of each event, response, request and body the API names."""
 
-from functools import reduce
-from operator import or_
 from typing import Any, NamedTuple
 
 from pydantic import BaseModel
@@ -75,41 +73,12 @@ from starpulse.contracts.api.dto.results import (
     Started,
     TakenOver,
 )
-from starpulse.contracts.api.dto.scheduler import SchedulerStatus
 from starpulse.contracts.api.dto.search import SearchResults
-from starpulse.contracts.api.dto.snapshot import (
-    BuildEvent,
-    ClaimDelta,
-    DagsDelta,
-    LedgersDelta,
-    MoveDelta,
-    PullsDelta,
-    RestartingEvent,
-    Snapshot,
-    StaleEvent,
-    TaskDelta,
-    VerdictDelta,
-)
+from starpulse.contracts.api.dto.snapshot import Snapshot
 from starpulse.contracts.api.dto.trajectories import Trajectories
 from starpulse.contracts.api.dto.transitions import (
     Spend,
 )
-
-#: Each `/api/events` event name and the model of its `data`.
-EVENTS: dict[str, type[BaseModel]] = {
-    "snapshot": Snapshot,
-    "build": BuildEvent,
-    "restarting": RestartingEvent,
-    "stale": StaleEvent,
-    "task": TaskDelta,
-    "move": MoveDelta,
-    "dags": DagsDelta,
-    "pulls": PullsDelta,
-    "claim": ClaimDelta,
-    "verdict": VerdictDelta,
-    "ledgers": LedgersDelta,
-}
-EVENTS["scheduler"] = SchedulerStatus
 
 #: Each GET route's `200` body, by path; `/api/task/<id>` by its prefix.
 RESPONSES: dict[str, Any] = {
@@ -244,15 +213,10 @@ def _write(summary: str, kind: str, request: Any = None, *status: str) -> Op:
 
 
 _STREAM = "text/event-stream"
-_EVENTS = reduce(or_, EVENTS.values())
 
 #: Every route the app serves outside the page's own files, by method and path: the model of each body it takes and
 #: answers with. `tests/unit/contracts/test_openapi.py` fails when the app mounts a route this table lacks.
 ROUTES: dict[tuple[str, str], Op] = {
-    ("GET", "/api/events"): Op("Stream the board: a snapshot, then each change", _EVENTS, None, ("snapshot",), _STREAM),
-    ("GET", "/api/held"): Op("Stream the columns with the tasks a session holds", None, None, ("assignee",), _STREAM),
-    ("GET", "/api/lanes"): Op("Stream the columns, only the states named when given", None, None, ("state",), _STREAM),
-    ("GET", "/api/events/body/{key}"): Op("A stored snapshot body by its key", BODIES["snapshot"] | ApiError),
     ("GET", "/api/snapshot"): _read("The board snapshot", "snapshot", "view"),
     ("GET", "/api/flows"): Op("The flows of the board", Snapshot),
     ("GET", "/api/doctor"): _read("The contract report", "doctor"),
