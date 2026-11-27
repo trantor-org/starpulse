@@ -1,6 +1,6 @@
 """A Board task as the page reads it: criteria, runs and the raw record."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -102,6 +102,9 @@ class RawTask(_Api):
     )
     task: str | None = Field(default=None, description="A machine's task: the id of the Backlog task its events name.")
     steps: int | None = None
+    stored: dict[str, Any] | None = Field(
+        default=None, description="A task's phase, substate, skill and open-dependency count, as its read-model row stores them."
+    )
     trail: list[TrailPoint] | None = Field(
         default=None, description="A machine task's steps, as points indexing the `names` of the flow or move delta."
     )

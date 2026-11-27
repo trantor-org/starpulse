@@ -100,10 +100,10 @@ EXTRA: dict[str, frozenset[str]] = {
     "response": frozenset(
         {
             "model", "session_activity", "prs", "delivered", "runs", "task", "steps", "trail", "active", "pause_reason",
-            "readable", "skill", "interactive", "previous", "moves", "entered", "workable", "workable_since",
+            "readable", "skill", "interactive", "previous", "moves", "entered", "workable", "workable_since", "stored",
         }
     ),
-    "column": frozenset({"seq", "version", "fields", "meta"}),
+    "column": frozenset({"seq", "version", "fields", "meta", "phase", "substate", "skill", "prs", "open_dependencies"}),
 }
 
 #: Per surface, the fields it takes in another form than the record holds them in, by design: a create takes criteria

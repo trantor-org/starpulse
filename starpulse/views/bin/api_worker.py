@@ -52,6 +52,7 @@ from starpulse.runs.adapters.inbound.cloudevents import CloudEventsIngest
 from starpulse.runs.adapters.inbound.grafana_notice import notice_webhook
 from starpulse.runs.application.queries import projection as runs_projection
 from starpulse.runs.model import opt_in
+from starpulse.pulls.adapters.outbound.card_prs import restater
 from starpulse.scheduler.adapters.exposition import autopilot_exposition
 from starpulse.scheduler.adapters.remote import Remote
 from starpulse.sessions import identity
@@ -165,6 +166,7 @@ def serve_page(
     # `starpulse worker board` keeps the claim refusals and verdicts as the deltas a stream replays
     saved_after = log.head() or 0  # before the store loads: a save between the two is announced past it
     pulls = PullStore(log.engine)
+    feed.on_relinked(lambda task: restater(model, pulls, feed.cited)([task]))  # a link moves the pull requests its row holds
     caught_up.entries(SAVED_STREAM, refresh_on_save(pulls), saved_after)
     actor_metrics = None
     # `starpulse worker pulls` runs the context, as a child of this process or beside it; this process reads its

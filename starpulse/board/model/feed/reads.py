@@ -163,6 +163,10 @@ class ReadMethods:
         """The pages of the pull requests the task has a `delivers` or `cites` link to, open or settled; none for a task the Board does not hold."""
         return [url for _, url in self._links(task_id)]
 
+    def stored_prs(self, ids: Collection[str]) -> dict[str, list[dict[str, Any]]]:
+        """The pull requests each task's row holds: the scalar fields its card draws, as the pull store held them when its saves or the task's links last moved them."""
+        return self._read_model.stored_prs(ids)
+
     def delivered(self, task_id: str) -> list[str]:
         """The pages of the pull requests the task has a `delivers` link to: the ones it ships through."""
         return [url for role, url in self._links(task_id) if role in DELIVERS]
@@ -193,6 +197,7 @@ class ReadMethods:
             return list(held)
         key = (
             self._read_model.position(),
+            self._read_model.machine_position(),
             local_midnight(self._clock()),
         )  # before the build: a change in it rebuilds next
         with self._build_lock:  # threads woken by one change build once; the rest read that build

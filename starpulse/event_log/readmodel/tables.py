@@ -37,6 +37,14 @@ tasks = Table(
     Column("meta", JSON, nullable=False),
     #: The item's stored UUID, copied from its `meta`: `board_keys` is what resolves one.
     Column("uuid", String, nullable=False, server_default=""),
+    #: The card's derived fields, restated when they change so a list reads them with no resolver pass: the phase, substate
+    #: and skill flow a working task holds in the machines (null off the working lane), its pull requests as `[{repo, number,
+    #: state}]`, and how many of its dependencies are not done.
+    Column("phase", String),
+    Column("substate", String),
+    Column("skill", String),
+    Column("prs", JSON, nullable=False, server_default="[]"),
+    Column("open_dependencies", Integer, nullable=False, server_default="0"),
     Index("ix_starpulse_tasks_seq", "seq"),
     Index("ix_starpulse_tasks_lower_id", text("lower(id)")),
     Index("ix_starpulse_tasks_live_id", "id", sqlite_where=text("archived = 0")),

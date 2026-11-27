@@ -53,6 +53,9 @@ def local_midnight(at: float) -> float:
     return datetime.fromtimestamp(at).astimezone().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 
+#: The card fields the read model stores on a task's row (`card_fields`), which an agent carries under `stored`.
+STORED = ("phase", "substate", "skill", "open_dependencies")
+
 #: How long a Done Task stays in the snapshot, with its jobs and machine instances, after it finishes.
 LIVE_WINDOW_S = 24 * 3600
 
@@ -100,6 +103,7 @@ def summary_agent(
         "type": summary["type"],
         "dependencies": list(summary.get("dependencies", ())),
         "prs": [],
+        "stored": {key: summary.get(key) for key in STORED},
         "runs": [],
         "description": "",
         "criteria": [],

@@ -1,6 +1,7 @@
 """The Delivery context's start, from the collaborators `starpulse worker pulls` and `contexts` hand it."""
 
 import os
+import threading
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -27,6 +28,7 @@ from starpulse.pulls.adapters.outbound.pull_reads import settle_checks
 from starpulse.pulls.adapters.outbound.pull_requests import PullRequests, coalesced
 from starpulse.pulls.adapters.outbound.unfinished import submodule_paths
 from starpulse.pulls.model.pins import LiveBuild, running_commit
+from starpulse.pulls.adapters.outbound.card_prs import restater, saved
 from starpulse.runtime.config import Config
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
@@ -190,6 +192,13 @@ def start_delivery(
         # record: the pin walk behind it can take minutes, so it runs on a thread of its own
         projected = coalesced(stop, project, "pull-project", after=feed.wait_replayed)
         feed.on_relinked(lambda _: projected())  # a link written or removed changes which pull requests a task reads
+        if log is not None:  # no log, no card rows
+            model = ReadModel(log.engine)
+            restate = restater(model, pulls, feed.cited)
+            pulls.subscribe_saves(saved(model, restate))  # the card rows hold each task's pull requests, so a save restates them
+            threading.Thread(
+                target=lambda: (feed.wait_replayed(), restate(model.cited())), name="card-prs-backfill", daemon=True
+            ).start()  # a row folded before the card stored them holds none, until a save or a link moves it
     if config.release is not None:
         if not (feed.roles.waiting and feed.roles.ready):
             raise ValueError("[release] needs a board that edits tasks and draws waiting and ready lanes")
