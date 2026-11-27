@@ -17,7 +17,13 @@ def writer_flags(sub: argparse.ArgumentParser) -> None:
 
 def create_flags(sub: argparse.ArgumentParser) -> None:
     """Add the detail flags of a task a `create` command files; the title is the caller's."""
-    sub.add_argument("--description", help="the task's Description section")
+    sub.add_argument(
+        "--brief",
+        metavar="FILE",
+        help="the task's brief as a JSON object, `-` for stdin: `outcome`, `why`, `current_state`, `scope`, "
+        "`out_of_scope`, `blast_radius`, `stop_conditions`, and `rollback` when `blast_radius.undo` is 2 or more",
+    )
+    sub.add_argument("--description", help=argparse.SUPPRESS)
     sub.add_argument("--priority", help="`high`, `medium` or `low`")
     sub.add_argument("--impact", help="how much the work matters: `high`, `medium` or `low`")
     sub.add_argument("--urgency", help="how soon the work matters: `high`, `medium` or `low`")

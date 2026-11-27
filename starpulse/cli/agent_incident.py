@@ -100,23 +100,29 @@ def _wait_on_owner(
     return waiting, refused
 
 
-def _description(source: str) -> str:
-    return (
-        f"## Outcome\n\nThe shared fault `{source}` is fixed or its owner is named.\n\n"
-        "## Why\n\nA session found a fault that blocks others; sessions it blocks wait on this task.\n\n"
-        f"## Current State\n\nThe fault is open under `{source}`.\n\n"
-        "## Scope\n\n- Find the cause and fix it, or file the task that does.\n\n"
-        "## Out of Scope\n\n- Work the fault does not block.\n\n"
-        "## Blast Radius\n\nreach 1 · data 0 · undo 0 · detect 0. Sessions the fault blocks stay waiting.\n\n"
-        "## Stop Conditions\n\n- The cause lies outside this network.\n"
-    )
+def _brief(source: str) -> dict[str, Any]:
+    return {
+        "outcome": f"The shared fault `{source}` is fixed or its owner is named.",
+        "why": "A session found a fault that blocks others; sessions it blocks wait on this task.",
+        "current_state": f"The fault is open under `{source}`.",
+        "scope": ["Find the cause and fix it, or file the task that does."],
+        "out_of_scope": ["Work the fault does not block."],
+        "blast_radius": {
+            "reach": 1,
+            "data": 0,
+            "undo": 0,
+            "detect": 0,
+            "note": "Sessions the fault blocks stay waiting.",
+        },
+        "stop_conditions": ["The cause lies outside this network."],
+    }
 
 
 def _create_and_dispatch(args: argparse.Namespace, environ: Mapping[str, str], source: str) -> str:
     base, path = agent_wire.server_url(args.server, environ), "/api/tasks"
     body = {
         "title": f"Incident {args.type} {args.key}",
-        "description": _description(source),
+        "brief": _brief(source),
         "profile": "@agent-standard-high",
         "labels": ["incident"],
         "type": "bug",

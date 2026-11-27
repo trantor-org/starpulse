@@ -1727,9 +1727,9 @@ export interface CreateRequest {
   actor?: string | null;
   adrNeeded?: string | null;
   assignee?: string | null;
+  brief?: Brief | null;
   definitionOfDone?: string[] | null;
   dependencies?: string[] | null;
-  description?: string | null;
   documentation?: string[] | null;
   duplicateResolution?: string | null;
   duplicateSearch?: string | null;
@@ -1763,6 +1763,46 @@ export interface CreateRequest {
   urgency?: string | null;
 }
 /**
+ * A task's description as fields; `rollback` is required when `blast_radius.undo` is 2 or more.
+ */
+export interface Brief {
+  blast_radius: BlastRadius;
+  cited?: string[] | null;
+  current_state: string;
+  example?: string | null;
+  open_questions?: string[] | null;
+  /**
+   * @minItems 1
+   */
+  out_of_scope: [string, ...string[]];
+  outcome: string;
+  rollback?: string | null;
+  /**
+   * @minItems 1
+   */
+  scope: [string, ...string[]];
+  /**
+   * @minItems 1
+   */
+  stop_conditions: [string, ...string[]];
+  terms?: Term[] | null;
+  why: string;
+}
+/**
+ * The four scores, each 0 to 3, and the sentence on the worst axis.
+ */
+export interface BlastRadius {
+  data: number;
+  detect: number;
+  note: string;
+  reach: number;
+  undo: number;
+}
+export interface Term {
+  meaning: string;
+  term: string;
+}
+/**
  * One batch member's kind and size, each without its label prefix.
  */
 export interface MemberKindSize {
@@ -1780,9 +1820,9 @@ export interface CreateSpec {
   acceptanceCriteria?: string[] | null;
   adrNeeded?: string | null;
   assignee?: string | null;
+  brief: Brief;
   definitionOfDone?: string[] | null;
   dependencies?: string[] | null;
-  description?: string | null;
   documentation?: string[] | null;
   duplicateResolution?: string | null;
   duplicateSearch?: string | null;
@@ -1910,6 +1950,7 @@ export interface Changes {
   adrNeeded?: string;
   appendNotes?: string;
   assignee?: string;
+  brief?: Brief;
   definitionOfDone?: ChecklistItem[];
   dependencies?: string[];
   dependencyNeeds?: string[];

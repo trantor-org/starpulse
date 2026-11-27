@@ -15,6 +15,17 @@ from pathlib import Path
 
 from starpulse.runtime.write_instance import WriteInstance, write_instance
 
+#: The brief a seed with none of its own is created from: a create takes a typed brief, never a description.
+DEFAULT_BRIEF = {
+    "outcome": "A seeded task exists.",
+    "why": "A test or evaluation needs a task on a board.",
+    "current_state": "The board holds no such task.",
+    "scope": ["Open the seeded task"],
+    "out_of_scope": ["Anything beyond the seed"],
+    "blast_radius": {"reach": 0, "data": 0, "undo": 0, "detect": 0, "note": "A scratch board."},
+    "stop_conditions": ["The board refuses the seed: report the reason"],
+}
+
 #: The config a board with no `starpulse.toml` of its own is served from: the default machine, the board at `board/`.
 DEFAULT_CONFIG = '[board]\npath = "board"\n'
 
@@ -25,22 +36,21 @@ class EphemeralBoardError(RuntimeError):
 
 @dataclass(frozen=True)
 class TaskSeed:
-    """One task to open: its title and, optionally, its description, criteria and labels.
+    """One task to open: its title and, optionally, its brief, criteria and labels.
 
-    `flags` is any other `starpulse task create` option, as argv (`("--status", "ready")`).
+    `brief` is the typed description a create takes (`DEFAULT_BRIEF` when none). `flags` is any other `starpulse task create` option, as argv (`("--status", "ready")`).
     """
 
     title: str
-    description: str = ""
+    brief: dict | None = None
     criteria: tuple[str, ...] = ()
     labels: tuple[str, ...] = ()
     flags: tuple[str, ...] = ()
 
-    def argv(self) -> list[str]:
-        description = ["--description", self.description] if self.description else []
+    def argv(self, brief: Path) -> list[str]:
         criteria = [part for text in self.criteria for part in ("--ac", text)]
         labels = [part for label in self.labels for part in ("--label", label)]
-        return ["task", "create", self.title, *description, *criteria, *labels, *self.flags]
+        return ["task", "create", self.title, "--brief", str(brief), *criteria, *labels, *self.flags]
 
 
 @dataclass(frozen=True)
@@ -63,8 +73,10 @@ def _read(instance: WriteInstance, task: str) -> dict:
     return json.loads(shown.stdout)
 
 
-def _open(instance: WriteInstance, seed: TaskSeed) -> dict:
-    created = instance.run(*seed.argv())
+def _open(instance: WriteInstance, seed: TaskSeed, scratch: Path) -> dict:
+    brief = scratch / f"brief-{seed.title}.json"
+    brief.write_text(json.dumps(seed.brief or DEFAULT_BRIEF))
+    created = instance.run(*seed.argv(brief))
     if created.returncode != 0:
         raise EphemeralBoardError(f"{seed.title!r} refused, exit {created.returncode}: {created.stdout}{created.stderr}")
     return _read(instance, json.loads(created.stdout)["task"])
@@ -85,5 +97,6 @@ def ephemeral_board(seeds: Iterable[TaskSeed | str], base: Path | None = None) -
         if not config.exists():
             config.write_text(DEFAULT_CONFIG)
         instance = stack.enter_context(write_instance(base))
-        opened = tuple(_open(instance, TaskSeed(seed) if isinstance(seed, str) else seed) for seed in seeds)
+        scratch = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+        opened = tuple(_open(instance, TaskSeed(seed) if isinstance(seed, str) else seed, scratch) for seed in seeds)
         yield EphemeralBoard(instance, opened)

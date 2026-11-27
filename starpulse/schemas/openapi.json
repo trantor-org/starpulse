@@ -3477,6 +3477,173 @@
         "title": "Archived",
         "type": "object"
       },
+      "BlastRadius": {
+        "additionalProperties": false,
+        "description": "The four scores, each 0 to 3, and the sentence on the worst axis.",
+        "properties": {
+          "reach": {
+            "maximum": 3,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "data": {
+            "maximum": 3,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "undo": {
+            "maximum": 3,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "detect": {
+            "maximum": 3,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reach",
+          "data",
+          "undo",
+          "detect",
+          "note"
+        ],
+        "title": "BlastRadius",
+        "type": "object"
+      },
+      "Brief": {
+        "additionalProperties": false,
+        "description": "A task's description as fields; `rollback` is required when `blast_radius.undo` is 2 or more.",
+        "properties": {
+          "outcome": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "why": {
+            "maxLength": 400,
+            "minLength": 1,
+            "type": "string"
+          },
+          "current_state": {
+            "maxLength": 400,
+            "minLength": 1,
+            "type": "string"
+          },
+          "scope": {
+            "items": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "out_of_scope": {
+            "items": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "blast_radius": {
+            "$ref": "#/components/schemas/BlastRadius"
+          },
+          "stop_conditions": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "rollback": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "terms": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Term"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "example": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "open_questions": {
+            "anyOf": [
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "cited": {
+            "anyOf": [
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "outcome",
+          "why",
+          "current_state",
+          "scope",
+          "out_of_scope",
+          "blast_radius",
+          "stop_conditions"
+        ],
+        "title": "Brief",
+        "type": "object"
+      },
       "Changes": {
         "additionalProperties": false,
         "description": "An edit's fields by name, each as the board's writer takes it. `documentation` entries are links; `appendNotes`\nadds to the notes as they are when the write lands, and `planReason` is why the plan changes: neither has a base.",
@@ -3494,9 +3661,6 @@
             "type": "string"
           },
           "needsAttention": {
-            "type": "string"
-          },
-          "title": {
             "type": "string"
           },
           "assignee": {
@@ -3598,6 +3762,11 @@
           "frozen": {
             "$ref": "#/components/schemas/FrozenEdit"
           },
+          "title": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
           "documentation": {
             "anyOf": [
               {
@@ -3612,6 +3781,9 @@
                 "type": "null"
               }
             ]
+          },
+          "brief": {
+            "$ref": "#/components/schemas/Brief"
           },
           "appendNotes": {
             "type": "string"
@@ -3771,6 +3943,8 @@
           "title": {
             "anyOf": [
               {
+                "maxLength": 80,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -3779,10 +3953,10 @@
             ],
             "default": null
           },
-          "description": {
+          "brief": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/Brief"
               },
               {
                 "type": "null"
@@ -4170,18 +4344,12 @@
             "default": null
           },
           "title": {
+            "maxLength": 80,
+            "minLength": 1,
             "type": "string"
           },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
+          "brief": {
+            "$ref": "#/components/schemas/Brief"
           },
           "notes": {
             "anyOf": [
@@ -4483,7 +4651,8 @@
           }
         },
         "required": [
-          "title"
+          "title",
+          "brief"
         ],
         "title": "CreateSpec",
         "type": "object"
@@ -5298,9 +5467,6 @@
           "needsAttention": {
             "type": "string"
           },
-          "title": {
-            "type": "string"
-          },
           "assignee": {
             "type": "string"
           },
@@ -5399,6 +5565,9 @@
           },
           "frozen": {
             "$ref": "#/components/schemas/FrozenEdit"
+          },
+          "title": {
+            "type": "string"
           },
           "documentation": {
             "items": {
@@ -11223,6 +11392,25 @@
           "startedAt"
         ],
         "title": "TaskRun",
+        "type": "object"
+      },
+      "Term": {
+        "additionalProperties": false,
+        "properties": {
+          "term": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "meaning": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "term",
+          "meaning"
+        ],
+        "title": "Term",
         "type": "object"
       },
       "Theme": {

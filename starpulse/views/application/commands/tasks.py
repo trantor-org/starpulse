@@ -2,6 +2,7 @@
 
 import contextlib
 import logging
+import re
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -66,6 +67,19 @@ logger = logging.getLogger(__name__)
 #: The longest title a create accepts; a title is one line on a card, not a description.
 _TITLE_MAX = 300
 _REF = "ref:"  # a dependency naming a sibling in the same batch create by its `ref`
+#: Sections the board writes into a description itself: never a brief field, kept when an edit renders a brief again.
+_BOARD_SECTIONS = ("Needs attention", "Operator decision", "Start Criteria", "Retired Start Criteria", "Gate behind bug")
+_SECTION_HEADING = re.compile(r"^## +(.*?) *$", re.M)
+
+
+def _board_sections(description: str) -> str:
+    found = list(_SECTION_HEADING.finditer(description))
+    kept = [
+        description[match.start() : found[i + 1].start() if i + 1 < len(found) else len(description)].strip()
+        for i, match in enumerate(found)
+        if match[1] in _BOARD_SECTIONS
+    ]
+    return "\n\n".join(kept)
 
 
 def task_record(
@@ -141,6 +155,16 @@ def _edited(
     with EDIT_LOCK:
         if (current := read(task)) is None:
             return 404, {"error": f"{task} has no record to read"}
+        if (brief := changes.get("brief")) is not None:
+            if "description" in changes:
+                return 400, {"error": "an edit names a brief or a description, not both"}
+            follows = changes.get("follows", current.get("follows")) or None
+            text = current.get("description") or ""
+            kept = _board_sections(text)
+            changes = {
+                **{field: value for field, value in changes.items() if field != "brief"},
+                "description": f"{brief.render(follows)}\n\n{kept}" if kept else brief.render(follows),
+            }
         # `appendNotes` is no record field: it adds to the notes as they are now, so it has no base to go stale
         fields = {field: value for field, value in changes.items() if field not in (_APPEND_NOTES, _PLAN_REASON)}
         for field in fields:
@@ -317,6 +341,8 @@ def _create_details(request: CreateSpec) -> dict[str, Any]:
     """The filled details of a create, as the board's writer takes them."""
     fields = {field: getattr(request, field) for field in (*CREATE_TEXT, *CREATE_LISTS)}
     details = {field: value for field, value in fields.items() if value}
+    if request.brief is not None:
+        details["description"] = request.brief.render(request.follows)
     if request.members:
         details["members"] = request.members
     if "definitionOfDone" in details:

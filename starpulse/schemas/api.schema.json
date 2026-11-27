@@ -474,6 +474,45 @@
       "title": "Archived",
       "type": "object"
     },
+    "BlastRadius": {
+      "additionalProperties": false,
+      "description": "The four scores, each 0 to 3, and the sentence on the worst axis.",
+      "properties": {
+        "data": {
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "detect": {
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "note": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reach": {
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "undo": {
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "reach",
+        "data",
+        "undo",
+        "detect",
+        "note"
+      ],
+      "title": "BlastRadius",
+      "type": "object"
+    },
     "Bottleneck": {
       "properties": {
         "path_days": {
@@ -488,6 +527,134 @@
         "path_days"
       ],
       "title": "Bottleneck",
+      "type": "object"
+    },
+    "Brief": {
+      "additionalProperties": false,
+      "description": "A task's description as fields; `rollback` is required when `blast_radius.undo` is 2 or more.",
+      "properties": {
+        "blast_radius": {
+          "$ref": "#/$defs/BlastRadius"
+        },
+        "cited": {
+          "anyOf": [
+            {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "current_state": {
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        },
+        "example": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "open_questions": {
+          "anyOf": [
+            {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "out_of_scope": {
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "outcome": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "rollback": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "scope": {
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "stop_conditions": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "terms": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Term"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "why": {
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome",
+        "why",
+        "current_state",
+        "scope",
+        "out_of_scope",
+        "blast_radius",
+        "stop_conditions"
+      ],
+      "title": "Brief",
       "type": "object"
     },
     "Calibration": {
@@ -573,6 +740,9 @@
         },
         "assignee": {
           "type": "string"
+        },
+        "brief": {
+          "$ref": "#/$defs/Brief"
         },
         "definitionOfDone": {
           "items": {
@@ -683,6 +853,8 @@
           "type": "string"
         },
         "title": {
+          "maxLength": 80,
+          "minLength": 1,
           "type": "string"
         },
         "type": {
@@ -876,6 +1048,17 @@
           ],
           "default": null
         },
+        "brief": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Brief"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "definitionOfDone": {
           "anyOf": [
             {
@@ -897,17 +1080,6 @@
                 "type": "string"
               },
               "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
             },
             {
               "type": "null"
@@ -1192,6 +1364,8 @@
         "title": {
           "anyOf": [
             {
+              "maxLength": 80,
+              "minLength": 1,
               "type": "string"
             },
             {
@@ -1266,6 +1440,9 @@
           ],
           "default": null
         },
+        "brief": {
+          "$ref": "#/$defs/Brief"
+        },
         "definitionOfDone": {
           "anyOf": [
             {
@@ -1287,17 +1464,6 @@
                 "type": "string"
               },
               "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
             },
             {
               "type": "null"
@@ -1529,6 +1695,8 @@
           "default": null
         },
         "title": {
+          "maxLength": 80,
+          "minLength": 1,
           "type": "string"
         },
         "type": {
@@ -1555,7 +1723,8 @@
         }
       },
       "required": [
-        "title"
+        "title",
+        "brief"
       ],
       "title": "CreateSpec",
       "type": "object"
@@ -8610,6 +8779,25 @@
         "startedAt"
       ],
       "title": "TaskRun",
+      "type": "object"
+    },
+    "Term": {
+      "additionalProperties": false,
+      "properties": {
+        "meaning": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "term": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "term",
+        "meaning"
+      ],
+      "title": "Term",
       "type": "object"
     },
     "Theme": {

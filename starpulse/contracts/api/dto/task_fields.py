@@ -1,9 +1,11 @@
 """The task fields an edit names: `base` holds each as the record reads it, `changes` as the board's writer takes it."""
 
+import re
 from typing import Annotated, NotRequired, TypedDict
 
-from pydantic import AfterValidator, ConfigDict, JsonValue, StrictBool, WithJsonSchema
+from pydantic import AfterValidator, ConfigDict, JsonValue, StrictBool, StringConstraints, WithJsonSchema
 
+from starpulse.contracts.api.dto.brief import Brief
 from starpulse.contracts.doc_links import PATTERN, doc_link
 
 #: One `documentation` entry: a doc id (doc-N) or a file path, never a command's JSON reply.
@@ -14,6 +16,18 @@ DocLink = Annotated[
         {"type": "string", "pattern": PATTERN, "description": "A doc id (doc-N) or a file path, never a JSON reply"}
     ),
 ]
+
+
+def _title(value: str) -> str:
+    if re.search(r"\bTASK-\d+\b", value):
+        raise ValueError("names no TASK-N: link a related task with a dependency")
+    if re.search(r"<[\w -]+>", value):
+        raise ValueError("keeps no <placeholder>: name the outcome")
+    return value
+
+
+#: A task title: one to 80 characters naming the outcome, with no `TASK-N` and no `<placeholder>`.
+Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80), AfterValidator(_title)]
 
 
 class ChecklistItem(TypedDict):
@@ -48,7 +62,6 @@ class _Fields(TypedDict, total=False):
     notes: str
     finalSummary: str
     needsAttention: str
-    title: str
     assignee: str
     type: str
     priority: str
@@ -80,6 +93,7 @@ class EditBase(_Fields, total=False):
     edit does not change may be named or left out."""
 
     __pydantic_config__ = ConfigDict(extra="ignore")  # type: ignore[misc]
+    title: str
     documentation: list[str]
 
 
@@ -88,6 +102,8 @@ class Changes(_Fields, total=False):
     adds to the notes as they are when the write lands, and `planReason` is why the plan changes: neither has a base."""
 
     __pydantic_config__ = ConfigDict(extra="forbid")  # type: ignore[misc]
+    title: Title
     documentation: list[DocLink] | None
+    brief: Brief
     appendNotes: str
     planReason: str
