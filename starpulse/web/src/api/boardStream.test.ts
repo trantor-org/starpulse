@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LOST_MS, RETRY_CAP_MS } from "./retry";
+import { LOST_MS, QUIET_MS, RETRY_CAP_MS } from "./retry";
 import { openStream } from "./stream";
 import type { Snapshot } from ".";
 
@@ -17,12 +17,17 @@ const READ = {
 const JOBS = { items: [], domains: [], cues: [], pools: [], error: null, position: 3 };
 const HEALTH = { components: [{ name: "board", ready: true, detail: "" }], build: "b1", restarting: false, at: 1000 };
 
-/** A server's side of the page's requests: the reads answer at once, each subscription is a body the test pushes `next` frames into. */
+const PING_MS = 15_000; // the server's `_PING_S`: every subscription sends a byte at least this often
+const PING = new TextEncoder().encode(": ping\n\n");
+
+/** A server's side of the page's requests: the reads answer at once, each subscription is a body the test pushes `next` frames into and that pings every PING_MS until `silent`. */
 function server(read: typeof READ = READ) {
   const seen: string[] = [];
   const open: Record<string, ReadableStreamDefaultController<Uint8Array>> = {};
+  const pings: Record<string, () => void> = {};
   const gone = new Set<string>();
-  const control = { down: false, failRead: false, hold: false, hang: false };
+  const control = { down: false, failRead: false, hold: false, hang: false, silent: false, stall: false };
+  const never = (init?: RequestInit) => new Promise<Response>((_, fail) => init?.signal?.addEventListener("abort", () => fail(init.signal?.reason)));
   const holds: (() => void)[] = [];
   const post = async (url: string, init?: RequestInit) => {
     if (control.down) throw new Error("unreachable");
@@ -30,18 +35,36 @@ function server(read: typeof READ = READ) {
     const field = /subscription[^{]*{\s*(\w+)/.exec(query)?.[1];
     seen.push(field ?? (url === "/graphql" ? "read" : url));
     if (!field && url === "/graphql") {
-      if (control.hang) return new Promise<Response>((_, fail) => init?.signal?.addEventListener("abort", () => fail(init.signal?.reason)));
+      if (control.hang) return never(init);
       if (control.failRead || control.hold) await new Promise<void>((go) => holds.push(go));
       if (control.failRead) return new Response("{}", { status: 500 });
     }
     if (field && gone.delete(field)) return new Response("{}", { status: 410 });
-    if (field) return new Response(new ReadableStream({ start: (c) => void (open[field] = c) }));
+    if (field && control.stall) return never(init);
+    if (field) {
+      let ping: ReturnType<typeof setInterval>;
+      const quiet = () => clearInterval(ping);
+      return new Response(new ReadableStream<Uint8Array>({
+        start: (c) => {
+          [open[field], pings[field], ping] = [c, quiet, setInterval(() => control.silent || c.enqueue(PING), PING_MS)];
+          // as fetch errors an aborted body; one `end` already closed has nothing left to error
+          init?.signal?.addEventListener("abort", () => {
+            quiet();
+            try { c.error(init.signal?.reason); } catch { /* closed */ }
+          });
+        },
+        cancel: quiet,
+      }));
+    }
     if (url === "/api/jobs") return Response.json(JOBS);
     return Response.json({ data: read });
   };
   const push = (field: string, data: unknown) =>
     open[field].enqueue(new TextEncoder().encode(`event: next\ndata: ${JSON.stringify({ data: { [field]: data } })}\n\n`));
-  const end = (field: string) => open[field].close();
+  const end = (field: string) => {
+    pings[field]();
+    open[field].close();
+  };
   const release = () => holds.splice(0).forEach((go) => go());
   return { post, seen, push, end, gone, control, release, reads: () => seen.filter((q) => q === "read").length };
 }
@@ -137,6 +160,37 @@ describe("openStream", () => {
       await settle();
 
       expect(links).toEqual(["live", "retrying", "offline", "stale", "live"]);
+      stream.close();
+    });
+
+    it("drops a connection whose streams go QUIET_MS without a byte and reads the board again, while pinging streams stay live", async () => {
+      const links: string[] = [];
+      const { s, stream } = await open(READ, { link: (l) => void links.push(l) });
+      s.push("health", health());
+      await settle();
+      await vi.advanceTimersByTimeAsync(10 * QUIET_MS);
+      expect([s.reads(), links]).toEqual([1, ["live"]]);
+
+      s.control.silent = true;
+      await vi.advanceTimersByTimeAsync(QUIET_MS);
+
+      expect([s.reads(), links]).toEqual([2, ["live", "retrying"]]);
+      stream.close();
+    });
+
+    it("drops a reconnect whose subscriptions never answer once QUIET_MS pass, and reads the board again", async () => {
+      const links: string[] = [];
+      const { s, stream } = await open(READ, { link: (l) => void links.push(l) });
+      s.push("health", health());
+      await settle();
+      s.control.stall = true;
+      s.end("taskChanges");
+      await settle();
+      expect(s.reads()).toBe(2);
+
+      await vi.advanceTimersByTimeAsync(QUIET_MS + RETRY_CAP_MS);
+
+      expect([s.reads(), links]).toEqual([3, ["live", "retrying", "offline"]]); // down past LOST_MS by then
       stream.close();
     });
 

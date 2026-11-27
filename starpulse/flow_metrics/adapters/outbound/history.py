@@ -46,7 +46,7 @@ from starpulse.event_log.store.machine_registry import TASK_MACHINE, active_vers
 from starpulse.event_log.tables import machine_events as _machine_events
 from starpulse.event_log.tables import metadata
 from starpulse.event_log.wake import RETRY_DELAY, StopEvent
-from starpulse.flow_metrics.adapters.outbound import summaries  # noqa: F401 - declares the dead step-summaries table until a migration drops it
+from starpulse.flow_metrics.adapters.outbound import daily_report, summaries  # noqa: F401 - declares the dead step-summaries table until a migration drops it
 from starpulse.machine_engine.model.transitions import Table as Transitions
 from starpulse.machine_engine.model.transitions import lane_id
 
@@ -90,13 +90,14 @@ _STEP_ORDER = (_machine_events.c.occurred_at, _machine_events.c.id)
 
 
 #: A task's last lane: its latest observation, the later insert on a tie.
-def _last_lane(db: Connection, task: str, source_name: str | None) -> str | None:
-    """The status of the task's latest lane change; with a `source_name`, of the change that source sent."""
+def _last_lane(db: Connection, task: str, source_name: str | None) -> tuple[str, float] | None:
+    """The status and time of the task's latest lane change; with a `source_name`, of the change that source sent."""
     c = _lane_changes.c
-    query = select(c.new_status).where(c.task == task).order_by(c.observed_at.desc(), c.id.desc()).limit(1)
+    query = select(c.new_status, c.observed_at).where(c.task == task).order_by(c.observed_at.desc(), c.id.desc()).limit(1)
     if source_name is not None:
         query = query.where(c.event_id.startswith(f"{source_name}/", autoescape=True))
-    return db.execute(query).scalar()
+    row = db.execute(query).first()
+    return None if row is None else (row[0], row[1])
 
 
 def _holds_move(db: Connection, task: str, source_name: str | None, status: str, at: float) -> bool:
@@ -225,32 +226,40 @@ class HistoryStore:
                     machine_events.EARLIEST_TIME,
                 )
             else:
+                state, before = self._entered(db, row)
                 stamp = {
                     "task_uuid": task_uuid.of(row["task"]),
-                    "state": self._entered(db, row),
+                    "state": state,
                     "machine_version": active_version(db, row["machine"]),
                 }
-                db.execute(self._insert(_machine_events).values(row | stamp).on_conflict_do_nothing())
+                written = db.execute(self._insert(_machine_events).values(row | stamp).on_conflict_do_nothing())
+                if written.rowcount:
+                    at = row["occurred_at"]
+                    seconds = 0.0 if before is None else at - before[0]
+                    daily_report.add(db, row["machine"], at, "" if before is None else before[1], state or "", seconds)
             if cursor is not None:
                 self.checkpoints.save(machine_events.STREAM, cursor, conn=db)
 
-    def _entered(self, db: Connection, row: dict) -> str | None:
+    def _entered(self, db: Connection, row: dict) -> tuple[str | None, tuple[float, str] | None]:
         """The state the event leaves its task or run in on the machine the recorder draws, placed from the state
-        its last stored row left it in (a row recorded before states were kept is placed on the machine); None for a
-        machine the recorder does not draw."""
+        its last stored row left it in (a row recorded before states were kept is placed on the machine), None for a
+        machine the recorder does not draw; and that last row's time and state, None when it has none."""
         machine = self._machines.get(row["machine"])
         key = row["task"] or row["run"]
-        if machine is None or key is None:
-            return None
+        if key is None:
+            return None, None
         c = _machine_events.c
         rows = db.execute(
             select(c.occurred_at, c.event, c.state)
             .where(or_(c.task_uuid == task_uuid.of(key), c.run == key), c.machine == row["machine"])
             .order_by(*_STEP_ORDER)
         ).all()
+        if machine is None:
+            return None, (rows[-1][0], rows[-1][2] or "") if rows else None
         path, _ = machine_steps(machine, [tuple(r) for r in rows])
         before = path[-1]["state"] if path else Transitions(machine).initial
-        return _after(Transitions(machine), before, row["event"], None)
+        last = (path[-1]["at"], path[-1]["state"]) if path else None
+        return _after(Transitions(machine), before, row["event"], None), last
 
     def record_lane(
         self,
@@ -286,7 +295,8 @@ class HistoryStore:
         status = lane_id(status)
         name, slash, _ = event_id.partition("/")
         source = name if slash and name else None
-        last = _last_lane(db, task, source)
+        previous = _last_lane(db, task, source)
+        last = None if previous is None else previous[0]
         if (last is not None and lane_id(last) == status) or _holds_move(db, task, source, status, at):
             return False
         change = self._insert(_lane_changes).values(
@@ -299,7 +309,11 @@ class HistoryStore:
             actor=actor,
             machine_version=active_version(db, TASK_MACHINE),
         )
-        return db.execute(change.on_conflict_do_nothing().returning(_lane_changes.c.id)).first() is not None
+        if db.execute(change.on_conflict_do_nothing().returning(_lane_changes.c.id)).first() is None:
+            return False
+        seconds = 0.0 if previous is None else at - previous[1]
+        daily_report.add(db, TASK_MACHINE, at, "" if last is None else lane_id(last), status, seconds)
+        return True
 
     def import_lanes(self, changes: Iterable[Change]) -> int:
         """Add the lane changes of an earlier history, each once: how many of them the store holds that it did not.
@@ -329,6 +343,15 @@ class HistoryStore:
             _rechain(db, {task for _, task in last})
         with self.engine.connect() as db:
             return len(_held_ids(db, ids) - held)
+
+    def daily_report(
+        self, machine: str, since: str, until: str, *, state: str | None = None, bucket: str = "range"
+    ) -> list[dict]:
+        """`machine`'s counted moves and their seconds from local day `since` to `until` (ISO dates, inclusive),
+        summed per `bucket`: `day`, `month`, `year` or one `range`; with a `state`, only the moves out of it. A bucket
+        with no moves is absent. An indexed read of the daily rows that touches no event table."""
+        with self.engine.connect() as db:
+            return daily_report.read(db, machine, since, until, state=state, bucket=bucket)
 
     def record_step(self, workflow: str, step: str, depends: list[str] | None) -> None:
         """Remember a step of a pushed workflow; `depends` None keeps the dependencies already known."""

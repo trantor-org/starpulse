@@ -1964,6 +1964,132 @@
       "title": "DagBody",
       "type": "object"
     },
+    "DailyReportFilter": {
+      "additionalProperties": false,
+      "description": "The `filter` of `POST /api/daily-reports`: `machine`, `since` and `until` (inclusive local dates in\nAmerica/Phoenix) are required, `state` keeps the transitions out of that state, and `bucket` sums the rows per `day`,\n`month`, `year` or the whole `range`.",
+      "properties": {
+        "bucket": {
+          "default": "range",
+          "enum": [
+            "day",
+            "month",
+            "year",
+            "range"
+          ],
+          "type": "string"
+        },
+        "machine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "since": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "until": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "DailyReportFilter",
+      "type": "object"
+    },
+    "DailyReportItem": {
+      "description": "One bucket of a daily report: the transitions counted and the summed length of the Stays they ended.",
+      "properties": {
+        "bucket": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "seconds": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "bucket",
+        "count",
+        "seconds"
+      ],
+      "title": "DailyReportItem",
+      "type": "object"
+    },
+    "DailyReportListRequest": {
+      "additionalProperties": false,
+      "description": "`POST /api/daily-reports`: one machine's counts and summed durations over a range of days, read from the daily\nreport rows, `limit` buckets from `offset`.",
+      "properties": {
+        "filter": {
+          "$ref": "#/$defs/DailyReportFilter"
+        },
+        "limit": {
+          "default": 1000,
+          "maximum": 10000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "filter"
+      ],
+      "title": "DailyReportListRequest",
+      "type": "object"
+    },
+    "DailyReports": {
+      "description": "`POST /api/daily-reports`: the buckets of one machine's range, empty when it made no move in it.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/DailyReportItem"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "DailyReports",
+      "type": "object"
+    },
     "Decile": {
       "description": "One decile of forecast chance of the goal on the held-out runs: its forecasts' mean against the share of\ntheir runs that reached the goal, null when it holds none.",
       "properties": {
@@ -9523,6 +9649,9 @@
     "contractReport": {
       "$ref": "#/$defs/ContractReport"
     },
+    "dailyReports": {
+      "$ref": "#/$defs/DailyReports"
+    },
     "docShown": {
       "$ref": "#/$defs/DocShown"
     },
@@ -9602,6 +9731,9 @@
             "$ref": "#/$defs/DocListRequest"
           },
           {
+            "$ref": "#/$defs/DailyReportListRequest"
+          },
+          {
             "$ref": "#/$defs/DocPutRequest"
           },
           {
@@ -9649,6 +9781,7 @@
     "snapshot",
     "donePage",
     "machines",
+    "dailyReports",
     "machineDetail",
     "graphqlResponse",
     "viewShown",

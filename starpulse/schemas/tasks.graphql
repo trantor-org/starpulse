@@ -242,10 +242,12 @@ type MachineTask {
   trail: [TrailStep!]!
 }
 
-"""The open tasks a read found, and the stream position it was read at: a `taskChanges` subscription from it carries each change after the read. `settled`, `milestoneDone`, `archivedToday` and `machineTasks` hold the whole board, never narrowed by the arguments."""
-type TaskList {
+"""A page of the open tasks a read found, how many it found, and the stream position it was read at: a `taskChanges` subscription from it carries each change after the read. `settled`, `milestoneDone`, `archivedToday` and `machineTasks` hold the whole board, never narrowed by the arguments."""
+type TaskPage {
   position: Int!
   items: [Task!]!
+  """Every open task the narrowing arguments keep, whatever page `offset` and `limit` cut from them."""
+  total: Int!
   "The finished window: each task settled or created in the last 24 hours."
   settled: [SettledTask!]!
   "Each milestone's completed count: its settled tasks plus the completed ones older than the window."
@@ -305,10 +307,11 @@ type MergeStrip {
   buckets: [MergeBucket!]!
 }
 
-"""A page of a ledger's occurrences, newest first, and whether older ones remain inside the 24-hour window."""
+"""A page of a ledger's occurrences, newest first, whether older ones remain inside the 24-hour window, and how many the window holds."""
 type OccurrencePage {
   rows: [Occurrence!]!
   more: Boolean!
+  total: Int!
   """The merge ledger's 24-hour strip, counted over every row; null on any other event."""
   mergeStrip: MergeStrip
   """The pinned merge rows of the last day that the newest page leaves out; empty on any other event."""
@@ -720,17 +723,17 @@ type Board {
 
 type Query {
   """
-  The open tasks. `filter` keeps those whose id, title or a label holds it (case aside); `source`, `lane` and
-  `milestone` keep those equal to it.
+  A page of the open tasks: `limit` of them (every one when null) after the first `offset`. `filter` keeps those whose
+  id, title or a label holds it (case aside); `source`, `lane` and `milestone` keep those equal to it.
   """
-  tasks(filter: String, source: String, lane: String, milestone: String): TaskList!
+  tasks(filter: String, source: String, lane: String, milestone: String, offset: Int! = 0, limit: Int): TaskPage!
   """One open or settled Done task, or null when the board holds neither by that id (another archived task included)."""
   task(id: ID!): Task
   """
-  An event's ledger, `limit` occurrences (1 to 100, default 20) older than `before` (null: the newest), or null when no
+  A page of an event's ledger, newest first: `limit` occurrences (1 to 100) after the first `offset`, or null when no
   workflow is tied to `event`.
   """
-  occurrences(event: String!, before: Float, limit: Int = 20): OccurrencePage
+  occurrences(event: String!, offset: Int! = 0, limit: Int! = 50): OccurrencePage
   """One pull request the PR store holds, whatever task cites it, or null when it holds none."""
   pull(repo: String!, number: Int!): PullRequest
   """The board's columns, state roles, machines and jobs: what the CLI's board, task show and snapshot verbs read beside the tasks."""

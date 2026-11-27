@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SchedulerStore, level, type Dimension } from "./scheduler";
 
 /** What `GET /api/admin` answers today: the switch, harness, when the sampler last read, and each dimension's use against its limit. */
@@ -24,6 +24,16 @@ const HARNESSES = {
 };
 const IN_FLIGHT = [{ task: "TASK-1", title: "First", model: "opus · high", started: 40, url: "#demo-session-0001" }];
 const NEXT = { task: "TASK-2", title: "Second", verdict: "waits", reason: "Sessions 4/4" };
+
+/** A store each test disposes after it ends, so no subscription it follows outlives the test file. */
+const made: SchedulerStore[] = [];
+class Store extends SchedulerStore {
+  constructor(...args: ConstructorParameters<typeof SchedulerStore>) {
+    super(...args);
+    made.push(this);
+  }
+}
+afterEach(() => made.splice(0).forEach((store) => store.dispose()));
 
 const answer = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
 
@@ -83,7 +93,7 @@ describe("the Autopilot card's store", () => {
   it("follows schedulerChanges from the position the read answered and takes each change as the card's status", async () => {
     const byHarness = [{ harness: "claude", use: 1, limit: 3 }, { harness: "cursor", use: 0, limit: 2 }];
     const fetcher = server({ graphql: () => open({ ...CHANGE, enabled: false, inFlight: IN_FLIGHT, next: NEXT, sessionsByHarness: byHarness }) });
-    const store = new SchedulerStore(fetcher);
+    const store = new Store(fetcher);
 
     await store.load();
     await vi.waitFor(() => expect(store.get().current?.on).toBe(false));
@@ -97,7 +107,7 @@ describe("the Autopilot card's store", () => {
 
   it("reads again at once when the position is lost, and follows from the new one", async () => {
     const fetcher = server({ graphql: (n) => (n === 0 ? new Response("{}", { status: 410 }) : open()) });
-    const store = new SchedulerStore(fetcher);
+    const store = new Store(fetcher);
 
     await store.load();
     await vi.waitFor(() => expect(fetcher.mock.calls.filter(([url]) => String(url) === "/api/admin")).toHaveLength(2));
@@ -108,7 +118,7 @@ describe("the Autopilot card's store", () => {
   it("reads again after a pause when the server closes the stream, and stops following once disposed", async () => {
     vi.useFakeTimers();
     const fetcher = server({ graphql: (n) => (n === 0 ? ended() : open()) });
-    const store = new SchedulerStore(fetcher);
+    const store = new Store(fetcher);
     const reads = () => fetcher.mock.calls.filter(([url]) => String(url) === "/api/admin").length;
 
     await store.load();
@@ -124,7 +134,7 @@ describe("the Autopilot card's store", () => {
   });
 
   it("reads the switch and each dimension's use against its limit, with the label and unit the card draws", async () => {
-    const store = new SchedulerStore(server());
+    const store = new Store(server());
 
     await store.load();
 
@@ -145,7 +155,7 @@ describe("the Autopilot card's store", () => {
   it("defaults the harness to claude and carries pauses and per-harness session use when the server serves them", async () => {
     const pauses = [{ harness: "claude", until: 75_600, reason: "usage limit" }];
     const sessionsByHarness = { claude: { use: 1, limit: 3 }, cursor: { use: 0, limit: 2 } };
-    const store = new SchedulerStore(server({
+    const store = new Store(server({
       body: { ...STATUS, harness: undefined, pauses, sessionsByHarness },
     }));
 
@@ -156,7 +166,7 @@ describe("the Autopilot card's store", () => {
 
   it("selects another harness with a PUT and shows the answer", async () => {
     const fetcher = server();
-    const store = new SchedulerStore(fetcher);
+    const store = new Store(fetcher);
     await store.load();
 
     await store.setHarness("other");
@@ -167,7 +177,7 @@ describe("the Autopilot card's store", () => {
   });
 
   it("has no session list and no pick while the server serves neither", async () => {
-    const store = new SchedulerStore(server());
+    const store = new Store(server());
 
     await store.load();
 
@@ -175,7 +185,7 @@ describe("the Autopilot card's store", () => {
   });
 
   it("carries the session list and the next pick when the server serves them", async () => {
-    const store = new SchedulerStore(server({ body: { ...STATUS, inFlight: IN_FLIGHT, next: NEXT } }));
+    const store = new Store(server({ body: { ...STATUS, inFlight: IN_FLIGHT, next: NEXT } }));
 
     await store.load();
 
@@ -183,7 +193,7 @@ describe("the Autopilot card's store", () => {
   });
 
   it("reads a dimension the card has no label for under its own name", async () => {
-    const store = new SchedulerStore(server({ body: { ...STATUS, dimensions: [{ name: "gpu", use: 1, limit: 2 }] } }));
+    const store = new Store(server({ body: { ...STATUS, dimensions: [{ name: "gpu", use: 1, limit: 2 }] } }));
 
     await store.load();
 
@@ -198,9 +208,9 @@ describe("the Autopilot card's store", () => {
     ["an inFlight entry with no task", { ...STATUS, inFlight: [{ title: "First" }] }],
     ["a next with no task", { ...STATUS, next: { verdict: "waits" } }],
   ])("refuses an answer with %s and keeps the last good reading", async (_why, body) => {
-    const store = new SchedulerStore(server());
+    const store = new Store(server());
     await store.load();
-    const bad = new SchedulerStore(server({ body }));
+    const bad = new Store(server({ body }));
     await bad.load();
 
     expect(bad.get()).toMatchObject({ current: null, unavailable: "the server's answer is not a scheduler status" });
@@ -208,8 +218,8 @@ describe("the Autopilot card's store", () => {
   });
 
   it("names why the status cannot be read", async () => {
-    const down = new SchedulerStore(server({ down: true }));
-    const none = new SchedulerStore(server({ body: { error: "this instance runs no scheduler" }, status: 404 }));
+    const down = new Store(server({ down: true }));
+    const none = new Store(server({ body: { error: "this instance runs no scheduler" }, status: 404 }));
 
     await down.load();
     await none.load();
@@ -220,7 +230,7 @@ describe("the Autopilot card's store", () => {
 
   it("keeps the last reading when a later read fails", async () => {
     const fetcher = server();
-    const store = new SchedulerStore(fetcher);
+    const store = new Store(fetcher);
     await store.load();
     fetcher.mockImplementationOnce(() => Promise.reject(new Error("offline")));
 
@@ -232,7 +242,7 @@ describe("the Autopilot card's store", () => {
 
   it("turns admission off by PUTting {enabled} and shows the answer", async () => {
     const fetcher = server();
-    const store = new SchedulerStore(fetcher);
+    const store = new Store(fetcher);
     await store.load();
 
     await store.setOn(false);
@@ -245,7 +255,7 @@ describe("the Autopilot card's store", () => {
   it("says why a change was refused, leaves the switch as it was, and clears on dismiss", async () => {
     const fetcher = vi.fn<typeof fetch>((_url, init) =>
       init?.method === "PUT" ? answer({ error: "Autopilot changes are taken only from loopback or a private address" }, 403) : answer(STATUS));
-    const store = new SchedulerStore(fetcher);
+    const store = new Store(fetcher);
     await store.load();
 
     await store.setOn(false);
@@ -259,7 +269,7 @@ describe("the Autopilot card's store", () => {
   });
 
   it("says the change did not reach the server when the server is down", async () => {
-    const store = new SchedulerStore(server({ down: true }));
+    const store = new Store(server({ down: true }));
 
     await store.setOn(false);
 
@@ -267,35 +277,35 @@ describe("the Autopilot card's store", () => {
   });
 
   it("reads the session cap with where it comes from, and null while the server does not serve it", async () => {
-    const store = new SchedulerStore(server());
+    const store = new Store(server());
     await store.load();
     expect(store.get().current!.sessionCap).toEqual({ harness: "claude", limit: 4, source: "starpulse.toml", configLimit: 4 });
 
-    const bare = new SchedulerStore(server({ body: { ...STATUS, sessionCap: undefined } }));
+    const bare = new Store(server({ body: { ...STATUS, sessionCap: undefined } }));
     await bare.load();
     expect(bare.get().current!.sessionCap).toBeNull();
   });
 
   it("reads the cpu and memory limits with where they come from, and null while the server does not serve them", async () => {
-    const store = new SchedulerStore(server());
+    const store = new Store(server());
     await store.load();
     expect(store.get().current!.capacityLimits).toEqual({
       cpu: { limit: 80, source: "starpulse.toml", configLimit: 80 },
       memory: { limit: 85, source: "starpulse.toml", configLimit: 85 },
     });
 
-    const bare = new SchedulerStore(server({ body: STATUS }));
+    const bare = new Store(server({ body: STATUS }));
     await bare.load();
     expect(bare.get().current!.capacityLimits).toBeNull();
 
-    const broken = new SchedulerStore(server({ body: { ...STATUS, capacityLimits: { cpu: { limit: "high" } } } }));
+    const broken = new Store(server({ body: { ...STATUS, capacityLimits: { cpu: { limit: "high" } } } }));
     await broken.load();
     expect(broken.get().current).toBeNull();
   });
 
   it.each([["cpu", "cpuLimit"], ["memory", "memoryLimit"]] as const)("sets the %s limit by PUTting {%s} and clears it with null", async (name, field) => {
     const fetcher = server();
-    const store = new SchedulerStore(fetcher);
+    const store = new Store(fetcher);
     await store.load();
 
     await store.setLimit(name, 62.5);
@@ -308,7 +318,7 @@ describe("the Autopilot card's store", () => {
   });
 
   it("says why the server refused a limit and keeps the one it had", async () => {
-    const store = new SchedulerStore(server());
+    const store = new Store(server());
     await store.load();
 
     await store.setLimit("cpu", 101);
@@ -322,21 +332,21 @@ describe("the Autopilot card's store", () => {
       { name: "cpu", use: 95, limit: 80 },
       { name: "start-limit", use: 48, limit: 48, count: 3 },
     ];
-    const store = new SchedulerStore(server({ body: { ...STATUS, blockedBy } }));
+    const store = new Store(server({ body: { ...STATUS, blockedBy } }));
     await store.load();
     expect(store.get().current!.blockedBy).toEqual([
       { name: "cpu", use: 95, limit: 80, count: null },
       { name: "start-limit", use: 48, limit: 48, count: 3 },
     ]);
 
-    const bare = new SchedulerStore(server({ body: { ...STATUS, blockedBy: undefined } }));
+    const bare = new Store(server({ body: { ...STATUS, blockedBy: undefined } }));
     await bare.load();
     expect(bare.get().current!.blockedBy).toEqual([]);
   });
 
   it("sets the session cap by PUTting {sessionCap} and clears it with null", async () => {
     const fetcher = server();
-    const store = new SchedulerStore(fetcher);
+    const store = new Store(fetcher);
     await store.load();
 
     await store.setSessionCap(7);
@@ -349,7 +359,7 @@ describe("the Autopilot card's store", () => {
   });
 
   it("says why the server refused a session cap and keeps the one it had", async () => {
-    const store = new SchedulerStore(server());
+    const store = new Store(server());
     await store.load();
 
     await store.setSessionCap(0);
@@ -360,7 +370,7 @@ describe("the Autopilot card's store", () => {
 
   it("sends one change at a time", async () => {
     const fetcher = server();
-    const store = new SchedulerStore(fetcher);
+    const store = new Store(fetcher);
     await store.load();
     fetcher.mockClear();
 

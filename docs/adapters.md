@@ -40,7 +40,7 @@ task file: a move, assignee change, new task, edit or archive appends to that st
 view (priority, description, acceptance criteria, plan, notes and definition of done) from it alone, on the board page, the
 API and `starpulse task show --markdown`. Nothing writes under the board's `tasks/`, `completed/` or `archive/tasks/`;
 `starpulse import-board` and `starpulse parity` alone read a legacy file there, and `parity --import --remove`, once no
-task is missing a History, removes the files the deploy leaves. An archive appends `Archived` after a reason is added to
+task is missing a History, removes the files left, once, and a rerun does nothing (no deploy runs it). An archive appends `Archived` after a reason is added to
 the task's comments; a restore returns the task to the board's tasks and never replaces a task there.
 A move, edit or reopen out of Done returns a completed task to its lane, and a restore does the same for a
 task whose status already left Done, which the board would otherwise hold as archived.

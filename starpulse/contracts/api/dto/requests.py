@@ -1,5 +1,6 @@
 """The body each write route takes."""
 
+from datetime import date
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -260,6 +261,27 @@ class MilestoneListRequest(_Request):
 
 class MachineListRequest(_Request):
     """`POST /api/machines`: list the machines the board draws. It takes no field."""
+
+
+class DailyReportFilter(_Request):
+    """The `filter` of `POST /api/daily-reports`: `machine`, `since` and `until` (inclusive local dates in
+    America/Phoenix) are required, `state` keeps the transitions out of that state, and `bucket` sums the rows per `day`,
+    `month`, `year` or the whole `range`."""
+
+    machine: str | None = None
+    since: date | None = None
+    until: date | None = None
+    state: str | None = None
+    bucket: Literal["day", "month", "year", "range"] = "range"
+
+
+class DailyReportListRequest(_Request):
+    """`POST /api/daily-reports`: one machine's counts and summed durations over a range of days, read from the daily
+    report rows, `limit` buckets from `offset`."""
+
+    offset: Annotated[int, Field(ge=0)] = 0
+    limit: Annotated[int, Field(ge=1, le=10_000)] = 1_000
+    filter: DailyReportFilter
 
 
 class JobListRequest(_Request):

@@ -195,21 +195,26 @@ class Streams:
     def _deltas(
         self, missed: Sequence, changes: queue.Queue, frames: Callable[[str, dict], Iterator[bytes]]
     ) -> Generator[bytes]:
-        """The frames of each delta in `missed`, then of each that arrives on `changes`, pinging while none does; ends
-        when the log was renumbered."""
+        """The frames of each delta in `missed`, then of each that arrives on `changes`, pinging once `_PING_S` pass with no
+        byte sent, however many changes this stream draws nothing for; ends when the log was renumbered."""
         for change in missed:
             yield from frames(*change)
+        due = time.monotonic() + _PING_S
         while True:
-            try:
-                change = changes.get(timeout=_PING_S)
-            except queue.Empty:
+            if time.monotonic() >= due:
                 yield _PING
+                due = time.monotonic() + _PING_S
+            try:
+                change = changes.get(timeout=max(0.0, due - time.monotonic()))
+            except queue.Empty:
                 continue
             if change is None:  # the log was renumbered: the page reconnects for the body of the new numbering
                 changes.task_done()
                 return
             try:
-                yield from frames(*change)
+                for frame in frames(*change):
+                    yield frame
+                    due = time.monotonic() + _PING_S
             finally:
                 changes.task_done()  # `Snapshots.announce` waits for the marks of what it queued
 

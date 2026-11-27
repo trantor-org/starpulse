@@ -50,6 +50,20 @@ class Machines(_Api):
     machines: list[MachineListed]
 
 
+class DailyReportItem(_Api):
+    """One bucket of a daily report: the transitions counted and the summed length of the Stays they ended."""
+
+    bucket: str
+    count: int
+    seconds: float
+
+
+class DailyReports(_Api):
+    """`POST /api/daily-reports`: the buckets of one machine's range, empty when it made no move in it."""
+
+    items: list[DailyReportItem]
+
+
 class MachineDetail(_Api):
     """`GET /api/machines/{name}`: one machine's declared config. `skill` is the one its first parent link runs it with
     (empty when none names one); `lanes` is each lane's surface by lane name, on the Board machine only; `hash` is the

@@ -357,6 +357,15 @@ GET /api/health     {ready, components}: 200 when the event log opened at the sc
 POST /api/machines
                    {machines}: every machine the board draws, each `{name, type, parents}`; the body takes no field.
                    `type` is `machine`, `phase machine` or `sub-machine`, `parents` the machines whose submachines name it
+POST /api/daily-reports
+                   {items}: one machine's counts and summed durations of its moves, read from the stored daily rows
+                   (`starpulse_daily_report`, one per machine, local day and transition, days cut at America/Phoenix
+                   midnight) and never from an event table. The body is `{offset, limit, filter}`: `filter.machine`,
+                   `filter.since` and `filter.until` (inclusive local dates) are required, `filter.state` keeps the
+                   transitions out of that state, and `filter.bucket` sums the rows per `day`, `month`, `year` or the whole
+                   `range` (the default); each item is `{bucket, count, seconds}`, `limit` (default 1000, at most 10000)
+                   buckets from `offset`. A range with no move is an empty `items`; a missing field or `since` after `until`
+                   is 422
 GET /api/machines/{name}
                    One machine's declared config: `{name, type, parents, skill, submachines, launches}`. `skill` is the one
                    its first parent link runs it with (empty when none names one). The Board's carries `lanes` too: each
@@ -1369,12 +1378,13 @@ step, and the step it is in.
 
 - `MERGED` occurrences are merged pull requests, which carry their tasks, from the last day. Any other event's are tasks
   entering the lane the event reaches within the last day.
-- The snapshot holds no Ledger row. A Ledger's rows are `POST /graphql` reads: `occurrences(event, before, limit)` is
-  `{rows, more}`, one page of the next `limit` rows (default 20, at most 100) older than `before` (epoch seconds, the `at`
-  of the last row held; none: the newest), each an `Occurrence` (a `LedgerRow`, `runs` and `fails` as JSON; `child` marks
-  another repository's merge, whose `appliedBy` is the parent merge's key or null until one has). Rows sharing the
-  boundary second come together, so a page can run past `limit` and walking `before` neither repeats nor skips a row;
-  none is older than 24 hours; a `before` that is not finite or a `limit` outside 1-100 is a GraphQL error; an event no
+- The snapshot holds no Ledger row. A Ledger's rows are `POST /graphql` reads: `occurrences(event, offset, limit)` is
+  `{rows, more, total}`, newest first: the `limit` rows (default 50, at most 100) after the first `offset` (default 0),
+  whether older ones remain, and how many rows the Ledger holds, each an `Occurrence` (a `LedgerRow`, `runs` and `fails`
+  as JSON; `child` marks another repository's merge, whose `appliedBy` is the parent merge's key or null until one has).
+  The page sends the count of rows it holds as `offset` and drops a key it already holds, so a row that reached the head
+  between reads repeats rather than skips; none is older than 24 hours; a negative `offset` or a `limit` outside 1-100 is
+  a GraphQL error; an event no
   workflow is tied to is null. A page with a Ledger open runs `subscription { occurrenceChanges(event) }`: graphql-sse
   frames whose first `next` is `{head: true, rows, more, mergeStrip, mergePins}`, the newest 20 rows and whether older ones remain, and whose
   later ones are `{head: false, rows, mergeStrip, mergePins}`, the rows that are new or differ and the strip and pins whole (a change to either alone sends no rows), so a Ledger no page has open costs no frame; an

@@ -69,12 +69,11 @@ export function foldDraw(dc: DrawCtx, d: Drawing, io: FoldIO) {
   }
   /** The Ledger scrolling or loading is something to animate: the offset easing, a page on its way, or a failed one waiting to be asked again. */
   const scrolling = () => !!ledgerGrid() && (scroll.y !== scroll.ty || scroll.fetching || (scroll.more && scroll.retryAt > dc.clock));
-  /** The footer row came into view: ask for the `event` rows older than the oldest held. */
+  /** The footer row came into view: ask for the `event` rows past those held. */
   function askPage(event: string) {
-    const gen = scrollGen, before = scroll.rows.at(-1)?.at;
-    if (before === undefined) return;
+    const gen = scrollGen;
     scroll = begin(scroll);
-    void fetchLedger(event, before).then((page) => {
+    void fetchLedger(event, scroll.rows.length).then((page) => {
       if (gen !== scrollGen) return;
       scroll = page ? receive(scroll, page.rows, page.more) : fail(scroll, dc.clock);
       io.wake();

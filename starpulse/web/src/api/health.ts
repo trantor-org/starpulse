@@ -1,7 +1,7 @@
 // The server's health: one `health` subscription on POST /graphql, sent when it opens and again on each change of the components, the build or the restart.
 
 import { apiFetch } from "./apiFetch";
-import { frames } from "./sse";
+import { frames, hush } from "./sse";
 
 const SUBSCRIPTION = "subscription { health { components { name ready detail } build restarting at } }";
 
@@ -28,16 +28,16 @@ export type Watch = (on: HealthHandlers) => { close(): void };
 type Post = (url: string, init?: RequestInit) => Promise<Response>;
 
 export function openHealth(on: HealthHandlers, post: Post = apiFetch): { close(): void } {
-  const stop = new AbortController();
+  const stop = new AbortController(), quiet = hush(stop.signal);
   const run = async () => {
-    const resp = await post("/graphql", { method: "POST", body: JSON.stringify({ query: SUBSCRIPTION }), signal: stop.signal });
+    const resp = await post("/graphql", { method: "POST", body: JSON.stringify({ query: SUBSCRIPTION }), signal: quiet.signal });
     if (!resp.ok || !resp.body) return;
-    for await (const frame of frames(resp.body)) {
+    for await (const frame of frames(resp.body, quiet.heard)) {
       const health = (frame as { data?: { health?: Health } }).data?.health;
       if (health && !stop.signal.aborted) on.health(health);
     }
   };
-  run().then(
+  run().finally(quiet.done).then(
     () => stop.signal.aborted || on.end(),
     () => stop.signal.aborted || on.end(),
   );

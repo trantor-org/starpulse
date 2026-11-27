@@ -168,6 +168,11 @@ def archived(before: float | None, limit: int, milestone: str | None = None) -> 
     return (query if before is None else query.where(tasks.c.updated_at < before)).limit(limit)
 
 
+def archived_ids() -> Select[Any]:
+    """The ids of every archived Task: one range of the archive index."""
+    return select(tasks.c.id).where(tasks.c.archived == true())
+
+
 def archived_since(since: float) -> Select[Any]:
     """How many Tasks were archived at or after `since`: one range of the archive index."""
     return select(func.count()).where(tasks.c.archived == true(), tasks.c.updated_at >= since)

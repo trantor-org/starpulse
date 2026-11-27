@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from starpulse.views.adapters.inbound.api import (
     admin,
     board,
+    daily_reports,
     docs,
     history,
     jobs,
@@ -76,6 +77,7 @@ def api_routes(api: Api) -> list[ApiRoute]:
         *machines.routes(api),
         *milestones.routes(api),
         *docs.routes(api),
+        *daily_reports.routes(api),
         *jobs.routes(api),
         *admin.routes(api),
         *steps.routes,

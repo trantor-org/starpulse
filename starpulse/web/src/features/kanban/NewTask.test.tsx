@@ -14,7 +14,7 @@ describe("the New task form", () => {
 
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-label="New task"');
-    for (const field of ["Title", "Assignee", "Priority", "Labels", "Milestone", "Dependencies", "Description", "Acceptance criterion #1"]) {
+    for (const field of ["Title", "Assignee", "Priority", "Labels", "Milestone", "Dependencies", "Outcome", "Why", "Current state", "Scope", "Out of scope", "Stop conditions", "Rollback", "Blast radius reach", "Blast radius note", "Acceptance criterion #1"]) {
       expect(html).toContain(`aria-label="${field}"`);
     }
     expect(html).toContain("Lands in To Do");
@@ -30,7 +30,7 @@ describe("the New task form", () => {
   });
 
   it("keeps the whole draft and shows the board's reason after a refusal", () => {
-    const draft = { ...EMPTY_DRAFT, title: "Write the docs", description: "Every lane", labels: "docs, ui", acceptanceCriteria: ["Names every lane"] };
+    const draft = { ...EMPTY_DRAFT, title: "Write the docs", outcome: "Every lane", labels: "docs, ui", acceptanceCriteria: ["Names every lane"] };
     const html = draw({ draft, refused: "the board is read-only" });
 
     expect(html).toContain("Write the docs");
@@ -45,6 +45,17 @@ describe("the New task form", () => {
     expect(draw({ draft: { ...EMPTY_DRAFT, title: "  " } })).toMatch(/<button[^>]*disabled=""[^>]*>Create/);
     expect(draw({ draft: { ...EMPTY_DRAFT, title: "x" }, busy: true })).toMatch(/<button[^>]*disabled=""[^>]*>Creating/);
     expect(draw({ draft: { ...EMPTY_DRAFT, title: "x" } })).not.toMatch(/<button[^>]*disabled=""[^>]*>Create/);
+  });
+});
+
+describe("a refusal naming a brief field", () => {
+  it("shows beside that field, not beside another", () => {
+    const html = draw({ refused: "invalid request: brief.why: Field required" });
+    const why = html.slice(html.indexOf('aria-label="Why"'), html.indexOf('aria-label="Current state"'));
+
+    expect(why).toContain("brief.why: Field required");
+    expect(why).toContain('aria-describedby="nt-why-err"');
+    expect(html.slice(html.indexOf('aria-label="Outcome"'), html.indexOf('aria-label="Why"'))).not.toContain("Field required");
   });
 });
 
