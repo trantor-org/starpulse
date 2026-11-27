@@ -124,7 +124,11 @@ class ClaudeCodeAdapter:
         return self.claimed[session]
 
     def _ended(self, log: LogEvent, at: float) -> dict:
-        return {**self._event(log, "SESSION_ENDED"), "event_id": ended_id(log.session, f"halt-{at}")}
+        return {
+            **self._event(log, "SESSION_ENDED"),
+            "event_id": ended_id(log.session, f"halt-{at}"),
+            "session": log.session,
+        }
 
     def _event(self, log: LogEvent, name: str | None = None) -> dict:
         task = self.keys.for_branch(log.branch) or self._claimed(log.session)
@@ -193,6 +197,13 @@ def bind(
         halted=claude_sessions.terminal_halt(partial(claude_sessions.last_turn, transcripts)),
     )
 
+    publish = publisher(log)
+
+    def publish_event(event: dict) -> None:
+        publish(event)
+        if event["event"] == "SESSION_ENDED":
+            telemetry.close(CLAUDE_CODE, event["session"])
+
     def publish_signals(found: list[Signal]) -> None:
         adapter.claim(found)
         step_seconds.observe(found)
@@ -200,7 +211,7 @@ def bind(
 
     receiver = handler(
         adapter,
-        publisher(log),
+        publish_event,
         lambda payload: publish_signals(signals(payload, redact, analytics=config.analytics, keys=keys)),
         (step_seconds.CONTENT_TYPE, step_seconds.exposition),
     )

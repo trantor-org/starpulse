@@ -39,7 +39,7 @@ _DURABLE = _t(
     "events", "machine_events", "lane_changes", "signal_folds", "stream_events", "checkpoints", "settings",
     "learned_steps", "scheduler_runs",
     "retired_tasks", "pull_requests", "machine_versions", "machine_active", "policy_versions",
-    "policy_active", "task_links", "daily_report", "doc_index",
+    "policy_active", "task_links", "daily_report", "doc_index", "traces",
 ) + ("github_inbox", "github_inbox_state", "github_reconcile_state")  # the inbox's names are the readers' own
 CLASSES: dict[str, str] = {
     **dict.fromkeys(_DURABLE, "durable"),

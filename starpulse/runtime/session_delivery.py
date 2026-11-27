@@ -36,9 +36,11 @@ from collections.abc import Callable, Collection, Mapping
 
 from starpulse.bridge.delivery import Event, Route
 from starpulse.bridge.subjects import INCIDENT
+from starpulse.contracts.signals import CLAUDE_CODE
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
+from starpulse.harness_telemetry.adapters.inbound.telemetry import telemetry_log
 from starpulse.harness_telemetry.adapters.outbound.session_exit import ExitWatch, watch_registered
 from starpulse.harness_telemetry.model.harness import ended_id
 from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL
@@ -311,6 +313,7 @@ def exit_watcher(
             data={"session": session},
             log=log,
         )
+        telemetry_log(log).close(CLAUDE_CODE, session)
 
     watch = ExitWatch(ended)
     def sync() -> None:

@@ -400,6 +400,13 @@ class TelemetryLog:
         except SQLAlchemyError:
             log.warning("session folds unwritable; dropping signals", exc_info=True)
 
+    def close(self, harness: str, session: str) -> None:
+        """Store the case `session` left open as an unfinished Trace; fails open like `publish`."""
+        try:
+            self._ledger().close(harness, session)
+        except SQLAlchemyError:
+            log.warning("session ledger unwritable; its open case is not stored", exc_info=True)
+
     def last_claim(self, harness: str, session: str) -> tuple[str, float] | None:
         """The task `session` last claimed in an export and when, or None when it claimed none.
 

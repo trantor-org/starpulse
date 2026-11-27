@@ -270,6 +270,25 @@ signal_folds = Table(
     Index("ix_starpulse_signal_folds_basis", "basis"),
 )
 
+#: One case's Trace: the skill one session executed on one task, its main-thread Activities in order (adjacent repeats
+#: collapsed) and their `cluster_key`, so two cases of the same distinctive work share a key. Written by the session
+#: ledger when the case ends, or `unfinished` when its session ended first; the trace clusters read it (`traces`).
+traces = Table(
+    "starpulse_traces",
+    metadata,
+    Column("harness", String, nullable=False),
+    Column("session", String, nullable=False),
+    Column("task", String, nullable=False),
+    Column("skill", String, nullable=False),
+    Column("started_at", Float, nullable=False),
+    Column("ended_at", Float, nullable=False),
+    Column("activities", JSON, nullable=False),
+    Column("cluster_key", String, nullable=False),
+    Column("unfinished", Boolean, nullable=False),
+    PrimaryKeyConstraint("harness", "session", "task", "skill", "started_at"),
+    Index("ix_starpulse_traces_cluster_key", "cluster_key"),
+)
+
 #: Each session whose `spend` fold names a task (`spend.named`): one task's spend reads its own sessions' folds by it.
 #: Derived from `signal_folds` by `views.adapters.outbound.task_spend`.
 task_sessions = Table(

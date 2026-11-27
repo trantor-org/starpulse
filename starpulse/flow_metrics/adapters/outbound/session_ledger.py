@@ -5,6 +5,9 @@ A session has four rows there: its `ledger` (`flow_metrics.model.ledger`'s state
 rewrite carries a new revision in `folded_through`, taken from one counter in the settings under the same write lock
 (`BEGIN IMMEDIATE`, which also orders two receivers that name one session), so a reader holding the revision it last saw
 finds every session an export advanced since.
+
+The same write stores the Trace of each case the export ended (`flow_metrics.model.traces`) and keeps the case still
+open in the `ledger` row, so `close` writes it, marked unfinished, when its session ends.
 """
 
 import logging
@@ -22,7 +25,9 @@ from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import Signal
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import settings, signal_folds
+from starpulse.flow_metrics.adapters.outbound import traces
 from starpulse.flow_metrics.model import ledger
+from starpulse.flow_metrics.model.traces import cases_of
 
 __all__ = ["LEDGER", "REVISION", "VIEWS", "SessionLedger"]
 
@@ -68,6 +73,13 @@ class SessionLedger:
             ).scalar()
         return ledger.last_claim(state)
 
+    def close(self, harness: str, session: str) -> None:
+        """Store the case the session left open as an unfinished Trace. Raises when the database does."""
+        with self._engine.connect() as db:
+            db.exec_driver_sql("BEGIN IMMEDIATE")
+            traces.close(db, harness, session)
+            db.commit()
+
     def _advance(self, harness: str, session: str, batch: list[Signal]) -> None:
         with self._engine.connect() as db:
             db.exec_driver_sql("BEGIN IMMEDIATE")  # the read below and the write after it are one step of the session
@@ -77,8 +89,11 @@ class SessionLedger:
                 )
             ).first()
             folded = ledger.apply(held.result if held else None, batch, self._keys, self._analytics)
+            ended = cases_of(folded.rows)
+            current = ended.pop() if ended else None
+            traces.write(db, harness, session, ended, unfinished=False)
             results: dict[str, Any] = {
-                LEDGER: folded.state,
+                LEDGER: {**folded.state, "open_case": current},
                 "steps": ledger.steps_of(folded.rows),
                 "cost": ledger.cost_of(folded.rows),
                 "spend": ledger.spend_of(folded, harness, session),
