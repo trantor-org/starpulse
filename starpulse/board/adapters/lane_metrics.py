@@ -7,7 +7,7 @@ from collections.abc import Callable, Collection, Mapping
 from typing import Any
 
 from starpulse.board.adapters.board_files import embedding
-from starpulse.event_log import lane_events
+from starpulse.event_log import lane_events, start_requests
 from starpulse.event_log.conformance_monitor import Conformance, stalled_exposition
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.kept_text import kept_state, kept_text
@@ -45,10 +45,13 @@ def start(feed: Any, log: EventLog, stop: StopEvent, vectors: Callable[[], tuple
     keep()
 
 
-def held_busy(board: Any) -> Callable[[str], bool]:
-    """Whether a task is held busy: a running shell holds its settled session, or the task actor awaits an event (a CI
-    result, a merge) that wakes it, so a quiet session there is no idle one."""
-    return lambda task: bool({"busy", "awaited"} & ((board.read(task) or {}).get("actorMemory") or {}).keys())
+def held_busy(board: Any, log: EventLog) -> Callable[[str], bool]:
+    """Whether a task is held busy: a running shell holds its settled session, the task actor awaits an event (a CI
+    result, a merge) that wakes it, or its resume or nudge waits for the scheduler's admission gate, so a quiet session
+    there is no idle one."""
+    return lambda task: bool(
+        {"busy", "awaited"} & ((board.read(task) or {}).get("actorMemory") or {}).keys()
+    ) or task in start_requests.wanted(log)
 
 
 def monitor(
@@ -75,7 +78,7 @@ def monitor(
         sessions=sessions,
         done=feed.roles.done,
         types=types,
-        busy=held_busy(board),
+        busy=held_busy(board, log),
     )
     written: tuple[str, dict[str, Any]] | None = None
     guard = threading.Lock()  # a thread reads each stream
