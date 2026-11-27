@@ -569,7 +569,6 @@ def _parser() -> argparse.ArgumentParser:
         "import-history", help="add a board's earlier lane changes to the store, once each", add_help=False
     )
     verbs.add_parser("import-board", help="import the board and its recorded runs, verified by replay", add_help=False)
-    verbs.add_parser("backfill-links", help="store each task's referenced pull requests as links", add_help=False)
     verbs.add_parser(
         "conform", help="replay the recorded history against the machines the project declares", add_help=False
     )
