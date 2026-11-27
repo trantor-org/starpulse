@@ -95,7 +95,7 @@ ALIASES: dict[str, dict[str, str]] = {
 #: Per surface, the fields it holds that are not task data: a write's own controls, a view's derived values, a row's
 #: bookkeeping.
 EXTRA: dict[str, frozenset[str]] = {
-    "create": frozenset({"ref", "task", "size", "skill"}),
+    "create": frozenset({"ref", "task", "size", "skill", "duplicateQueries", "checkDuplicates", "blocks"}),
     "edit": frozenset({"appendNotes", "planReason"}),
     "response": frozenset(
         {

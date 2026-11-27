@@ -48,7 +48,7 @@ from starpulse.views.application.commands.guard import (
     with_request,
 )
 from starpulse.views.application.commands.duplicates import Duplicates, Linked, duplicate_search
-from starpulse.views.application.commands.lifecycle import park_task
+from starpulse.views.application.commands.lifecycle import block_tasks, blocks_refusal, park_task
 from starpulse.views.application.commands.moves import (
     Dispatcher,
     Entrypoint,
@@ -388,11 +388,13 @@ def _create(
     create: TaskCreator,
     feed: BoardFeed | None,
     siblings: Mapping[str, str],
+    board: Board | None,
     cohort: bool = False,
     duplicates: Duplicates | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Create the task `spec` names through `create`, in the lane its `status` names or else the board's starting
-    lane, with each `ref:<label>` dependency replaced by the id `siblings` holds for the label."""
+    lane, with each `ref:<label>` dependency replaced by the id `siblings` holds for the label, then add it to the
+    dependencies of each task its `blocks` names; a blocked task that refuses the write is named under `unblocked`."""
     title = (spec.title or "").strip()
     if not title or len(title) > _TITLE_MAX:
         return 400, {"error": f'a create needs {{"title": "<1 to {_TITLE_MAX} characters>"}}'}
@@ -409,6 +411,11 @@ def _create(
         if unresolved := [item for item in dependencies if item.startswith(_REF)]:
             return 409, {"error": f"depends on {', '.join(unresolved)}, which no earlier task in the batch created"}
         details["dependencies"] = dependencies
+    if spec.blocks:
+        if feed is None or board is None:
+            return 409, {"error": "this board takes no blocks: it has no feed to check the blocked tasks against"}
+        if refused := blocks_refusal(feed, spec.blocks, details.get("dependencies", [])):
+            return refused
     # the id is the writer's to choose, so the lane is recorded under the id the write returns
     extra = {"cohort": True} if cohort else {}
     try:
@@ -421,12 +428,19 @@ def _create(
         return 503, {"error": "the database is locked; send the create again"}
     if not written.ok:
         return 409, {"error": written.output, "skill": written.skill, **({"duplicateSearch": searched} if searched else {})}
-    return 201, {"task": written.output}
+    if not (spec.blocks and feed is not None and board is not None):
+        return 201, {"task": written.output}
+    unblocked = block_tasks(feed, written.output, spec.blocks, who, board.read, board.edit)
+    return 201, {"task": written.output, **({"unblocked": unblocked} if unblocked else {})}
 
 
 @with_request(CreateRequest, "Creating a task")
 def create_task(
-    request: CreateRequest, create: TaskCreator, feed: BoardFeed | None = None, duplicates: Duplicates | None = None
+    request: CreateRequest,
+    create: TaskCreator,
+    feed: BoardFeed | None = None,
+    duplicates: Duplicates | None = None,
+    board: Board | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Create the task `request` names, or each of its `tasks`: the HTTP status and JSON body, which holds the new
     task's id.
@@ -436,24 +450,30 @@ def create_task(
     of two or more; a spec naming a `ref:<label>` dependency on an earlier spec's `ref` gets that
     spec's new id, and is refused when that spec was.
 
+    A spec's `blocks` names tasks that gain the new task as a dependency, a Ready one moving to Waiting; a blocked
+    task Done, archived, absent or closing a cycle refuses the create, and one whose write fails is named in
+    `unblocked` beside the new id.
+
     A `request_key` that an earlier send of the create carried answers that send's answer and files nothing, so a
     client that timed out sends the same key again without filing a second task.
 
     The card appears in its column when the board adapter next reports the task, not on this answer.
     """
-    return _REPLAYS.run(request.request_key, lambda: _created(request, create, feed, duplicates))
+    return _REPLAYS.run(request.request_key, lambda: _created(request, create, feed, duplicates, board))
 
 
 def _created(
-    request: CreateRequest, create: TaskCreator, feed: BoardFeed | None, duplicates: Duplicates | None
+    request: CreateRequest, create: TaskCreator, feed: BoardFeed | None, duplicates: Duplicates | None, board: Board | None
 ) -> tuple[int, dict[str, Any]]:
     who = who_of(request)
     if request.tasks is None:
-        return _create(request, who, create, feed, {}, duplicates=duplicates)
+        return _create(request, who, create, feed, {}, board, duplicates=duplicates)
     siblings: dict[str, str] = {}
     results = []
     for spec in request.tasks:
-        status, body = _create(spec, who, create, feed, siblings, cohort=len(request.tasks) > 1, duplicates=duplicates)
+        status, body = _create(
+            spec, who, create, feed, siblings, board, cohort=len(request.tasks) > 1, duplicates=duplicates
+        )
         if status == 201 and spec.ref:
             siblings[spec.ref] = body["task"]
         results.append(body)

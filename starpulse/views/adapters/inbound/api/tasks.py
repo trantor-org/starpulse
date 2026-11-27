@@ -153,7 +153,7 @@ def routes(api: Api) -> list[ApiRoute]:
         WriteRoute(
             "/tasks",
             ("PUT",),
-            guarded("create", whole_body(lambda client, raw: create_task(client, raw, create, feed, duplicates))),
+            guarded("create", whole_body(lambda client, raw: create_task(client, raw, create, feed, duplicates, board))),
         ),
         WriteRoute(
             "/tasks/{id:path}/links",

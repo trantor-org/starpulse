@@ -6,8 +6,8 @@ What a release keeps compatible; a minor `0.y` release may break it, and its not
 internal and can change in any release.
 
 - The `starpulse` command line: its verbs, their JSON output and their exit codes ([each verb](cli.md)). The task write
-  verbs are `task create TITLE [--brief --priority --impact --urgency --tier --milestone --profile --status --type --label --dependency --ac
-  --reference --documentation --dod]`, which
+  verbs are `task create TITLE [--brief --priority --impact --urgency --tier --milestone --profile --status --type --label --dependency --blocks
+  --ac --reference --documentation --dod]`, which
   returns `{task}`; `task edit TASK [--title --type --priority --impact --urgency --tier --milestone --label --dependency --reference
   --documentation --modified-file --description --plan --reason --notes --append-notes --final-summary --ac --reword-ac
   --remove-ac --check-ac --uncheck-ac --dod --reword-dod --remove-dod --check-dod --uncheck-dod --comment --base]`,

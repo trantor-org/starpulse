@@ -4251,6 +4251,21 @@
             ],
             "default": null
           },
+          "blocks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Tasks that gain the new task as a dependency."
+          },
           "acceptanceCriteria": {
             "anyOf": [
               {
@@ -4657,6 +4672,21 @@
               }
             ],
             "default": null
+          },
+          "blocks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Tasks that gain the new task as a dependency."
           },
           "acceptanceCriteria": {
             "anyOf": [

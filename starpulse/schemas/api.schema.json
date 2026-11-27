@@ -1048,6 +1048,21 @@
           ],
           "default": null
         },
+        "blocks": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Tasks that gain the new task as a dependency."
+        },
         "brief": {
           "anyOf": [
             {
@@ -1459,6 +1474,21 @@
             }
           ],
           "default": null
+        },
+        "blocks": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Tasks that gain the new task as a dependency."
         },
         "brief": {
           "$ref": "#/$defs/Brief"

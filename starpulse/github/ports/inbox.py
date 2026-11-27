@@ -9,7 +9,8 @@ __all__ = ["Inbox", "InboxError"]
 
 
 class InboxError(Exception):
-    """The delivery could not be made durable; the listener answers 503 so GitHub keeps it as failed."""
+    """The delivery could not be made durable; the listener answers 503 so GitHub keeps it as failed, and saves it
+    again once the store takes writes."""
 
 
 class Inbox(Protocol):

@@ -47,6 +47,7 @@ def create_flags(sub: argparse.ArgumentParser) -> None:
     )
     sub.add_argument("--label", action="append", help="a label; repeat for several")
     sub.add_argument("--dependency", action="append", help="a task it depends on; repeat for several")
+    sub.add_argument("--blocks", action="append", help="a task that gains this one as a dependency; repeat for several")
     sub.add_argument("--ac", action="append", help="an Acceptance Criterion; repeat for several, in order")
     sub.add_argument("--status", help="the lane to open it in, else the board's first (`Waiting`)")
     sub.add_argument("--type", help="the task's type (`bug`)")

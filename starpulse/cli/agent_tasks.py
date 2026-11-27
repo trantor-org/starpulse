@@ -456,6 +456,7 @@ def _created_task(args: argparse.Namespace) -> dict[str, Any]:
         "profile": args.profile,
         "labels": args.label,
         "dependencies": args.dependency,
+        "blocks": args.blocks,
         "acceptanceCriteria": args.ac,
         "status": args.status,
         "type": args.type,
@@ -483,7 +484,9 @@ def task_find(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
 def task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """Create the task the command line names, or each spec of the JSON list in `--batch` in one write: the new key, or
     the keys created as a list under `task`, or a refusal naming them and each refused spec's position and reason when any was refused.
-    A `--source` an open task already holds returns that task under `task`, with `existing` true, and writes nothing."""
+    A `--source` an open task already holds returns that task under `task`, with `existing` true, and writes nothing.
+    A created task that a `--blocks` task does not depend on is a refusal carrying the created `task` and, by new task,
+    the `unblocked` tasks and why."""
     base, path = agent_wire.server_url(args.server, environ), "/api/tasks"
     if args.batch:
         return _create_batch(args, environ, base, path)
@@ -492,7 +495,19 @@ def task_create(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[st
     if args.source and (held := _open_with_source(args, environ, args.source)):
         return {"task": held[0]["id"], "existing": True}
     status, reply = agent_wire.put_keyed(base, path, {**_created_task(args), **writer(args, environ)}, args.request_key)
-    return {"task": record_call(base, path, status, reply, ok=(201,))["task"]}
+    created = record_call(base, path, status, reply, ok=(201,))
+    if unblocked := created.get("unblocked"):
+        unblocked = {created["task"]: unblocked}
+        raise agent_wire.CliError("refused", _not_blocking(unblocked), task=created["task"], unblocked=unblocked)
+    return {"task": created["task"]}
+
+
+def _not_blocking(unblocked: dict[str, dict[str, str]]) -> str:
+    return "; ".join(
+        f"{task} was created but {name} does not depend on it: {why}"
+        for task, names in unblocked.items()
+        for name, why in names.items()
+    )
 
 
 def _create_batch(args: argparse.Namespace, environ: Mapping[str, str], base: str, path: str) -> dict[str, Any]:
@@ -502,15 +517,25 @@ def _create_batch(args: argparse.Namespace, environ: Mapping[str, str], base: st
     status, reply = agent_wire.put_keyed(base, path, {"tasks": specs, **writer(args, environ)}, args.request_key)
     results = record_call(base, path, status, reply)["results"]
     created = [result["task"] for result in results if "task" in result]
+    unblocked = {result["task"]: result["unblocked"] for result in results if result.get("unblocked")}
     refused = {str(position): result["error"] for position, result in enumerate(results, 1) if "error" in result}
+    extra = {"unblocked": unblocked} if unblocked else {}
     if refused:
         message = f"{len(refused)} of {len(specs)} tasks refused: " + "; ".join(
             f"#{position} {error}" for position, error in refused.items()
         )
+        message += f"; {_not_blocking(unblocked)}" if unblocked else ""
         searched = {str(at): found for at, result in enumerate(results, 1) if (found := result.get("duplicateSearch"))}
         raise agent_wire.CliError(
-            "refused", message, created=created, refused=refused, **({"duplicateSearch": searched} if searched else {})
+            "refused",
+            message,
+            created=created,
+            refused=refused,
+            **extra,
+            **({"duplicateSearch": searched} if searched else {}),
         )
+    if unblocked:
+        raise agent_wire.CliError("refused", _not_blocking(unblocked), task=created, **extra)
     checked = [result for result in results if "open" in result]
     return {"task": created, **({"checked": checked[0]} if checked else {})}
 

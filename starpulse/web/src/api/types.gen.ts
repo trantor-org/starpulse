@@ -1745,6 +1745,10 @@ export interface CreateRequest {
   actor?: string | null;
   adrNeeded?: string | null;
   assignee?: string | null;
+  /**
+   * Tasks that gain the new task as a dependency.
+   */
+  blocks?: string[] | null;
   brief?: Brief | null;
   /**
    * Answer the duplicate search's record and file nothing.
@@ -1846,6 +1850,10 @@ export interface CreateSpec {
   acceptanceCriteria?: string[] | null;
   adrNeeded?: string | null;
   assignee?: string | null;
+  /**
+   * Tasks that gain the new task as a dependency.
+   */
+  blocks?: string[] | null;
   brief: Brief;
   /**
    * Answer the duplicate search's record and file nothing.
