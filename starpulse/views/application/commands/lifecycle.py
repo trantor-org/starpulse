@@ -101,12 +101,8 @@ def _wait_on_tasks(feed: BoardFeed, task: str, current: dict[str, Any], ids: Any
     for name in waits:
         if name.casefold() == task.casefold():
             raise _RefusalError(409, {"error": f"{task} cannot wait on itself"})
-        if feed.is_done(name):
-            raise _RefusalError(409, {"error": f"{name} is already Done: there is nothing to wait for"})
-        if held_task(feed, name) is None:
-            if feed.is_archived(name):
-                raise _RefusalError(409, {"error": f"{name} is archived, so it never reaches Done"})
-            raise _RefusalError(*not_held(feed, name))
+        if refused := _closed(feed, name, "there is nothing to wait for"):
+            raise _RefusalError(*refused)
         if route := _route_to(feed, name, task):
             chain = " -> ".join([task, *route])
             raise _RefusalError(409, {"error": f"{task} cannot wait on {name}: it closes a cycle {chain}"})
@@ -117,6 +113,16 @@ def _wait_on_tasks(feed: BoardFeed, task: str, current: dict[str, Any], ids: Any
         "dependencies": list(dict.fromkeys([*current["dependencies"], *waits])),
         **({"dependencyNeeds": list(dict.fromkeys([*current.get("dependencyNeeds", []), *needs]))} if needs else {}),
     }
+
+
+def _closed(feed: BoardFeed, name: str, done: str) -> tuple[int, dict[str, Any]] | None:
+    if feed.is_done(name):
+        return 409, {"error": f"{name} is already Done: {done}"}
+    if held_task(feed, name) is not None:
+        return None
+    if feed.is_archived(name):
+        return 409, {"error": f"{name} is archived, so it never reaches Done"}
+    return not_held(feed, name)
 
 
 def _route_to(feed: BoardFeed, start: str, target: str) -> list[str] | None:
@@ -131,6 +137,47 @@ def _route_to(feed: BoardFeed, start: str, target: str) -> list[str] | None:
                 seen.add(name.casefold())
                 pending.append([*route, name])
     return None
+
+
+def blocks_refusal(feed: BoardFeed, blocks: list[str], dependencies: list[str]) -> tuple[int, dict[str, Any]] | None:
+    """Why a new task depending on `dependencies` cannot block the tasks `blocks` names, or None.
+
+    Each must be open in Ready or a lane a park on a task takes, and none may be a task the new one reaches through its
+    dependencies, so the create refuses before writing anything."""
+    roles = feed.roles
+    lanes = (roles.ready, roles.waiting, roles.working, roles.review, roles.attention)
+    for name in dict.fromkeys(blocks):
+        if refused := _closed(feed, name, "there is nothing left to block"):
+            return refused
+        if (agent := held_task(feed, name) or {}).get("state") not in lanes:
+            return 409, {"error": f"{name} is {agent['state']}: only a Ready, Waiting or started task can be blocked"}
+        for dependency in dependencies:
+            if route := _route_to(feed, dependency, name):
+                chain = " -> ".join(["the new task", *route, "the new task"])
+                return 409, {"error": f"the new task cannot block {name}: it closes a cycle {chain}"}
+    return None
+
+
+def block_tasks(
+    feed: BoardFeed, task: str, blocks: list[str], who: Who, read: TaskReader, edit: TaskEditor
+) -> dict[str, str]:
+    """Add `task` to the dependencies of each task `blocks` names, after the ones it has: the error of each write the
+    board refused, by task.
+
+    A Ready task moves to Waiting in the same write, as the board's rules require of an open dependency; any other gets
+    the write `park --until-task` makes, so the task actor moves a started one to Waiting."""
+    column = feed.roles.waiting or ""
+    unblocked = {}
+
+    def plan(current: dict[str, Any]) -> dict[str, Any]:
+        return {"dependencies": list(dict.fromkeys([*current["dependencies"], task]))} | _waiting_description(current)
+
+    for name in dict.fromkeys(blocks):
+        ready = bool(column) and (held_task(feed, name) or {}).get("state") == feed.roles.ready
+        status, body = _lifecycle_edit(feed, name, column, who, f"{task} blocks this task", read, edit, plan, moves=ready)
+        if status != 200:
+            unblocked[name] = body["error"]
+    return unblocked
 
 
 def _open_criterion(feed: BoardFeed, need: str) -> None:

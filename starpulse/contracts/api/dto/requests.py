@@ -191,6 +191,7 @@ class CreateSpec(_Request):
     skill: str | None = None
     labels: list[str] | None = None
     dependencies: list[str] | None = None
+    blocks: list[str] | None = Field(None, description="Tasks that gain the new task as a dependency.")
     acceptanceCriteria: list[str] | None = None
     references: list[str] | None = None
     documentation: list[DocLink] | None = None
@@ -216,7 +217,7 @@ class CreateSpec(_Request):
             raise ValueError(f"must be one of {', '.join(TIERS)}")
         return value and value.lower()
 
-    @field_validator(*CREATE_LISTS, "duplicateQueries")
+    @field_validator(*CREATE_LISTS, "duplicateQueries", "blocks")
     @classmethod
     def _kept(cls, value: list[str] | None, info: ValidationInfo) -> list[str] | None:
         if value is None:

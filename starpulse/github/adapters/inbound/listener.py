@@ -1,9 +1,13 @@
 """The intake listener: a signed GitHub delivery is saved to the inbox before it is answered 202.
 
+A delivery the store refuses (a migration holding its write lock) is answered 503 and saved again as soon as the store
+takes writes, so its fact reaches the consumers without waiting for the sweeper's reconcile to redeliver it.
+
 `bind` builds the server; `start` is the `github` context `starpulse serve` supervises. It saves to the inbox tables of
 the main store and reaches nothing else of it.
 """
 
+import collections
 import functools
 import logging
 import os
@@ -28,10 +32,70 @@ __all__ = ["bind", "start"]
 log = logging.getLogger("starpulse.github")
 #: Seconds a request may take to send its declared body, in all and between two reads, before it is dropped.
 READ_TIMEOUT = 15
+#: Seconds between two saves of a delivery the store refused; a save waiting on a lock returns as soon as it clears.
+RETRY_S = 5.0
+#: Seconds the oldest refused delivery is saved again before every held one is left to the reconcile redelivery, which
+#: runs every 30 minutes, so a delivery the store never takes stops holding up the ones behind it.
+GIVE_UP_S = 900.0
+#: Refused deliveries held at most; one past it is left to the reconcile redelivery.
+HELD_MAX = 1000
+
+
+class _Refused:
+    """The deliveries the store refused, saved again in arrival order by one thread as soon as it takes writes, until
+    `stop` is set or the oldest has waited `GIVE_UP_S`. They live in memory only: each was answered 503, so GitHub lists
+    it failed and the sweeper's reconcile redelivers whatever this gave up. One thread holds one connection of the
+    shared engine however many wait."""
+
+    def __init__(self, inbox: Inbox, stop: threading.Event) -> None:
+        self._inbox = inbox
+        self._stop = stop
+        self._held: collections.deque[Delivery] = collections.deque()
+        self._lock = threading.Lock()
+
+    def add(self, delivery: Delivery) -> None:
+        with self._lock:
+            if len(self._held) >= HELD_MAX:
+                log.warning("delivery %s left to the reconcile redelivery: %d already held", delivery.delivery_id, HELD_MAX)
+                return
+            self._held.append(delivery)
+            if len(self._held) == 1:
+                threading.Thread(target=self._drain, name="github-intake-resave", daemon=True).start()
+
+    def _drain(self) -> None:
+        """Runs while `_held` is not empty, so `add` starts the next thread only once this one is gone: `_saved_all`
+        ends it under the lock that saw `_held` empty, and any other end empties `_held` before it returns."""
+        try:
+            if self._saved_all():
+                return
+        except Exception:
+            log.exception("saving refused deliveries again failed")
+        with self._lock:
+            log.warning("%d refused deliveries left to the reconcile redelivery", len(self._held))
+            self._held.clear()
+
+    def _saved_all(self) -> bool:
+        with self._lock:
+            delivery = self._held[0]
+        since = time.monotonic()
+        while True:
+            try:
+                self._inbox.save(delivery)
+            except InboxError:
+                if self._stop.wait(RETRY_S) or time.monotonic() - since >= GIVE_UP_S:
+                    return False
+                continue
+            log.info("delivery %s saved after the store refused it", delivery.delivery_id)
+            with self._lock:
+                self._held.popleft()
+                if not self._held:
+                    return True
+                delivery = self._held[0]
+            since = time.monotonic()
 
 
 def _handler(
-    settings: GitHub, secret: bytes, inbox: Inbox, verdicts: metrics.Verdicts
+    settings: GitHub, secret: bytes, inbox: Inbox, verdicts: metrics.Verdicts, refused: _Refused
 ) -> type[BaseHTTPRequestHandler]:
     class Intake(BaseHTTPRequestHandler):
         #: A client that declares a body and stops sending it frees its thread when the read times out.
@@ -80,8 +144,9 @@ def _handler(
             try:
                 saved = inbox.save(delivery)
             except InboxError:
-                log.exception("delivery %s was not saved", delivery.delivery_id)
+                log.exception("delivery %s was not saved; saving it again once the store takes writes", delivery.delivery_id)
                 verdicts.count(delivery.event, "error")
+                refused.add(delivery)
                 return 503
             verdicts.count(delivery.event, "accepted" if saved else "duplicate")
             return 202
@@ -114,10 +179,14 @@ def bind(
     inbox: Inbox,
     backlogs: Callable[[], dict[str, Backlog]] | None = None,
     listening: socket.socket | None = None,
+    *,
+    stop: threading.Event,
 ) -> ThreadingHTTPServer:
     """The listener on `listening`, else on `settings`' address, signed with `secret` and saving to `inbox`, its
-    `/metrics` gauging the backlogs `backlogs` reads. Raises `OSError` for an address that cannot be bound."""
-    handler = _handler(settings, secret, inbox, metrics.Verdicts(backlogs))
+    `/metrics` gauging the backlogs `backlogs` reads. A delivery the inbox refuses is saved again until `stop` is set.
+    Raises `OSError` for an address that cannot be bound."""
+    refused = _Refused(inbox, stop)
+    handler = _handler(settings, secret, inbox, metrics.Verdicts(backlogs), refused)
     if listening is not None:
         return _Held(listening, handler)
     return ThreadingHTTPServer((settings.host, settings.port), handler)
@@ -138,7 +207,7 @@ def start(
     secret = os.environ.get(settings.secret_env)
     if not secret:
         raise ValueError(f"github: the environment variable {settings.secret_env} holds no webhook secret")
-    server = bind(settings, secret.encode(), SqlInbox(engine), functools.partial(backlogs, engine), listening)
+    server = bind(settings, secret.encode(), SqlInbox(engine), functools.partial(backlogs, engine), listening, stop=stop)
 
     def close() -> None:
         stop.wait()
