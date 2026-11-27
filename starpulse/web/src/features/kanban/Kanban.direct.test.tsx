@@ -72,6 +72,14 @@ describe("a Kanban opened on a direct task link", () => {
     expect(host.querySelectorAll("#cols .card").length).toBe(3);
   });
 
+  it("keeps the task in the address until the snapshot lands, then removes it with the modal open", () => {
+    mount("?view=kanban&task=TASK-1", { ...hud, cards: [], tree: null } as unknown as HudState);
+    expect(location.search).toBe("?view=kanban&task=TASK-1");
+    mount("?view=kanban&task=TASK-1", { ...hud, tree: {} } as unknown as HudState);
+    expect(location.search).toBe("?view=kanban");
+    expect(host.querySelector(".mh")?.textContent).toContain("TASK-1");
+  });
+
   it("still draws the whole board behind the modal", () => {
     mount("?view=kanban&task=TASK-1");
     expect(host.querySelectorAll("#cols .card").length).toBe(3);
