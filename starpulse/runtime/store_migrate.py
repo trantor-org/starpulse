@@ -129,6 +129,7 @@ def maintain(
         if fold:
             projector = Projector(engine, EventStore(engine), log=log, drawn=machines, keys=keys)
             projector.catch_up()
+            projector.restate_all()
             build_snapshots(engine)
         if base is not None:
             import_files(log, base, base / (state_dir or ""))

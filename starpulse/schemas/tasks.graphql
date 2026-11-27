@@ -93,6 +93,8 @@ type Task {
   substate: String
   """The skill the task is in, null when none holds it."""
   skill: TaskSkill
+  """How many of its dependencies are open: neither in a done lane nor archived; one with no row counts."""
+  openDependencies: Int!
   """A person took the session over: the task shows as interactive."""
   interactive: Boolean!
   """What the holder's session is doing, for a held working task; null for any other."""

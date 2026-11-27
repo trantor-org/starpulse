@@ -44,7 +44,7 @@ from graphql.execution import get_argument_values, get_variable_values
 from starlette.requests import Request
 from starlette.responses import Response
 
-from starpulse.board.model.view import phase_of, skill_of
+from starpulse.board.model.view import skill_of
 from starpulse.contracts import task_graphql
 from starpulse.contracts.adapters import Move
 from starpulse.github.model.pulls import pull_url
@@ -277,12 +277,8 @@ async def _record(agent: dict, info: GraphQLResolveInfo, *, lean: bool = False) 
 
 
 def _read_placing(feed: Any) -> dict:
-    """The slice of the stored body a task's phase and interactive mark read: the machines with their rows, and the roles."""
-    rows: dict[str, list[dict]] = {}
-    for machine, agent in feed.machine_agents():
-        rows.setdefault(machine, []).append(agent)
-    flows = [{"name": name, "machine": machine, "agents": rows.get(name, [])} for name, machine in feed.machines.items()]
-    return {"flows": flows, "roles": feed.roles.wire(), "interactive": feed.interactive()}
+    """The task ids holding a session now, read once per query: the one field a card still reads live."""
+    return {"interactive": feed.interactive()}
 
 
 async def _placing(info: GraphQLResolveInfo) -> dict:
@@ -294,19 +290,26 @@ async def _placing(info: GraphQLResolveInfo) -> dict:
 
 
 @task.field("phase")
-async def _phase(agent: dict, info: GraphQLResolveInfo) -> str | None:
-    return phase_of(agent, await _placing(info))[0]
+def _phase(agent: dict, _: GraphQLResolveInfo) -> str | None:
+    return agent["stored"]["phase"]
 
 
 @task.field("substate")
-async def _substate(agent: dict, info: GraphQLResolveInfo) -> str | None:
-    return phase_of(agent, await _placing(info))[1]
+def _substate(agent: dict, _: GraphQLResolveInfo) -> str | None:
+    return agent["stored"]["substate"]
 
 
 @task.field("skill")
-async def _skill(agent: dict, info: GraphQLResolveInfo) -> dict | None:
-    _, substate, flow = phase_of(agent, await _placing(info))
-    return skill_of(substate, flow)
+def _skill(agent: dict, info: GraphQLResolveInfo) -> dict | None:
+    """The skill machine the stored flow name opens, drawn from the feed's machines."""
+    name = agent["stored"]["skill"]
+    machine = info.context["feed"].machines.get(name) if name else None
+    return None if machine is None else skill_of(agent["stored"]["substate"], {"name": name, "machine": machine})
+
+
+@task.field("openDependencies")
+def _open_dependencies(agent: dict, _: GraphQLResolveInfo) -> int:
+    return agent["stored"]["open_dependencies"] or 0
 
 
 @task.field("interactive")
@@ -380,18 +383,40 @@ async def _spend(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
 
 @task.field("prs")
 async def _prs(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
-    """The PR store's records of the pull requests the task cites: a lookup by key, no GitHub read."""
-    context = info.context
-
-    def read(cards: list[dict]) -> dict[str, list[dict]]:
-        return {card["id"]: task_pulls(context["pulls"], context["feed"].cited(card["id"])) for card in cards}
-
-    return await _listed(agent, info, "prs", read)
+    """The pull requests the task's row holds, the scalar fields a card draws: one read of every card's row, no pull store read."""
+    feed = info.context["feed"]
+    return await _listed(agent, info, "prs", lambda cards: feed.stored_prs([card["id"] for card in cards]))
 
 
-@pull_request.field("files")
-def _files(record: dict, _: GraphQLResolveInfo) -> list[str] | None:
-    return (record["detail"] or {}).get("files")
+def _whole(record: dict, info: GraphQLResolveInfo) -> asyncio.Future[list[dict]]:
+    """The pull store's whole record of `record`'s pull request, read once per query however many fields ask."""
+    key = (record["repo"], record["number"])
+    wholes = info.context.setdefault("wholes", {})
+    if key not in wholes:
+        wholes[key] = asyncio.ensure_future(_worker(info, task_pulls, info.context["pulls"], [pull_url(*key)]))
+    return wholes[key]
+
+
+def _lazy(field: str, *path: str) -> None:
+    """Resolve a pull request's `field` from `path` of its own record when that holds it, else of the pull store's whole
+    record: a task's row holds a card's scalar fields only, so the drawer's fields are read when asked."""
+    first = path[0] if path else field
+
+    async def resolve(record: dict, info: GraphQLResolveInfo) -> Any:
+        if first not in record:
+            found = await _whole(record, info)
+            record = found[0] if found else {}
+        value: Any = record
+        for step in path or (field,):
+            value = (value or {}).get(step)
+        return value
+
+    pull_request.field(field)(resolve)
+
+
+for _field in ("baseRefName", "headRefName", "headRefOid", "body", "requiredChecks", "unresolvedThreads", "updatedAt", "fetchedAt"):
+    _lazy(_field)
+_lazy("files", "detail", "files")
 
 
 def _history_key(agent: dict, info: GraphQLResolveInfo) -> str:

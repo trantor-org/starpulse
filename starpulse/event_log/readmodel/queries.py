@@ -31,7 +31,18 @@ SUMMARY = (
 
 
 #: What a card on the page draws that a delta summary leaves out; `meta` carries the Task's profile.
-CARD = (*SUMMARY, tasks.c.description, tasks.c.final_summary, tasks.c.dependencies, tasks.c.references, tasks.c.meta)
+CARD = (
+    *SUMMARY,
+    tasks.c.description,
+    tasks.c.final_summary,
+    tasks.c.dependencies,
+    tasks.c.references,
+    tasks.c.meta,
+    tasks.c.phase,
+    tasks.c.substate,
+    tasks.c.skill,
+    tasks.c.open_dependencies,
+)
 
 
 def live(done: str, since: float) -> ColumnElement[bool]:
@@ -76,15 +87,20 @@ def linked(uuids: Collection[str], roles: Collection[str]) -> Select[Any]:
     )
 
 
-def citing(ref: str) -> Select[Any]:
-    """The unarchived Tasks with a `delivers` or `cites` link to the change `ref`, in id order: a seek of the links' reference."""
+def cited() -> Select[Any]:
+    """The unarchived Tasks with a `delivers` or `cites` link to any change, in id order."""
     return (
         select(tasks.c.id)
         .distinct()
         .join(task_links, task_links.c.task == tasks.c.uuid)
-        .where(tasks.c.archived == false(), task_links.c.ref == ref, task_links.c.role.in_(("delivers", "cites")))
+        .where(tasks.c.archived == false(), task_links.c.role.in_(("delivers", "cites")))
         .order_by(tasks.c.id)
     )
+
+
+def citing(ref: str) -> Select[Any]:
+    """The unarchived Tasks with a `delivers` or `cites` link to the change `ref`, in id order: a seek of the links' reference."""
+    return cited().where(task_links.c.ref == ref)
 
 
 def _cold(done: str, since: float) -> ColumnElement[bool]:

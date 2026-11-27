@@ -6593,6 +6593,19 @@
           ],
           "default": null
         },
+        "stored": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A task's phase, substate, skill and open-dependency count, as its read-model row stores them."
+        },
         "task": {
           "anyOf": [
             {

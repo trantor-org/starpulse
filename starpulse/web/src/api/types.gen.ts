@@ -805,6 +805,12 @@ export interface RawTask {
   state: string;
   steps?: number | null;
   /**
+   * A task's phase, substate, skill and open-dependency count, as its read-model row stores them.
+   */
+  stored?: {
+    [k: string]: unknown;
+  } | null;
+  /**
    * A machine's task: the id of the Backlog task its events name.
    */
   task?: string | null;

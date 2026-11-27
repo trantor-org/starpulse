@@ -8,11 +8,12 @@ from sqlalchemy.dialects import sqlite
 
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.checkpoints import Checkpoints
-from starpulse.event_log.readmodel import rows, task_uuid
+from starpulse.event_log.readmodel import card_fields, rows, task_uuid
 from starpulse.event_log.readmodel.fold import Row, apply
 from starpulse.event_log.readmodel.machine_fold import Placer, event_of
-from starpulse.event_log.readmodel.tables import machine_tasks
+from starpulse.event_log.readmodel.tables import machine_tasks, tasks
 from starpulse.event_log.store import EventStore, StoredEvent
+from starpulse.machine_engine.model.state_roles import StateRoles
 
 if TYPE_CHECKING:
     from starpulse.event_log.event_log import EventLog, Tail
@@ -61,12 +62,16 @@ class Projector:
         log: EventLog | None = None,
         drawn: Mapping[str, dict] | None = None,
         keys: TaskKeys | None = None,
+        roles: StateRoles | None = None,
     ) -> None:
         self._engine = engine
         self._store = store
         self._search = search
         self._log = log
         self._placer = Placer(drawn, keys) if drawn is not None else None
+        self._drawn = drawn
+        #: The roles a card's phase and open-dependency count read: the board's own, unless given. None with no board drawn.
+        self._roles = roles or (StateRoles.of_drawn(drawn["board"]) if drawn and "board" in drawn else None)
         self._checkpoints = Checkpoints(engine)
 
     def catch_up(self) -> int:
@@ -103,7 +108,19 @@ class Projector:
             for task in tasks:
                 self._fold(self._store.read_in(db, "task", task), held, lambda _: (None, 0))
             rows.save_all(db, held.values())
+            self._restate(db, held)
         return sorted(held)
+
+    def restate_all(self) -> None:
+        """Restate every task's card fields: what a store folded before they were kept holds none until its task changes."""
+        with self._engine.begin() as db:
+            db.exec_driver_sql("BEGIN IMMEDIATE")
+            ids = list(db.execute(select(tasks.c.id)).scalars())
+            for start in range(0, len(ids), BATCH):
+                self._restate(db, ids[start : start + BATCH])
+
+    def _restate(self, db: Connection, folded: Collection[str]) -> None:
+        card_fields.restate(db, folded, self._drawn, self._roles)
 
     def _tail(self, after: int) -> Tail:
         from starpulse.event_log.event_log import Tail  # noqa: PLC0415 - the log's stack loads when a log opens
@@ -123,6 +140,7 @@ class Projector:
                     break  # another folder took this batch: the next pass folds from its cursor
                 self._fold(batch, folded_rows, lambda task: rows.load_at(db, task))
                 rows.save_all(db, folded_rows.values())
+                self._restate(db, folded_rows)
                 position = batch[-1].position
                 self._checkpoints.save(CHECKPOINT, position, conn=db)
             folded += len(batch)
@@ -139,6 +157,7 @@ class Projector:
             with self._engine.begin() as db:
                 self._place(batch, placed, lambda *key: self._load_machine(db, *key))
                 self._save_machines(db, placed)
+                card_fields.restate_phase(db, {task for _, task in placed}, self._drawn, self._roles)
                 self._checkpoints.save(MACHINE_CHECKPOINT, batch[-1][0], conn=db)
 
     def _place(

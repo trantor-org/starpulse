@@ -1,16 +1,16 @@
 """The read model's reads: what the page, the agent CLI, search and the Scheduler ask of the Task tables."""
 
 import threading
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy import Connection, Engine, Select, func, or_, select, union_all
 
-from starpulse.event_log.readmodel import queries, rows, task_uuid
+from starpulse.event_log.readmodel import card_fields, queries, rows, task_uuid
 from starpulse.event_log.readmodel.declared import Declared
 from starpulse.event_log.readmodel.fold import Row
-from starpulse.event_log.readmodel.tables import board_keys, machine_tasks
+from starpulse.event_log.readmodel.tables import board_keys, machine_tasks, tasks
 
 
 class ReadModel:
@@ -120,6 +120,24 @@ class ReadModel:
     def citing(self, ref: str) -> list[str]:
         """The ids of unarchived Tasks with a `delivers` or `cites` link to the change `ref`, in id order."""
         return self._ids(queries.citing(ref))
+
+    def cited(self) -> list[str]:
+        """The ids of unarchived Tasks with a `delivers` or `cites` link to any change, in id order."""
+        return self._ids(queries.cited())
+
+    def stored_prs(self, ids: Collection[str]) -> dict[str, list[dict[str, Any]]]:
+        """The pull requests each of `ids` holds (`store_prs`), by task id; a task with no row is left out."""
+        if not ids:
+            return {}
+        with self._reading() as db:
+            return {task: found or [] for task, found in db.execute(select(tasks.c.id, tasks.c.prs).where(tasks.c.id.in_(list(ids))))}
+
+    def store_prs(self, prs: Mapping[str, list[dict[str, Any]]]) -> None:
+        """Set the pull requests each task's row holds (`prs`, by task id): the card's scalar fields of each, so a list
+        reads them with no pull store lookup. The pull store's saves and a task's links are what change them, so this
+        is the one write the projector does not make."""
+        with self._engine.begin() as db:
+            card_fields.store_prs(db, prs)
 
     def held_states(self) -> set[str]:
         """The states unarchived Tasks hold, Done ones of any age included."""
