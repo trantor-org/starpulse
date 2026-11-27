@@ -23,8 +23,6 @@ from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.wake import StopEvent
 from starpulse.flow_metrics.adapters.outbound.history import HistoryStore
 from starpulse.github.adapters.inbound import reconcile
-from starpulse.board.adapters.native_scan import native_keys
-from starpulse.pulls.adapters.outbound.github import GitHubAdapter, urls_of
 from starpulse.github.adapters.outbound.app_jwt import app_jwt
 from starpulse.github.adapters.outbound.cursors import SqlCursors
 from starpulse.github.adapters.outbound.inbox import SqlInbox
@@ -36,6 +34,7 @@ from starpulse.github.model.github_config import GitHub
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
 from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR
+from starpulse.pulls.adapters.outbound.github import GitHubAdapter, urls_of
 from starpulse.pulls.model.ci import CiError, attach
 from starpulse.runtime import read_model_follow
 from starpulse.runtime.config import Config, ConfigError, runs_adapter
@@ -165,7 +164,7 @@ def assemble(
         readable=board.readable,
         activity=_holder_activity(config),
         default_profiles=profile_matrix(rows or Policy()),
-        change_url=urls_of({"github": GitHubAdapter(keys=board.keys or native_keys())}),
+        change_url=urls_of({"github": GitHubAdapter()}),
     )
     return board, feed
 

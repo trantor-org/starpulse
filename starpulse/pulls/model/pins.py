@@ -15,6 +15,8 @@ from functools import cache
 from importlib import metadata
 from typing import Protocol
 
+from starpulse.github.model.pulls import PullAt, pull_at
+
 __all__ = ["LiveBuild", "Pins", "Repo", "build_commit", "contained", "link", "running_commit"]
 
 @dataclass(frozen=True)
@@ -27,9 +29,6 @@ class Repo:
     """Where the parent repository holds it as a submodule."""
     applied_by: str
     """How its merges are applied; only `pin-bump`."""
-
-
-_PULL = re.compile(r"https://github\.com/([^/\s]+)/([^/\s]+)/pull/\d+/?")
 
 
 @dataclass(frozen=True)
@@ -82,8 +81,8 @@ def link(
     """
     pinned = {repo.name: repo.path for repo in repos}
 
-    def path_of(found: re.Match[str]) -> str | None:
-        return pinned.get(f"{found[1]}/{found[2]}") or pinned.get(found[2])
+    def path_of(found: PullAt) -> str | None:
+        return pinned.get(found.repo) or pinned.get(found.name)
 
     merged = sorted(
         (
@@ -92,7 +91,7 @@ def link(
             if record.get("merged")
             and record.get("merge_sha")
             and record.get("merged_at")
-            and (found := _PULL.fullmatch(record["url"]))
+            and (found := pull_at(record["url"]))
         ),
         key=lambda item: item[0],
     )
@@ -105,8 +104,8 @@ def link(
         for later, parent_found, parent in parents:
             if later < at:
                 continue
-            at_parent = pointer(f"{parent_found[1]}/{parent_found[2]}", parent["merge_sha"], path)
-            if at_parent and reaches(f"{found[1]}/{found[2]}", child["merge_sha"], at_parent):
+            at_parent = pointer(parent_found.repo, parent["merge_sha"], path)
+            if at_parent and reaches(found.repo, child["merge_sha"], at_parent):
                 applied = parent["merge_sha"]
                 break
         out[child["url"]]["applied_by"] = applied

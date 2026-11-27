@@ -22,15 +22,14 @@ from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
 from starpulse.board.adapters.holder_idle import started as started_by
-from starpulse.contracts.api.dto.milestones import RetiredTask
-from starpulse.views.adapters.inbound.api.answering import answer, client, on_worker, query, reading, seams
-from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, WriteRoute
-from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole, whole_body
-from starpulse.board.adapters.native_scan import native_keys
 from starpulse.board.adapters.task_links import TaskLinks
+from starpulse.contracts.api.dto.milestones import RetiredTask
 from starpulse.event_log.readmodel.read_model import ReadModel
 from starpulse.event_log.store import EventStore
 from starpulse.pulls.adapters.outbound.github import GitHubAdapter
+from starpulse.views.adapters.inbound.api.answering import answer, client, on_worker, query, reading, seams
+from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.writing import TaskWrite, guarded, whole, whole_body
 from starpulse.views.application.commands.links import delete_link, put_link
 from starpulse.views.application.commands.moves import (
     start_task,
@@ -38,9 +37,9 @@ from starpulse.views.application.commands.moves import (
 from starpulse.views.application.commands.tasks import (
     create_task,
     delete_task,
+    put_task,
     retired_list,
     retired_page,
-    put_task,
     task_record,
 )
 from starpulse.views.application.queries.responses import cited_pulls
@@ -143,7 +142,7 @@ def routes(api: Api) -> list[ApiRoute]:
         ),
     }
     links, tasks, store = TaskLinks(api.history.engine), ReadModel(api.history.engine), EventStore(api.history.engine)
-    forges = {"github": GitHubAdapter(keys=board.keys or native_keys())}
+    forges = {"github": GitHubAdapter()}
     return [
         ReadRoute("/task/{id:path}", task),
         ReadRoute("/task-records", task_records, params=frozenset({"ids"})),

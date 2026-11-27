@@ -25,6 +25,7 @@ from typing import Any, NamedTuple
 
 from starpulse.board.model import entry, post_merge_checks, readable
 from starpulse.board.model.sections import fenced_list, under
+from starpulse.github.model.pulls import pull_page
 from starpulse.machine_engine.model.transitions import lane_id
 
 __all__ = ["Record", "Rule", "Verdict", "evaluate", "load", "readable_verdict", "refusal", "standing_refusal"]
@@ -486,7 +487,7 @@ def _pull_proof(spec: Mapping[str, Any], where: str) -> Primitive:
     def named(line: str, repo: str, number: str, alone: bool) -> bool:
         owner, _, name = repo.partition("/")
         spelled = [
-            rf"github\.com/{re.escape(repo)}/pull/{number}(?!\d)",
+            rf"{re.escape(pull_page(repo, number))}(?!\d)",
             rf"(?<![\w/#-])(?:{re.escape(owner)}/)?{re.escape(name)}#{number}(?!\d)",
         ]
         if alone:  # a bare number names the one pull request that holds it

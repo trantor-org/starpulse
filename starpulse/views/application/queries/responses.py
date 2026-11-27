@@ -2,7 +2,6 @@
 
 import logging
 import math
-import re
 import time
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
@@ -13,6 +12,7 @@ from starpulse.board.model.seam import (
 )
 from starpulse.flow_metrics.model.level_metrics import WindowPastHistory
 from starpulse.flow_metrics.model.spend import task_spend
+from starpulse.github.model.pulls import pull_at
 from starpulse.views.model.encoding import encode
 
 logger = logging.getLogger(__name__)
@@ -64,13 +64,9 @@ def _done_card(stub: dict, record: Mapping[str, Any]) -> dict:
     return named | {"model": record.get("profile") or "", "entered": stub["entered"]} | card
 
 
-#: A GitHub pull request URL, which a task links to: its `owner/repo` and number.
-_PULL_URL = re.compile(r"https://github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)/?")
-
-
 def _cited(links: list[str]) -> list[tuple[str, int]]:
     """The (repository, number) of each pull request page in `links`."""
-    return [(match[1], int(match[2])) for match in map(_PULL_URL.fullmatch, links) if match]
+    return [(pull.repo, pull.number) for pull in map(pull_at, links) if pull]
 
 
 def _without_bodies(records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
