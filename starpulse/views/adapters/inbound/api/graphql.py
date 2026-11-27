@@ -47,6 +47,7 @@ from starlette.responses import Response
 from starpulse.board.model.view import phase_of, skill_of
 from starpulse.contracts import task_graphql
 from starpulse.contracts.adapters import Move
+from starpulse.github.model.pulls import pull_url
 from starpulse.machine_engine.model.transitions import lane_id
 from starpulse.views.adapters.inbound.api.answering import answer, on_worker, seams
 from starpulse.views.adapters.inbound.api.table import ApiRoute, WriteRoute
@@ -202,7 +203,7 @@ async def _runs_error(parent: dict, info: GraphQLResolveInfo) -> str | None:
 
 @query.field("pull")
 async def _pull(_: Any, info: GraphQLResolveInfo, repo: str, number: int) -> dict | None:
-    found = await _worker(info, task_pulls, info.context["pulls"], [f"https://github.com/{repo}/pull/{number}"])
+    found = await _worker(info, task_pulls, info.context["pulls"], [pull_url(repo, number)])
     return found[0] if found else None
 
 

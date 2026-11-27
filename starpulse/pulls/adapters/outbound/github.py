@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from starpulse.contracts.adapters import ChangeRef, TaskKeys
 from starpulse.contracts.stamps import epoch_of
+from starpulse.github.model.pulls import pull_url
 from starpulse.machine_engine.adapters.machine_loader import load_machine
 from starpulse.machine_engine.model.snapshot import describe
 
@@ -66,13 +67,12 @@ def urls_of(forges: Mapping[str, "GitHubAdapter"]) -> Callable[[str], str | None
 
 @dataclass(frozen=True)
 class GitHubAdapter:
-    """Maps one pull request's recorded GitHub data onto `MachineEvent` dicts for `keys`' task scheme.
+    """Maps one pull request's recorded GitHub data onto `MachineEvent` dicts.
 
-    An event is keyed by the task the pull request's branch names, else by the pull request as a run (`owner/name#7`).
-    Each carries an `event_id` derived from the GitHub record behind it, so reading a pull request again appends nothing.
+    An event is keyed by the pull request as a run (`owner/name#7`): the task it reaches is the one the pull request is
+    linked to, never one its branch names. Each carries an `event_id` derived from the GitHub record behind it, so reading a pull request again appends nothing.
     """
 
-    keys: TaskKeys
     instance: str = "github"
 
     def change_ref(self, url: str) -> ChangeRef:
@@ -92,21 +92,20 @@ class GitHubAdapter:
             raise ValueError(f"{ref.adapter!r} owns this pull request, not the {self.instance!r} adapter")
         if not (pull := _CHANGE_ID.fullmatch(ref.id)):
             raise ValueError(f"{ref.id!r} is a malformed pull request id (owner/name:number)")
-        return f"https://github.com/{pull[1]}/pull/{pull[2]}"
+        return pull_url(pull[1], pull[2])
 
     def events(self, repo: str, bundle: dict) -> list[dict]:
         """The events `bundle` (`pull` and `check_runs`, as GitHub answers them) moves the machines by, oldest first."""
         pull = bundle["pull"]
         pr = f"{repo}#{pull['number']}"
-        task = self.keys.for_branch(pull["head"]["ref"])
 
         def event(machine: str, name: str, actor: str, stamp: str, source: object) -> dict:
             return {
                 "event_id": f"github:{pr}:{machine}:{name}:{source}",
                 "machine": machine,
                 "event": name,
-                "task": task,
-                "run": None if task else pr,
+                "task": None,
+                "run": pr,
                 "actor": actor,
                 "time": epoch_of(stamp),
             }

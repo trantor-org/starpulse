@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
+from starpulse.github.model.pulls import pull_url
 lazy from starpulse.contracts.adapters import Move
 
 #: Who `task move` moves as: the machine YAML's writers say which moves an agent may make.
@@ -61,7 +62,7 @@ def _stored_pull(pull: dict[str, Any]) -> dict[str, Any] | None:
     if not (pull.get("repo") and pull.get("number")):
         return None
     state = pull.get("state")
-    url = f"https://github.com/{pull['repo']}/pull/{pull['number']}"
+    url = pull_url(pull["repo"], pull["number"])
     return {**pull, "url": url, "merged": state == "MERGED", "closed": state == "CLOSED", "checks": ""}
 
 

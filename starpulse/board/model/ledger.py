@@ -25,7 +25,6 @@ includes it (None until one does), and that merge's row lists it in `applies`.
 """
 
 import math
-import re
 from bisect import bisect_right
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -33,6 +32,7 @@ from functools import lru_cache
 
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.contracts.stamps import epoch_of
+from starpulse.github.model.pulls import pull_at
 
 _epoch = lru_cache(maxsize=65536)(epoch_of)  # every rebuild reads the same run and pull timestamps again
 
@@ -58,7 +58,6 @@ NEXT = "next"
 #: A `force` parameter set to one of these is a plain run.
 _UNFORCED = frozenset({"", "0", "false"})
 
-_PULL = re.compile(r"https://github\.com/[^/]+/([^/]+)/pull/(\d+)")
 #: The shortest abbreviated commit a run parameter may name and still pair with a merge.
 _MIN_ABBREV = 7
 
@@ -88,12 +87,12 @@ def pull_occurrences(pulls: Mapping[str, Sequence[Mapping]]) -> list[Occurrence]
     merged: dict[str, Occurrence] = {}
     for task, records in pulls.items():
         for record in records:
-            sha, at, found = record.get("merge_sha"), record.get("merged_at"), _PULL.fullmatch(record["url"])
+            sha, at, found = record.get("merge_sha"), record.get("merged_at"), pull_at(record["url"])
             if not (record.get("merged") and sha and at and found):
                 continue
             seen = merged.get(sha)
             tasks = (*seen.tasks, task) if seen and task not in seen.tasks else seen.tasks if seen else (task,)
-            pr = {"repo": found[1], "number": int(found[2]), "url": record["url"]}
+            pr = {"repo": found.name, "number": found.number, "url": record["url"]}
             merged[sha] = Occurrence(sha, _epoch(at), tasks, sha, pr, "applied_by" in record, record.get("applied_by"))
     return list(merged.values())
 

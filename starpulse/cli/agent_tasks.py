@@ -27,6 +27,7 @@ from starpulse.event_log.claude_sessions import (
     session_activity_of,
 )
 from starpulse.event_log.lane_events import ARCHIVED
+from starpulse.github.model.pulls import cited_pull
 from starpulse.machine_engine.model.transitions import lane_id
 from starpulse.sessions.identity import same_session
 lazy from starpulse.board.model.markdown import MarkdownRefusedError, imported
@@ -731,10 +732,6 @@ def task_checkpoint_ac(args: argparse.Namespace, environ: Mapping[str, str]) -> 
     return {"task": args.task, "criterion": args.criterion, "changed": changed}
 
 
-#: A pull request a caller cites: `owner/name#N` or its GitHub URL.
-_CITED_PULL = re.compile(r"(?:https://github\.com/)?([^/\s#]+/[^/\s#]+)(?:#|/pull/)(\d+)/?")
-
-
 _PULL = (
     "query($repo: String!, $number: Int!) { pull(repo: $repo, number: $number) { repo number state isDraft mergeable "
     "baseRefName headRefName headRefOid body checks requiredChecks { name result } threads unresolvedThreads { id author } updatedAt mergedAt mergeSha "
@@ -744,13 +741,13 @@ _PULL = (
 
 def pull_show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]:
     """The stored record of one pull request, with the paths it changes, from the server's PR store: no GitHub read."""
-    cited = _CITED_PULL.fullmatch(args.pull)
+    cited = cited_pull(args.pull)
     if not cited:
         raise agent_wire.CliError("usage", f"{args.pull!r} is no pull request: write `owner/name#N` or its GitHub URL")
     base = agent_wire.server_url(args.server, environ)
-    found = agent_wire.graphql(base, _PULL, {"repo": cited[1], "number": int(cited[2])})["pull"]
+    found = agent_wire.graphql(base, _PULL, {"repo": cited.repo, "number": cited.number})["pull"]
     if not found:
-        raise agent_wire.CliError("not_found", f"the store holds no pull request {cited[1]}#{cited[2]}")
+        raise agent_wire.CliError("not_found", f"the store holds no pull request {cited.repo}#{cited.number}")
     return found
 
 
