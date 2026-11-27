@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable
 
-from sqlalchemy import Connection, bindparam, delete, func, insert, or_, select
+from sqlalchemy import Connection, and_, bindparam, delete, func, insert, or_, select
 from sqlalchemy.dialects import sqlite
 
 from starpulse.event_log.readmodel import task_uuid
@@ -27,8 +27,8 @@ def load_at(db: Connection, task_id: str) -> tuple[Row | None, int]:
     if found is None:
         return None, 0
     mine = criteria.c.task_id == task_id
-    if found["uuid"]:  # a renamed task's criteria follow its UUID; a task with none is told by its key
-        mine = or_(mine, criteria.c.task_uuid == found["uuid"])
+    if found["uuid"]:  # a renamed task's criteria follow its UUID; a criterion of another UUID is not told by the key it once held
+        mine = or_(and_(mine, criteria.c.task_uuid.is_(None)), criteria.c.task_uuid == found["uuid"])
     items = db.execute(select(criteria).where(mine).order_by(criteria.c.kind, criteria.c.n)).mappings()
     row = {key: value for key, value in found.items() if key not in ("seq", "uuid")} | {
         "criteria": [{key: value for key, value in item.items() if key not in ("task_id", "task_uuid")} for item in items]
