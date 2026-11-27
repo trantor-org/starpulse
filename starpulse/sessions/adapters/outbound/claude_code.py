@@ -9,6 +9,7 @@ from typing import Any
 from starpulse.event_log import claude_sessions
 from starpulse.harness_telemetry.adapters.outbound.claude import ClaudeHarness
 from starpulse.sessions.adapters.outbound import claude_code_notify
+from starpulse.sessions.adapters.outbound.claude_code_identity import ClaudeCodeIdentity
 from starpulse.sessions.ports.notify import Line
 
 #: A consumer named for a claude.ai URL holder: its bridge id.
@@ -17,22 +18,26 @@ _URL_HOLDER = re.compile(r"https_claude_ai_code_((?:session|cse)_\w+)")
 
 class ClaudeCodeSessions:
     name = "claude"
+    skills_dir = ClaudeHarness.skills_dir
 
     def __init__(self, environ: Mapping[str, str], transcripts: str | None = None) -> None:
         self._sessions = claude_sessions.sessions_dir(environ)
-        self._transcripts = Path(transcripts or claude_sessions.DEFAULT_TRANSCRIPTS).expanduser()
+        self.transcripts = Path(transcripts or claude_sessions.DEFAULT_TRANSCRIPTS).expanduser()
         self._launch = ClaudeHarness().launch
-        self._written = claude_sessions.transcript_written(self._transcripts)
+        self._written = claude_sessions.transcript_written(self.transcripts)
         self._entrypoint = claude_sessions.entrypoint_of(self._sessions)
         self._process = claude_sessions.live_process(self._sessions)
         self._socket = claude_sessions.live_socket(self._sessions)
+
+    def identity(self) -> ClaudeCodeIdentity:
+        return ClaudeCodeIdentity(self.transcripts, self._sessions)
 
     def launch(self, task: str, verb: str, profile: str | None) -> list[str]:
         return self._launch(task, verb, profile)
 
     def activity(self, assignee: str, now: float) -> dict[str, Any]:
         return claude_sessions.session_activity_of(
-            self._transcripts, Path(claude_sessions.DEFAULT_SESSIONS).expanduser(), assignee, now=now
+            self.transcripts, Path(claude_sessions.DEFAULT_SESSIONS).expanduser(), assignee, now=now
         )
 
     def transcript_written(self, session: str) -> float | None:

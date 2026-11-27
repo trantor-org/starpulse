@@ -1,24 +1,20 @@
 """Whether a task's assignee and a session are one session, whatever id each names it by: the harness adapter answers."""
 
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+from starpulse.sessions.harness import DEFAULT, configured
 from starpulse.sessions.ports.identity import SessionIdentity
 
 _identity: SessionIdentity | None = None
 
 
 def current() -> SessionIdentity:
-    """The configured harness identity; Claude Code's, read from its own session records, until `using` names another."""
+    """The default harness's identity, until `using` names another."""
     global _identity
     if _identity is None:
-        import os
-        from pathlib import Path
-
-        from starpulse.event_log.claude_sessions import DEFAULT_TRANSCRIPTS, sessions_dir
-        from starpulse.sessions.adapters.outbound.claude_code_identity import ClaudeCodeIdentity
-
-        _identity = ClaudeCodeIdentity(Path(DEFAULT_TRANSCRIPTS).expanduser(), sessions_dir(os.environ))
+        _identity = configured(DEFAULT, os.environ).identity()
     return _identity
 
 

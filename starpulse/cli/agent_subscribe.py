@@ -2,7 +2,6 @@
 JetStream consumer."""
 
 import argparse
-import os
 from collections.abc import Mapping
 from contextlib import closing
 from pathlib import Path
@@ -13,8 +12,8 @@ from starpulse.bridge.publisher import Publisher, Unavailable
 from starpulse.bridge.requests import ask
 from starpulse.bridge.subjects import stream_subjects, token, wake_subject
 from starpulse.bridge.subscriptions import covers, explicit_subject
+from starpulse.cli import agent_wire
 from starpulse.cli.agent_wire import CliError
-from starpulse.event_log.claude_sessions import local_id, sessions_dir
 from starpulse.runtime.config import ConfigError, discover, load
 from starpulse.sessions.ports.notify import Registration
 from starpulse.sessions.adapters.outbound.registry import Registry, directory
@@ -52,10 +51,12 @@ def routed(session: str, config: Path | None = None) -> bool:
     session a claude.ai URL names; without one its events wait on the consumer and no turn starts."""
     found = discover(config)
     try:
-        registry = _registry(found, load(found).bridge.sessions_dir if found else None)
+        settings = load(found)
+        registry = _registry(found, settings.bridge.sessions_dir if found else None)
+        local = settings.session_harness().local_id(session)
     except (ConfigError, OSError, ValueError):
         return False
-    return any(registry.get(token(name)) for name in filter(None, {session, local_id(sessions_dir(os.environ), session)}))
+    return any(registry.get(token(name)) for name in filter(None, {session, local}))
 
 
 def _register(args: argparse.Namespace, environ: Mapping[str, str]) -> bool:
@@ -129,7 +130,7 @@ def subscribed(session: str, subject: str, config: Path | None = None) -> bool:
         link = Publisher(f"nats://127.0.0.1:{settings.port}", stream, stream_subjects(settings.board))
         with closing(link):
             consumers = Consumers(link, stream)
-            names = filter(None, {session, local_id(sessions_dir(os.environ), session)})
+            names = filter(None, {session, agent_wire.session_harness(config).local_id(session)})
             filters = [held for name in names for held in consumers.get(token(name)).filters]
     except (CliError, Unavailable, OSError):
         return False

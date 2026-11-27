@@ -7,9 +7,12 @@ import urllib.error
 import urllib.request
 import uuid
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from starpulse.cli.agent_keys import SNAPSHOT_IDENTITY_KEYS
+from starpulse.sessions.ports.harness import SessionHarness
+lazy from starpulse.runtime.config import ConfigError, discover, load
 
 #: serve's default `--port`, where a server runs unless the caller says otherwise.
 DEFAULT_SERVER = "http://localhost:8766"
@@ -31,6 +34,14 @@ class CliError(Exception):
         self.code = code
         self.extra = extra
         """Keys the error document carries beside `error` and `code`."""
+
+
+def session_harness(config: Path | None = None, transcripts: str | None = None) -> SessionHarness:
+    """The harness adapter the config names, the default one's when there is no config; refused when the config is unreadable."""
+    try:
+        return load(discover(config)).session_harness(transcripts)
+    except (ConfigError, OSError, ValueError) as exc:
+        raise CliError("refused", f"config: {exc}") from exc
 
 
 class Server(str):

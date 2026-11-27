@@ -21,15 +21,12 @@ from starpulse.board.model.seam import OPERATOR
 from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
 from starpulse.cli import agent_wire, step_times
 from starpulse.cli.agent_keys import LIFECYCLE_KEYS
-from starpulse.event_log.claude_sessions import (
-    DEFAULT_SESSIONS,
-    DEFAULT_TRANSCRIPTS,
-    session_activity_of,
-)
 from starpulse.event_log.lane_events import ARCHIVED
 from starpulse.github.model.pulls import cited_pull
 from starpulse.machine_engine.model.transitions import lane_id
+from starpulse.sessions.harness import DEFAULT, configured
 from starpulse.sessions.identity import same_session
+from starpulse.sessions.ports.harness import SessionHarness
 lazy from starpulse.board.model.markdown import MarkdownRefusedError, imported
 lazy from starpulse.board.model.markdown import render as render_markdown
 
@@ -85,7 +82,8 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
         )
 
     board = board_columns(snapshot, kept, args.state)
-    views = [_active(task, snapshot) for column in board["columns"] for task in column["tasks"]]
+    harness = configured(DEFAULT, os.environ)
+    views = [_active(task, snapshot, harness) for column in board["columns"] for task in column["tasks"]]
     settled = iter(_without_done_dependencies(agent_wire.server_url(args.server, environ), views, snapshot))
     for column in board["columns"]:
         column["tasks"] = [next(settled) for _ in column["tasks"]]
@@ -206,7 +204,7 @@ def show(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any]
             ],
         }
     (view,) = _without_done_dependencies(base, [task_view(agent, snapshot)], snapshot)
-    shown = _described(_keyed(_active(view, snapshot), reply if record else {}), agent["description"], base)
+    shown = _described(_keyed(_active(view, snapshot, configured(DEFAULT, os.environ)), reply if record else {}), agent["description"], base)
     return {**shown, "members": record.get("members") or {}}
 
 
@@ -864,17 +862,14 @@ def _milestone_fields(args: argparse.Namespace) -> dict[str, Any]:
     return {field: value for field, value in given.items() if value is not None}
 
 
-def with_activity(view: dict[str, Any], working: str, transcripts: Path, sessions: Path, now: float) -> dict[str, Any]:
+def with_activity(view: dict[str, Any], working: str, harness: SessionHarness, now: float) -> dict[str, Any]:
     """`view` with the `session_activity` of the session holding it, when it sits in the `working` lane the machine
     declares and has a holder: working, idle since its last agent turn, or `unknown` when the holder is no running
     session with a transcript."""
     if view["lane"] != working or not view["assignee"]:
         return view
-    return {**view, "session_activity": session_activity_of(transcripts, sessions, view["assignee"], now=now)}
+    return {**view, "session_activity": harness.activity(view["assignee"], now)}
 
 
-def _active(view: dict[str, Any], snapshot: Mapping[str, Any]) -> dict[str, Any]:
-    working = roles_of(snapshot).working
-    return with_activity(
-        view, working, Path(DEFAULT_TRANSCRIPTS).expanduser(), Path(DEFAULT_SESSIONS).expanduser(), time.time()
-    )
+def _active(view: dict[str, Any], snapshot: Mapping[str, Any], harness: SessionHarness) -> dict[str, Any]:
+    return with_activity(view, roles_of(snapshot).working, harness, time.time())
