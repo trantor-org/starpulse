@@ -6,13 +6,12 @@ A key no item holds has no entry.
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 from starpulse.board.adapters import native_docs, native_milestones
-from starpulse.board.adapters.native_lookup import _find
-from starpulse.board.adapters.native_scan import _split, _strings
+from starpulse.board.adapters.native_scan import _strings
 
 _LISTS = ("dependencies", "references", "documentation")
 _SCALARS = ("milestone", "follows")
@@ -24,12 +23,14 @@ _MILESTONE = re.compile(r"m-\d+")
 def _named(frontmatter: Mapping[str, Any]) -> list[str]:
     """The keys the front matter's reference fields name, in order, each once. A `documentation` entry is a file path
     that names its doc by the id its file name starts with; a `TASK-5#2` dependency names `TASK-5`."""
-    entries = [entry.partition("#")[0].strip() for field in (*_LISTS, *_SCALARS) for entry in _strings(frontmatter.get(field))]
+    entries = [
+        entry.partition("#")[0].strip() for field in (*_LISTS, *_SCALARS) for entry in _strings(frontmatter.get(field))
+    ]
     named = [found.group(0) if (found := _DOC.match(Path(entry).name)) else entry for entry in entries]
     return list(dict.fromkeys(key for key in named if _KEY.fullmatch(key)))
 
 
-def _uuid_of(root: Path, key: str) -> str:
+def _uuid_of(root: Path, key: str, tasks: Callable[[str], str]) -> str:
     if _DOC.fullmatch(key):
         found = native_docs._find(root, key)
         front = found[2] if found else None
@@ -37,17 +38,16 @@ def _uuid_of(root: Path, key: str) -> str:
         found = native_milestones._find(root, key)
         front = found[1] if found else None
     else:
-        path = _find(root, key)
-        front = _split(path.read_text())[0] if path else None
+        return tasks(key)
     return str(front.get("uuid") or "") if isinstance(front, dict) else ""
 
 
-def stamp(root: Path, frontmatter: dict) -> None:
+def stamp(root: Path, frontmatter: dict, tasks: Callable[[str], str]) -> None:
     """Set `frontmatter`'s `uuids` to the UUID of each item it names: one it holds already is kept, a new key is looked
-    up under `root`, and a key it no longer names is dropped."""
+    up under `root` (a task's by `tasks`, from its History), and a key it no longer names is dropped."""
     kept = frontmatter.get("uuids")
     kept = kept if isinstance(kept, dict) else {}
-    uuids = {key: found for key in _named(frontmatter) if (found := kept.get(key) or _uuid_of(root, key))}
+    uuids = {key: found for key in _named(frontmatter) if (found := kept.get(key) or _uuid_of(root, key, tasks))}
     if uuids:
         frontmatter["uuids"] = uuids
     else:

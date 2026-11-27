@@ -20,7 +20,7 @@ from starpulse.board.model.markdown import render
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.store import EventStore
 
-__all__ = ["Filed", "Parity", "backfill_answers", "check", "filed", "import_missing", "scanned"]
+__all__ = ["Filed", "Parity", "backfill_answers", "check", "filed", "import_missing", "scanned", "unfile"]
 
 Record = Mapping[str, Any]
 _SHOWN = 6
@@ -62,6 +62,14 @@ def scanned(root: Path) -> Iterator[Filed]:
             yield _in_folder(path.stem, settled is not None, path.read_text())
 
 
+def unfile(root: Path) -> int:
+    """Remove every file the open, completed and archived task folders under `root` hold, a leftover write included; the count removed."""
+    paths = [path for folder, _ in _FOLDERS for path in sorted((root / folder).glob("*")) if path.is_file()]
+    for path in paths:
+        path.unlink()
+    return len(paths)
+
+
 def filed(root: Path, engine: Engine) -> Iterator[Filed]:
     """Every open, completed and archived task file under `root`, then every retired task of the store whose id no file holds."""
     held: set[str] = set()
@@ -92,7 +100,9 @@ def _differences(item: Filed, row: Record) -> list[str]:
     lines = difflib.unified_diff(ours[0].splitlines(), theirs[0].splitlines(), "file", "replay", lineterm="", n=0)
     found = [line for line in lines if line[:1] in "+-" and line[:3] not in ("+++", "---")]
     names = ("meta", "assignee", "comments", "archived")
-    found += [f"{name}: file {a!r}, replay {b!r}" for name, a, b in zip(names, ours[1:], theirs[1:], strict=True) if a != b]
+    found += [
+        f"{name}: file {a!r}, replay {b!r}" for name, a, b in zip(names, ours[1:], theirs[1:], strict=True) if a != b
+    ]
     return found[:_SHOWN]
 
 

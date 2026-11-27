@@ -66,7 +66,7 @@ class EphemeralBoard:
 
 
 def _read(instance: WriteInstance, task: str) -> dict:
-    instance.settle()  # a write reaches the feed at the adapter's next scan; place it now so the read sees it
+    instance.settle()  # fold the write now so the read sees it
     shown = instance.run("task", "show", task)
     if shown.returncode != 0:
         raise EphemeralBoardError(f"task show {task} exited {shown.returncode}: {shown.stdout}{shown.stderr}")
@@ -78,7 +78,9 @@ def _open(instance: WriteInstance, seed: TaskSeed, scratch: Path) -> dict:
     brief.write_text(json.dumps(seed.brief or DEFAULT_BRIEF))
     created = instance.run(*seed.argv(brief))
     if created.returncode != 0:
-        raise EphemeralBoardError(f"{seed.title!r} refused, exit {created.returncode}: {created.stdout}{created.stderr}")
+        raise EphemeralBoardError(
+            f"{seed.title!r} refused, exit {created.returncode}: {created.stdout}{created.stderr}"
+        )
     return _read(instance, json.loads(created.stdout)["task"])
 
 
@@ -87,8 +89,8 @@ def ephemeral_board(seeds: Iterable[TaskSeed | str], base: Path | None = None) -
     """Open a task per seed on a scratch board and serve it for the block; a bare string is a title.
 
     With no `base` the board lives in a temporary directory removed at the block's end. A `base` is kept: its
-    `starpulse.toml` configures the board, else `DEFAULT_CONFIG` is written there, and the board's files stay after the
-    block for the caller to read.
+    `starpulse.toml` configures the board, else `DEFAULT_CONFIG` is written there, and the board folder stays after the
+    block. A task is held in the History alone, so the folder holds no task file.
     """
     with ExitStack() as stack:
         if base is None:

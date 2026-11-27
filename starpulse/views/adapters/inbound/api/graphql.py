@@ -71,6 +71,15 @@ claim_release = ObjectType("ClaimRelease")
 board = ObjectType("Board")
 
 
+#: The `Task` fields whose resolver reads the task's record, one read a card of a list, which a list query must not select.
+RECORD_FIELDS: set[str] = set()
+
+
+def _reads_record(name: str) -> Callable[[Any], Any]:
+    RECORD_FIELDS.add(name)
+    return task.field(name)
+
+
 async def _worker(info: GraphQLResolveInfo, call: Any, *args: Any) -> Any:
     return await to_thread.run_sync(call, *args, limiter=info.context["workers"])
 
@@ -301,19 +310,19 @@ def _session_activity(agent: dict, _: GraphQLResolveInfo) -> dict | None:
     return agent.get("session_activity")
 
 
-@task.field("criteria")
+@_reads_record("criteria")
 async def _criteria(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
     record = await _record(agent, info, lean=True)
     return [] if record is None else record["criteria"]
 
 
-@task.field("pauseReason")
+@_reads_record("pauseReason")
 async def _pause_reason(agent: dict, info: GraphQLResolveInfo) -> str:
     record = await _record(agent, info, lean=True)
     return "" if record is None else record["pause_reason"] or ""
 
 
-@task.field("readable")
+@_reads_record("readable")
 async def _readable(agent: dict, info: GraphQLResolveInfo) -> str:
     record = await _record(agent, info)
     return "" if record is None else record["readable"]
@@ -324,7 +333,7 @@ def _idle(released: dict, _: GraphQLResolveInfo) -> bool:
     return released.get("idle", False)
 
 
-@task.field("description")
+@_reads_record("description")
 async def _description(agent: dict, info: GraphQLResolveInfo) -> str:
     """A list's cards carry none: the record holds it."""
     if agent["description"]:
@@ -333,7 +342,7 @@ async def _description(agent: dict, info: GraphQLResolveInfo) -> str:
     return "" if record is None else record["description"]
 
 
-@task.field("moves")
+@_reads_record("moves")
 async def _moves(agent: dict, info: GraphQLResolveInfo) -> list[dict]:
     """A list's cards leave their moves unjudged: the record judges them, as judging every card's costs seconds."""
     record = await _record(agent, info)

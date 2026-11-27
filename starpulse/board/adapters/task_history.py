@@ -270,6 +270,7 @@ def appended(
     note: str = "",
     rehydrates: bool = False,
     before: Record | None = None,
+    head: int | None = None,
 ) -> None:
     """Append the Events that take `task`'s History to `after`, the file about to be rendered (None: the task leaves the
     board, with `note` as its reason), as `actor`; nothing outside a recorded write.
@@ -277,6 +278,7 @@ def appended(
     `created` makes them the task's first Event, and `rehydrates` leads them with a `Rehydrated` when the task replays archived.
     `before` is the file the write replaces: the Events are what the write changed in it, so a hand edit the file held
     already is never imported by a later write; without it they diff the History's replay against `after`.
+    `head` is the History's head `before` was rendered at; a History past it raises `StaleVersion`, so the write is judged and appended against one version.
     Raises `StaleVersion` when the History moved after it was read, and `Refused` when it cannot take the Events."""
     if (write := _write.get()) is None:
         return
@@ -287,14 +289,21 @@ def appended(
             return [] if row["archived"] else _events({}, None, note)
         base = before if before is not None else _replayed(row)
         if write.moves and before is not None and task.casefold() == write.task.casefold():
-            base = {**before, "status": _replayed(row)["status"]}  # an explicit move is judged against the History, not a file a hand edit already moved
-        held = {"members": row["meta"].get("members")}  # in the History alone, so no file to diff: a write that names none keeps it
-        found = ([("Rehydrated", {})] if rehydrates and row["archived"] else []) + _events({**base, **held}, {**held, **after}, note)
+            base = {
+                **before,
+                "status": _replayed(row)["status"],
+            }  # an explicit move is judged against the History, not a file a hand edit already moved
+        held = {
+            "members": row["meta"].get("members")
+        }  # in the History alone, so no file to diff: a write that names none keeps it
+        found = ([("Rehydrated", {})] if rehydrates and row["archived"] else []) + _events(
+            {**base, **held}, {**held, **after}, note
+        )
         if write.reason and revises_plan(row["state"], row["plan"], after.get("plan") or "", write.unstarted or ()):
             found.append(("PlanRevised", {"ordinal": revisions + 1, "reason": write.reason}))
         return found
 
-    history.append(task, actor, events, created=after if created else None)
+    history.append(task, actor, events, created=after if created else None, head=head)
 
 
 class TaskHistory:
@@ -364,14 +373,23 @@ class TaskHistory:
         return True
 
     def append(
-        self, task: str, actor: str, events: Callable[[Record, int], list[Event]], *, created: Record | None = None
+        self,
+        task: str,
+        actor: str,
+        events: Callable[[Record, int], list[Event]],
+        *,
+        created: Record | None = None,
+        head: int | None = None,
     ) -> None:
         """Append what `events` makes of the replay of `task`'s History at the head read, at that head; a created task's
-        `TaskCreated` of `created` at none."""
+        `TaskCreated` of `created` at none. A `head` the History has moved past raises `StaleVersion`."""
         store = self._store
         if store is None:
             return
-        head = store.head(KIND, task)
+        held = store.head(KIND, task)
+        if head is not None and held != head:
+            raise StaleVersion(f"{task} moved from {head} to {held}")
+        head = held
         if created is not None:
             if head:
                 raise Refused(f"{task} already has a History")
