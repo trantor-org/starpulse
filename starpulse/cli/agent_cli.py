@@ -603,6 +603,9 @@ def _parser() -> argparse.ArgumentParser:
     board.add_argument(
         "--no-cold", action="store_true", help="with `--milestone`, skip the Done tasks past their first day (a request per hundred)"
     )
+    board.add_argument(
+        "--limit", type=int, help="ask for one page of at most this many Done tasks past their first day, not every one"
+    )
     board.add_argument("--type", help="only tasks of this type (`spike`)")
     board.add_argument("--label", help="only tasks with this label")
     board.add_argument("--profile", help="only tasks routed to this agent profile (`@agent-standard-high`)")

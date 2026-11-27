@@ -93,7 +93,7 @@ def board(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str, Any
         done = done_ids(snapshot)
         column = next(column for column in board["columns"] if column["state"] == finished)
         bare = {"milestone": "", "labels": [], "dependencies": [], "prs": [], "moves": {}}
-        cards = [bare | card for card in _cold_done(agent_wire.server_url(args.server, environ), args.milestone)]
+        cards = [bare | card for card in _cold_done(agent_wire.server_url(args.server, environ), args.milestone, args.limit)]
         column["tasks"] += [task_view(card, snapshot, done) for card in cards if kept(card)]
     return board
 
@@ -105,19 +105,19 @@ _RECORDS_PAGE = 8
 _COLD_PAGE = 100
 
 
-def _cold_done(base: str, milestone: str | None) -> Iterator[dict[str, Any]]:
+def _cold_done(base: str, milestone: str | None, limit: int | None = None) -> Iterator[dict[str, Any]]:
     """Every done task past its hot day, of `milestone` when given, as a board card, newest first; the snapshot lists
-    them by id only."""
+    them by id only. `limit` asks one page of that many and stops there."""
     before = ""
     asked = f"&milestone={urllib.parse.quote(milestone, safe='')}" if milestone else ""
     while True:
-        status, page = agent_wire.get(base, f"/api/done?limit={_COLD_PAGE}{asked}{before}")
+        status, page = agent_wire.get(base, f"/api/done?limit={limit or _COLD_PAGE}{asked}{before}")
         if status != 200:
             raise agent_wire.CliError(
                 "unavailable", f"{base} answered {status} for /api/done: cannot list the done tasks"
             )
         yield from page["tasks"]
-        if not page["more"]:
+        if limit or not page["more"]:
             return
         before = f"&before={page['tasks'][-1]['entered']}"
 
