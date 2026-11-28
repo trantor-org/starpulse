@@ -61,21 +61,25 @@ describe("SunsDrillIn", () => {
   it("keeps its clock running while the shell re-renders it, so a task's time and bar stay current", async () => {
     vi.useFakeTimers();
     try {
-      const entered = Date.now() / 1000;
+      // entered ten minutes ago, so no comet is in flight to redraw the scene at 20 fps
+      let now = Date.now() / 1000;
+      const entered = now - 600, clock = () => now;
       vi.mocked(fetch).mockImplementation(async () => new Response(JSON.stringify({ data: { task: { events: [{ machine: "in-progress", event: "CLAIM", from: "start", to: "build", at: entered }] } } }), { status: 200 }));
       const slot = document.createElement("div");
       // the shell passes a new onClose on every render, and a new hud arrives more often than the 5 s clock (here every 4 s)
-      const draw = () => root.render(<SunsDrillIn tasks={[task("TASK-1", "In Progress")]} roles={roles} task="TASK-1" onClose={() => undefined} navSlot={slot} />);
+      const draw = () => root.render(<SunsDrillIn tasks={[task("TASK-1", "In Progress")]} roles={roles} task="TASK-1" onClose={() => undefined} clock={clock} navSlot={slot} />);
       act(draw);
       const bar = () => slot.querySelector<HTMLElement>("nav button i")!.getAttribute("style");
-      await act(async () => void (await vi.advanceTimersByTimeAsync(1_000)));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
       const start = bar();
+      now += 60;
 
-      for (let s = 0; s < 15; s++) await act(async () => { draw(); await vi.advanceTimersByTimeAsync(4_000); });
+      // the 5 s tick falls between the second and third render; a clock each render restarted would never fire
+      for (let s = 0; s < 2; s++) await act(async () => { draw(); await vi.advanceTimersByTimeAsync(4_000); });
 
-      // a minute in the phase moves the bar on 7 points, by the mock's formula
-      expect(start).toContain(" 30%");
-      expect(bar()).toContain(" 37%");
+      // a minute more in the phase moves the bar on 7 points, by the mock's formula
+      expect(start).toContain(" 40%");
+      expect(bar()).toContain(" 47%");
     } finally {
       vi.useRealTimers();
     }

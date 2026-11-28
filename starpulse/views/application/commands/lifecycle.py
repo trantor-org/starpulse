@@ -284,20 +284,20 @@ def _ask_key(reason: str) -> str:
 
 
 def _without_repeat(reason: str, current: dict[str, Any]) -> dict[str, Any]:
-    """The edit a park for the operator makes, refused when the task's standing `## Needs attention` ask is this one.
+    """The edit a park for the operator makes, refused when the operator already answered the task's standing
+    `## Needs attention` ask and this is that ask; the refusal cites the newest answer.
 
-    The refusal cites the operator's newest answer to it, else says the ask awaits one."""
+    An unanswered ask is asked again: an In Progress task holding one left the lane unanswered (a redispatch), and
+    the re-park returns it there."""
     paragraphs = [p.strip() for p in needs_attention_text(current["description"]).split("\n\n") if p.strip()]
     if not paragraphs or _ask_key(paragraphs[0]) != _ask_key(reason):
         return {}
-    answers = [p for p in paragraphs[1:] if p.startswith("Operator answer")]
-    raise _RefusalError(
-        409,
-        {
-            "error": "this ask is already recorded in the task's `## Needs attention` section; "
-            + (f"act on its answer: {answers[-1]}" if answers else "it awaits the operator's answer, not a second ask")
-        },
-    )
+    if answers := [p for p in paragraphs[1:] if p.startswith("Operator answer")]:
+        raise _RefusalError(
+            409,
+            {"error": f"this ask is already recorded in the task's `## Needs attention` section; act on its answer: {answers[-1]}"},
+        )
+    return {}
 
 
 def _nonblank(value: Any) -> bool:
@@ -340,8 +340,8 @@ def park_task(
 
     A Review or Needs attention task is parked on a task or an event the same way, as a request. A Ready task waiting
     on tasks and a Waiting task waiting on events are gated by the edit with no request, and the park itself moves a
-    Ready one to Waiting. A wait on one criterion parks In Progress work only, and an ask the task already records is
-    refused whatever lane it is in.
+    Ready one to Waiting. A wait on one criterion parks In Progress work only, and an ask the task already records
+    with an operator answer is refused.
     """
     reasons = [key for key in _PARK_REASONS if key in park.model_fields_set]
     if len(reasons) != 1:

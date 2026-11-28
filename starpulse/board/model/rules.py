@@ -211,12 +211,14 @@ def _label(spec: Mapping[str, Any], where: str) -> Primitive:
 
 
 def _section(spec: Mapping[str, Any], where: str) -> Primitive:
-    _unknown(spec, {"heading", "nonempty", "not_matching", "except_self"}, where, "section")
+    _unknown(spec, {"heading", "nonempty", "not_matching", "except_self", "except_in"}, where, "section")
     heading = spec.get("heading")
     if not isinstance(heading, str) or not heading.strip():
         raise ValueError(f"{where}: section needs `heading`, the `## ` heading it reads")
-    if spec.get("except_self") and "not_matching" not in spec:
-        raise ValueError(f"{where}: section `except_self` needs `not_matching`")
+    for option in ("except_self", "except_in"):
+        if spec.get(option) and "not_matching" not in spec:
+            raise ValueError(f"{where}: section `{option}` needs `not_matching`")
+    settled = _states(spec["except_in"], f"{where}.except_in") if "except_in" in spec else frozenset()
     try:
         unwanted = re.compile(spec["not_matching"]) if "not_matching" in spec else None
     except (re.error, TypeError) as error:
@@ -234,7 +236,9 @@ def _section(spec: Mapping[str, Any], where: str) -> Primitive:
         scanned, own = text or "", str(record.front.get("id") or "").strip()
         if except_self and own:
             scanned = re.sub(rf"(?<![\w-]){re.escape(own)}(?![\w-])", "", scanned, flags=re.I)
-        return not unwanted.search(scanned)
+        if not settled:
+            return not unwanted.search(scanned)
+        return all(record.state_of(found.group()) in settled for found in unwanted.finditer(scanned))
 
     return holds
 
