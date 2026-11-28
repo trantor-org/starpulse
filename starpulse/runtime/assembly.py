@@ -32,9 +32,9 @@ from starpulse.github.adapters.outbound.rest import Client, connect_client
 from starpulse.github.adapters.outbound.verdicts import Backlogs
 from starpulse.github.model.github_config import GitHub
 from starpulse.harness_telemetry.model.harness import SESSION_MACHINES
-from starpulse.machine_engine.model.snapshot import qualifier
+from starpulse.machine_engine.model.workflow_names import qualifier
 from starpulse.pulls.adapters.inbound.task_actor import ACTOR
-from starpulse.pulls.adapters.outbound.github import GitHubAdapter, urls_of
+from starpulse.pulls.adapters.outbound.github import GitHubAdapter
 from starpulse.pulls.model.ci import CiError, attach
 from starpulse.runtime import read_model_follow
 from starpulse.runtime.config import Config, ConfigError, runs_adapter
@@ -161,7 +161,7 @@ def assemble(
         readable=board.readable,
         activity=_holder_activity(config),
         default_profiles=profile_matrix(rows or Policy()),
-        change_url=urls_of({"github": GitHubAdapter()}),
+        change_url=GitHubAdapter().link_url,
     )
     return board, feed
 

@@ -8,7 +8,6 @@ from concurrent.futures import Executor
 from typing import TYPE_CHECKING, Any
 
 from starpulse.machine_engine.model.machine_ties import derive
-from starpulse.machine_engine.model.snapshot import declared
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     pass
@@ -28,6 +27,33 @@ from starpulse.board.model.feed.shared import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def declared(
+    domains: Mapping[str, Sequence[str]] | None = None,
+    cues: Sequence[dict] = (),
+    processes: Mapping[str, Sequence[tuple[str, Sequence[str]]]] | None = None,
+) -> dict:
+    """The workflow relationships the page draws: the board adapter's cues, and the config's domains.
+
+    `domains` names workflows as `<instance>/<workflow>`, and so does each cue's `dag`.
+    """
+    procs = processes or {}
+
+    def dags_of(names: Sequence[str]) -> list[dict]:
+        return [{"name": dag} for dag in names]
+
+    return {
+        "cues": list(cues),
+        "domains": [
+            {
+                "name": name,
+                "dags": dags_of(dags),
+                "processes": [{"name": pname, "dags": dags_of(p_dags)} for pname, p_dags in procs.get(name, ())],
+            }
+            for name, dags in (domains or {}).items()
+        ],
+    }
 
 
 class ViewMethods:

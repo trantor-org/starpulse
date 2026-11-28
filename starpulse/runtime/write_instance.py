@@ -17,7 +17,7 @@ from pathlib import Path
 
 from starpulse.cli import agent_cli
 from starpulse.event_log.wake import StopEvent
-from starpulse.runtime.adapter_kit import FOLDED_WITHIN_S, serve, url
+from starpulse.runtime.serve_kit import FOLDED_WITHIN_S, serve, url
 from starpulse.runtime.config import load
 from starpulse.runtime.placed import Placed, assembled
 

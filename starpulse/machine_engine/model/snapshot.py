@@ -1,33 +1,16 @@
-"""The static shape StarPulse draws: a lifecycle machine as the page reads it, and the workflow declarations.
+"""The static shape StarPulse draws: a lifecycle machine as the page reads it.
 
 A machine's tasks come from `machine_tasks` (the `machine:events` stream) and the Board's from the configured
 board adapter (`starpulse.board.model.seam`); this module holds the shape of each machine.
 """
 
 import dataclasses
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 lazy from starpulse.machine_engine.model.machine_definition import writers_of
 
-__all__ = ["Qualify", "describe", "is_workflow", "qualifier", "writers"]
-
-#: Names a workflow as the page draws it. A machine or cue names its workflows by their own name; the page draws
-#: them as `<instance>/<workflow>`, so what a machine says is read through one of these.
-Qualify = Callable[[str], str]
-
-
-def qualifier(domains: Mapping[str, Sequence[str]]) -> Qualify:
-    """A workflow's own name as `<instance>/<workflow>`, when exactly one configured instance lists it.
-
-    `domains` is the config's qualified domains. A name two instances list names neither of them, and a name
-    no instance lists (`operator`, `agent`) is not a workflow, so both stay as they are.
-    """
-    owners: dict[str, set[str]] = {}
-    for qualified in (name for names in domains.values() for name in names):
-        owners.setdefault(qualified.partition("/")[2], set()).add(qualified)
-    unique = {own: next(iter(names)) for own, names in owners.items() if len(names) == 1}
-    return lambda name: unique.get(name, name)
+__all__ = ["describe", "is_workflow", "writers"]
 
 
 def _titled(name: str) -> str:
@@ -82,29 +65,3 @@ def is_workflow(actor: str) -> bool:
     """A writer's actor is a workflow when it is named `<instance>/<workflow>`, not a bare `agent` or `operator`."""
     return "/" in actor
 
-
-def declared(
-    domains: Mapping[str, Sequence[str]] | None = None,
-    cues: Sequence[dict] = (),
-    processes: Mapping[str, Sequence[tuple[str, Sequence[str]]]] | None = None,
-) -> dict:
-    """The workflow relationships the page draws: the board adapter's cues, and the config's domains.
-
-    `domains` names workflows as `<instance>/<workflow>`, and so does each cue's `dag`.
-    """
-    procs = processes or {}
-
-    def dags_of(names: Sequence[str]) -> list[dict]:
-        return [{"name": dag} for dag in names]
-
-    return {
-        "cues": list(cues),
-        "domains": [
-            {
-                "name": name,
-                "dags": dags_of(dags),
-                "processes": [{"name": pname, "dags": dags_of(p_dags)} for pname, p_dags in procs.get(name, ())],
-            }
-            for name, dags in (domains or {}).items()
-        ],
-    }

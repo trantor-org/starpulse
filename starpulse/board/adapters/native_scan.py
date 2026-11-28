@@ -33,7 +33,7 @@ from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_m
 if TYPE_CHECKING:
     from starpulse.contracts.adapters import Move
     from starpulse.machine_engine.model.machine_definition import Compiled
-    from starpulse.machine_engine.model.snapshot import Qualify
+    from starpulse.machine_engine.model.workflow_names import Qualify
 
 logger = logging.getLogger(__name__)
 

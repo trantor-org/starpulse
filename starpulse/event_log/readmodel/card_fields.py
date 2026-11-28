@@ -29,10 +29,10 @@ def restate_phase(db: Connection, touched: Collection[str], drawn: Mapping[str, 
     for machine, agent in db.execute(select(machine_tasks.c.machine, machine_tasks.c.agent).where(machine_tasks.c.task.in_(list(held)))):
         if machine in agents:
             agents[machine].append(agent)
-    snapshot = {"flows": [{"name": name, "machine": machine, "agents": agents[name]} for name, machine in drawn.items()], "roles": roles.wire()}
+    snapshot = {"flows": [{"name": name, "machine": machine, "agents": agents[name]} for name, machine in drawn.items()]}
     values = []
     for task, state in held.items():
-        phase, substate, flow = phase_of({"id": task, "state": lane_id(state)}, snapshot)
+        phase, substate, flow = phase_of({"id": task}, snapshot) if lane_id(state) == roles.working else (None, None, None)
         values.append({"task": task, "b_phase": phase, "b_substate": substate, "b_skill": flow and flow["name"]})
     db.execute(
         update(tasks).where(tasks.c.id == bindparam("task")).values(phase=bindparam("b_phase"), substate=bindparam("b_substate"), skill=bindparam("b_skill")),

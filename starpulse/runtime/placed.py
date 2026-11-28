@@ -16,7 +16,8 @@ from starpulse.board.model.board_feed import BoardFeed
 from starpulse.board.model.seam import Board
 from starpulse.contracts.adapters import BoardTask
 from starpulse.contracts.task_keys import TaskKeys
-from starpulse.event_log.event_log import EventLog
+from starpulse.event_log.event_log import EventLog, store_engine
+from starpulse.event_log.migrate import migrate
 from starpulse.event_log.readmodel.declared import Declared, declared_fields
 from starpulse.event_log.readmodel.fold import replay
 from starpulse.event_log.readmodel.projector import Projector
@@ -26,7 +27,6 @@ from starpulse.event_log.store import EventStore, NewEvent
 from starpulse.event_log.wake import StopEvent
 from starpulse.runtime.assembly import assemble, declared
 from starpulse.runtime.config import Config
-from starpulse.runtime.store_migrate import maintain
 
 __all__ = ["Placed", "assembled"]
 
@@ -96,9 +96,10 @@ class Placed:
         kept = directory is not None
         directory = directory or Path(tempfile.mkdtemp(prefix="placed-"))
         url = f"sqlite:///{directory / 'events.sqlite'}"
-        maintain(url, machines or {})
+        engine = store_engine(url)
+        migrate(engine)  # the schema alone: no operator files to import, and `fold` folds its own records
         self.keys = keys
-        self.log = EventLog(url)
+        self.log = EventLog(url, engine=engine)
         self.events = EventStore(self.log.engine)
         self.projector = Projector(self.log.engine, self.events, log=self.log, drawn=machines, keys=keys)
         self.read_model = ReadModel(self.log.engine, fields)

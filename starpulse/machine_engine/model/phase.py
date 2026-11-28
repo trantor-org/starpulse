@@ -1,16 +1,6 @@
 """A working task's phase, substate and flow, read from the machine rows it holds in a snapshot of the machines."""
 
-from types import SimpleNamespace
 from typing import Any
-
-
-def board_flow(snapshot: dict[str, Any]) -> dict[str, Any]:
-    return next(flow for flow in snapshot["flows"] if flow["name"] == "board")
-
-
-def roles_of(snapshot: dict[str, Any]) -> SimpleNamespace:
-    """The snapshot's state roles, each point an attribute: `roles_of(snapshot).done` is the State where work is done."""
-    return SimpleNamespace(**snapshot["roles"])
 
 
 def _newest(snapshot: dict[str, Any], flow: str, task: str) -> dict[str, Any] | None:
@@ -30,10 +20,9 @@ def phase_of(agent: dict[str, Any], snapshot: dict[str, Any]) -> tuple[str | Non
     """An In Progress task's `(phase, substate, flow)`, picked as the kanban card's `climb` does: the newest row among
     the submachines its In Progress row's state links, else among all the In Progress machine links, names the phase
     (that link's state), the substate (that row's state) and the flow. A task held by no submachine reads the In
-    Progress row's state alone."""
-    if agent["state"] != roles_of(snapshot).working:
-        return None, None, None
-    inner = board_flow(snapshot)["machine"].get("submachines") or [{}]
+    Progress row's state alone. A caller asks only for a task in the working lane: one in any other has no phase."""
+    board = next(flow for flow in snapshot["flows"] if flow["name"] == "board")
+    inner = board["machine"].get("submachines") or [{}]
     machine = next((f for f in snapshot["flows"] if f["name"] == inner[0].get("machine")), None)
     if machine is None:
         return None, None, None

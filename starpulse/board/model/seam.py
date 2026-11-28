@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from starpulse.board.model.board_feed import BoardFeed
     from starpulse.contracts.task_keys import TaskKeys
     from starpulse.event_log.event_log import EventLog
-    from starpulse.machine_engine.model.snapshot import Qualify
+    from starpulse.machine_engine.model.workflow_names import Qualify
 
 __all__ = [
     "AGENT",

@@ -58,10 +58,8 @@ def _whole(raw: dict[str, object], key: str, default: int, upper: int | None = N
     return value
 
 
-def parse_github(raw: object) -> GitHub | None:
-    """The `[github]` table, or `None` for no table; each refusal names the key to fix."""
-    if raw is None:
-        return None
+def parse_github(raw: object) -> GitHub:
+    """The `[github]` table a config has; the caller passes none for a config without one. Each refusal names the key to fix."""
     if not isinstance(raw, dict):
         raise GitHubConfigError("github must be a [github] table")
     if unknown := sorted(raw.keys() - _KEYS):

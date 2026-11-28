@@ -2,14 +2,24 @@
 
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 from starpulse.github.model.pulls import pull_url
-from starpulse.machine_engine.model.phase import board_flow, phase_of, roles_of
+from starpulse.machine_engine.model.phase import phase_of
 lazy from starpulse.contracts.adapters import Move
 
 #: Who `task move` moves as: the machine YAML's writers say which moves an agent may make.
 AGENT = "agent"
+
+
+def board_flow(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return next(flow for flow in snapshot["flows"] if flow["name"] == "board")
+
+
+def roles_of(snapshot: dict[str, Any]) -> SimpleNamespace:
+    """The snapshot's state roles, each point an attribute: `roles_of(snapshot).done` is the State where work is done."""
+    return SimpleNamespace(**snapshot["roles"])
 
 
 def _agent_moves(agent: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -117,7 +127,7 @@ def task_view(agent: dict[str, Any], snapshot: dict[str, Any], done: set[str] | 
     pulls = {pull["url"]: pull for pull in [*snapshot["pulls"].get(agent["id"], []), *agent.get("pulls", [])]}
     if done is None:
         done = done_ids(snapshot)
-    phase, substate, flow = phase_of(agent, snapshot)
+    phase, substate, flow = phase_of(agent, snapshot) if agent["state"] == roles_of(snapshot).working else (None, None, None)
     entered = agent.get("entered")
     dependencies = agent.get("dependencies", [])
     return {
