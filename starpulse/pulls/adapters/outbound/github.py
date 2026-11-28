@@ -5,7 +5,7 @@ The adapter depends on nothing of a host project's: not its hooks, its `AGENTS.m
 """
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -49,22 +49,6 @@ def delivers(record: Mapping[str, object] | None, task_id: str, keys: TaskKeys) 
     return not named or task_id.lower() in named
 
 
-def urls_of(forges: Mapping[str, "GitHubAdapter"]) -> Callable[[str], str | None]:
-    """A stored link's reference as the page of the change it names; None for one no configured forge owns."""
-
-    def url(ref: str) -> str | None:
-        kind, _, rest = ref.partition(":")
-        instance, _, identity = rest.partition(":")
-        if kind != "change" or (forge := forges.get(instance)) is None:
-            return None
-        try:
-            return forge.change_url(ChangeRef(adapter=instance, id=identity))
-        except ValueError:
-            return None
-
-    return url
-
-
 @dataclass(frozen=True)
 class GitHubAdapter:
     """Maps one pull request's recorded GitHub data onto `MachineEvent` dicts.
@@ -93,6 +77,18 @@ class GitHubAdapter:
         if not (pull := _CHANGE_ID.fullmatch(ref.id)):
             raise ValueError(f"{ref.id!r} is a malformed pull request id (owner/name:number)")
         return pull_url(pull[1], pull[2])
+
+    def link_url(self, ref: str) -> str | None:
+        """A stored link's reference (`change:github:owner/name:7`) as the page of its pull request; None for one this
+        instance does not own. Passed as a bound method, building a board runs none of this module's lines."""
+        kind, _, rest = ref.partition(":")
+        instance, _, identity = rest.partition(":")
+        if kind != "change":
+            return None
+        try:
+            return self.change_url(ChangeRef(adapter=instance, id=identity))
+        except ValueError:
+            return None
 
     def events(self, repo: str, bundle: dict) -> list[dict]:
         """The events `bundle` (`pull` and `check_runs`, as GitHub answers them) moves the machines by, oldest first."""

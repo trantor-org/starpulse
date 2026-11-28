@@ -36,7 +36,8 @@ if TYPE_CHECKING:
     from starpulse.machine_engine.model.replay import Report, Violation, check_events, check_lanes
     from starpulse.machine_engine.model.runner import Machine as RunningMachine
     from starpulse.machine_engine.model.runner import State, Transition, machine_class
-    from starpulse.machine_engine.model.snapshot import Qualify, describe, is_workflow, qualifier, writers
+    from starpulse.machine_engine.model.snapshot import describe, is_workflow, writers
+    from starpulse.machine_engine.model.workflow_names import Qualify, qualifier
 
 #: Each name and the module that defines it. They load on first use, so importing one submodule of the context does not
 #: load the schema validator, the state-machine library or the database stack the others need.
@@ -75,14 +76,14 @@ _EXPORTS = {
     "Violation": ("starpulse.machine_engine.model.replay", "Violation"),
     "check_events": ("starpulse.machine_engine.model.replay", "check_events"),
     "check_lanes": ("starpulse.machine_engine.model.replay", "check_lanes"),
-    "Qualify": ("starpulse.machine_engine.model.snapshot", "Qualify"),
+    "Qualify": ("starpulse.machine_engine.model.workflow_names", "Qualify"),
     "RunningMachine": ("starpulse.machine_engine.model.runner", "Machine"),
     "State": ("starpulse.machine_engine.model.runner", "State"),
     "Transition": ("starpulse.machine_engine.model.runner", "Transition"),
     "machine_class": ("starpulse.machine_engine.model.runner", "machine_class"),
     "describe": ("starpulse.machine_engine.model.snapshot", "describe"),
     "is_workflow": ("starpulse.machine_engine.model.snapshot", "is_workflow"),
-    "qualifier": ("starpulse.machine_engine.model.snapshot", "qualifier"),
+    "qualifier": ("starpulse.machine_engine.model.workflow_names", "qualifier"),
     "writers": ("starpulse.machine_engine.model.snapshot", "writers"),
 }
 

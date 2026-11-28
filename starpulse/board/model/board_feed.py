@@ -15,9 +15,7 @@ from typing import TYPE_CHECKING, Any
 from starpulse.board.model.commit_keys import CommitKeys
 from starpulse.contracts.adapters import TaskKeys
 from starpulse.event_log.wake import StopEvent
-from starpulse.machine_engine.model.snapshot import qualifier
 from starpulse.machine_engine.model.state_roles import StateRoles
-from starpulse.machine_engine.model.stays import LaneRow
 from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_machine
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -28,7 +26,7 @@ from starpulse.board.model.feed.follow import Followed, InstanceRuns, Resumable,
 from starpulse.board.model.feed.ledgers import LedgerMethods
 from starpulse.board.model.feed.lifecycle import LifecycleMixin
 from starpulse.board.model.feed.reads import ReadMethods
-from starpulse.board.model.feed.records import RecordsMixin
+from starpulse.board.model.feed.records import LaneRow, RecordsMixin
 from starpulse.board.model.feed.runs import RunMethods
 from starpulse.board.model.feed.shared import (
     FEED_EVENT_RESEND,
@@ -142,10 +140,11 @@ class BoardFeed(LifecycleMixin, RecordsMixin, PullMethods, ReadMethods, RunMetho
         self._commit = commit or {}
         self._start_urls = start_urls or {}
         self._ties = self._tied_to_events(cues)
-        qualify = qualifier(self._domains)
         #: How a failure of each workflow a machine event cues resolves, by `(event, workflow)`; any other resolves on its next success.
         self._resolves = {
-            (cue["event"], qualify(cue["dag"])): cue["resolves"] for cue in cues if "event" in cue and "resolves" in cue
+            (cue["event"], self._qualify(cue["dag"])): cue["resolves"]
+            for cue in cues
+            if "event" in cue and "resolves" in cue
         }
         #: The Ledger as last published, so a change to it is sent once.
         self._ledgers: dict[str, list[dict]] = {}

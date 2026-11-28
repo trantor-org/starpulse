@@ -321,6 +321,8 @@ def _claude_code(raw: object) -> ClaudeCode | None:
 
 def _github(raw: object) -> GitHub | None:
     """The `[github]` table, or None when the config has none; a refusal is a `ConfigError`."""
+    if raw is None:
+        return None
     try:
         return parse_github(raw)
     except GitHubConfigError as exc:

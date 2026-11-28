@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from starpulse.machine_engine.model.machine_definition import Compiled
-    from starpulse.machine_engine.model.snapshot import Qualify
+    from starpulse.machine_engine.model.workflow_names import Qualify
 lazy from starpulse.machine_engine.adapters.machine_loader import load_machine
 lazy from starpulse.machine_engine.model.snapshot import describe, is_workflow, writers
 

@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from starpulse.board.model import lane_writes, write_steps
 from starpulse.event_log import lane_events
 from starpulse.event_log.wake import StopEvent
-from starpulse.machine_engine.model.stays import LaneRow
 from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -18,6 +17,9 @@ if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.board.model.seam import Written
     from starpulse.event_log.event_log import EventLog
 from starpulse.board.model.feed.shared import LaneRecorder, logger
+
+#: A lane change as the history keeps it: `(task, at, from, to)`, `at` in epoch seconds.
+LaneRow = tuple[str, float, str | None, str]
 
 
 class RecordsMixin:

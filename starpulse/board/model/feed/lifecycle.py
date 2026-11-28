@@ -1,20 +1,25 @@
 """Feed lifecycle: the Board's ties, readiness and replay."""
 
 from collections.abc import Mapping, Sequence
+from functools import cached_property
 
 from starpulse.board.model.feed.shared import entry_position
-from starpulse.machine_engine.model.snapshot import qualifier
+from starpulse.machine_engine.model.workflow_names import Qualify, qualifier
 from starpulse.machine_engine.model.state_roles import StateRoles
 
 
 class LifecycleMixin:
+    # Built on first use: a feed given no cues names no workflow.
+    @cached_property
+    def _qualify(self) -> Qualify:
+        return qualifier(self._domains)
+
     def _tied_to_events(self, cues: Sequence[dict]) -> dict[str, list[str]]:
         """Each Board event with the workflows (`<instance>/<workflow>`) it cues or that write it."""
-        qualify = qualifier(self._domains)
         ties: dict[str, list[str]] = {}
         for cue in cues:
             if "event" in cue:
-                ties.setdefault(cue["event"], []).append(qualify(cue["dag"]))
+                ties.setdefault(cue["event"], []).append(self._qualify(cue["dag"]))
         for event, writers in self._drawn["board"].get("writers", {}).items():
             ties.setdefault(event, []).extend(writer["actor"] for writer in writers)
         return {event: list(dict.fromkeys(dags)) for event, dags in ties.items()}
