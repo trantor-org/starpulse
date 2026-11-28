@@ -1,10 +1,11 @@
 """`starpulse worker sweeper`: the one leased sweeper, as its own process or as a thread of the `contexts` child.
 
-It takes the `sweeper` lease at start, so a second instance exits non-zero naming the holder. It runs a pass at start and
-then every `[sweeper] interval_s` (default 3600) until `SIGTERM`: the kinds in order (`readers`, then the `[[sweeper.kinds]]`
-commands), then the housekeeping (the event-log prune the runtime passes in, then the `[[sweeper.housekeeping]]`
-commands). It keeps the pass metrics in the event log for the Page API's `/metrics`. `SIGHUP` re-reads the config and, as
-the kinds are built once, only says whether a restart is needed.
+It takes the `sweeper` lease at start, so a second instance exits non-zero naming the holder. It runs a pass at start
+(resuming one a replaced worker left unfinished) and then every `[sweeper] interval_s` (default 3600) until `SIGTERM`:
+the kinds in order (`readers`, then the `[[sweeper.kinds]]` commands), then the housekeeping (the event-log prune the
+runtime passes in, then the `[[sweeper.housekeeping]]` commands). It keeps the pass metrics in the event log for the
+Page API's `/metrics`. `SIGHUP` re-reads the config and, as the kinds are built once, only says whether a restart is
+needed.
 """
 
 import argparse
@@ -20,7 +21,7 @@ from starpulse.sweeper.bin.blocks import SweeperBlocks as SweeperConfig
 from starpulse.sweeper.bin.blocks import sweeper_built_blocks
 from starpulse.sweeper.commands import CommandHousekeeping, CommandKind
 from starpulse.sweeper.lease import Lease, LeaseHeld, acquire, process_alive
-from starpulse.sweeper.passes import Housekeeping, Kind, Metrics, kind_series, run_pass
+from starpulse.sweeper.passes import Housekeeping, Kind, Metrics, Progress, kind_series, run_pass
 from starpulse.sweeper.publish import publish_metrics
 from starpulse.sweeper.readers import Readers
 
@@ -46,11 +47,13 @@ def _loop(
     log: EventLog, lease: Lease, kinds: Sequence[Kind], housekeeping: Sequence[Housekeeping], interval_s: float,
     stop: StopEvent,
 ) -> None:  # fmt: skip
-    """Pass now and then every `interval_s` until `stop`, keeping the metrics after each; the lease is released at the end."""
+    """Pass now and then every `interval_s` until `stop`, keeping the metrics after each; the lease is released at the end.
+    A pass the previous worker left unfinished resumes after its last finished step."""
     metrics = Metrics([kind.name for kind in kinds])
+    progress = Progress(log, interval_s)
     try:
         while not stop.is_set():
-            run_pass(kinds, housekeeping, metrics)
+            run_pass(kinds, housekeeping, metrics, progress=progress)
             publish_metrics(log, metrics.exposition() + kind_series(kinds))
             # adr-exempt: sweeper
             stop.wait(interval_s)

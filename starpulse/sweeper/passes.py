@@ -5,11 +5,17 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+from starpulse.event_log.kept_text import kept_state
+
+if TYPE_CHECKING:  # annotation only: the event log opens the database stack
+    from starpulse.event_log.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 
 HOUSEKEEPING = "housekeeping:"
+PROGRESS = "sweeper.progress"
 
 
 @dataclass(frozen=True)
@@ -103,16 +109,56 @@ def kind_series(kinds: Sequence[Kind]) -> str:
     return "".join(kind.exposition() for kind in kinds if isinstance(kind, Exposes))
 
 
+class Progress:
+    """The steps the pass under way has finished, kept in the event log, so a worker a reload replaces mid-pass leaves the
+    next worker to resume that pass rather than start it over; a pass begun `interval_s` or more ago starts over."""
+
+    def __init__(self, log: EventLog, interval_s: float) -> None:
+        self._log = log
+        self._interval_s = interval_s
+        self._started = 0.0
+        self._done: list[str] = []
+
+    def begin(self, now: float) -> frozenset[str]:
+        """Start a pass at `now`, or resume the one a replaced worker left; return the steps it already finished."""
+        kept = kept_state(self._log, PROGRESS)()
+        if kept and now - kept["started"] < self._interval_s:
+            self._started, self._done = kept["started"], list(kept["done"])
+        else:
+            self._started, self._done = now, []
+        return frozenset(self._done)
+
+    def ran(self, step: str) -> None:
+        self._done.append(step)
+        self._keep({"started": self._started, "done": self._done})
+
+    def end(self) -> None:
+        self._keep({})
+
+    def _keep(self, state: dict[str, Any]) -> None:
+        try:
+            self._log.put_state(PROGRESS, state)
+        except Exception:
+            logger.warning("sweeper: the pass progress was not kept", exc_info=True)
+
+
 def run_pass(
     kinds: Sequence[Kind],
     housekeeping: Sequence[Housekeeping],
     metrics: Metrics,
     clock: Callable[[], float] = time.time,
+    progress: Progress | None = None,
 ) -> None:
     """Run every kind in order, then every housekeeping step; one that raises is logged and counted as an error, and the
-    rest still run. Writes one INFO line naming each kind and its corrections (`error` for one that raised)."""
+    rest still run. With `progress`, a step the resumed pass already finished is skipped. Writes one INFO line naming each
+    kind and its corrections (`error` for one that raised, `earlier` for one skipped)."""
+    done = progress.begin(clock()) if progress else frozenset()
+    ran = progress.ran if progress else lambda _step: None
     said = []
     for kind in kinds:
+        if kind.name in done:
+            said.append(f"{kind.name}=earlier")
+            continue
         try:
             outcome = kind.run()
         except Exception:
@@ -122,11 +168,17 @@ def run_pass(
         else:
             metrics.counted(kind.name, outcome)
             said.append(f"{kind.name}={outcome.corrected}")
+        ran(kind.name)
     for step in housekeeping:
+        if HOUSEKEEPING + step.name in done:
+            continue
         try:
             step.run()
         except Exception:
             logger.exception("sweeper: housekeeping %s failed", step.name)
             metrics.failed(HOUSEKEEPING + step.name)
+        ran(HOUSEKEEPING + step.name)
+    if progress:
+        progress.end()
     number = metrics.pass_done(clock())
     logger.info("sweeper: pass %d: %s", number, " ".join(said))
