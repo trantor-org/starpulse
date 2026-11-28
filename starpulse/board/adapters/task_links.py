@@ -79,11 +79,6 @@ class TaskLinks:
             db.execute(insert(task_links).values(task=task, role=role, ref=ref, requested_by=requested_by, at=stored.at, event_id=stored.event_id))
             return StoredLink(task, role, ref, requested_by, stored.at, stored.event_id), True
 
-    def refs(self, task: str) -> set[str]:
-        """The references the task has a link to, in any role."""
-        with self._engine.connect() as db:
-            return set(db.execute(select(task_links.c.ref).where(task_links.c.task == task)).scalars())
-
     def of(self, task: str, role: str) -> list[StoredLink]:
         """The task's links of `role`, oldest first."""
         with self._engine.connect() as db:

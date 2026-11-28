@@ -6,11 +6,10 @@ from typing import Any
 
 from sqlalchemy import Connection, bindparam, func, select, true, update
 
-from starpulse.event_log.lane_events import done_lanes
 from starpulse.event_log.readmodel.tables import machine_tasks, tasks
 from starpulse.machine_engine.model.phase import phase_of
 from starpulse.machine_engine.model.state_roles import StateRoles
-from starpulse.machine_engine.model.transitions import lane_id
+from starpulse.machine_engine.model.transitions import done_lanes, lane_id
 
 #: The `starpulse_tasks` columns these functions write: derived, so a fold neither reads nor writes them.
 STORED = ("phase", "substate", "skill", "prs", "open_dependencies")

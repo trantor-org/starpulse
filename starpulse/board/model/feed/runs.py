@@ -63,7 +63,8 @@ class RunMethods:
                 self._runs_errors.pop(instance, None)
             else:
                 self._runs_errors[instance] = error
-            self._publish("dags", {"dags": self._workflows(), "pools": self._drawn_pools(), "error": self._error()})
+            self._workflow_rows = self._workflows()
+            self._publish("dags", {"dags": self._workflow_rows, "pools": self._drawn_pools(), "error": self._error()})
         if runs_moved:
             self._refresh_ledgers()
 

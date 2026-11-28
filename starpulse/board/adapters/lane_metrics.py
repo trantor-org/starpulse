@@ -12,6 +12,7 @@ from starpulse.event_log.conformance_monitor import Conformance, stalled_exposit
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.kept_text import kept_state, kept_text
 from starpulse.event_log.wake import StopEvent
+from starpulse.machine_engine.model.transitions import ARCHIVED
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ def monitor(
     replay keeps the last deadlines, so the gauge stays sampled until it has read up."""
     conformance = Conformance(
         feed.machines,
-        entered=(feed.roles.done, lane_events.ARCHIVED, feed.roles.working),
+        entered=(feed.roles.done, ARCHIVED, feed.roles.working),
         working=feed.roles.working,
         open_tasks=feed.open_tasks,
         review=feed.roles.review,

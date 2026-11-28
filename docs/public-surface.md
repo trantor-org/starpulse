@@ -89,6 +89,7 @@ is public for the names listed here:
 - `starpulse.runtime.nats_server`: `DEFAULT_PORT`, the port the bridge's NATS server listens on when `[bridge] port` names none, for a test that must pick another.
 - `starpulse.runtime.placed`: `Placed(machines=None)`, a read model over a temporary database whose `put(task)` places a `BoardTask` and whose `draw(**settings)` returns the `BoardFeed`, for a test that serves or starts a board over placed tasks.
 - `starpulse.runtime.session_delivery`: `line_for(event)`, the line the bridge writes into a holding session for a delivered event, for a consumer that checks what a session reads.
+- `starpulse.runtime.assembly`: `declared(config, base)`, the board, machines, domains and stored policy a config file declares, and `history_store(config, base, machines)`, the store `serve` records into, for a seeder that writes beside a running server.
 - `starpulse.bridge.subjects`: `subject_for(board, entry)`, the subject the bridge publishes an event-log entry on, or `None`.
 - `starpulse.bridge.subscriptions`: `parse_rules(table)`, the rules of each task kind from the `[bridge.subscriptions.<kind>]` tables, and `expand(board, templates, **values)`, their full subjects, for a consumer that checks its own subscription rules.
 - `starpulse.bridge.delivery`: `Event`, the delivered event (`subject` and `payload`) that `line_for` renders.
@@ -101,6 +102,7 @@ is public for the names listed here:
 - `starpulse.github.ports.events`: `Entry`, the `delivery` and its `attempts`, and the `Queue` protocol.
 - `starpulse.github.model.events`: `CONSUMER`, the queue name the GitHub inbox consumer registers under, for a consumer outside the package.
 - `starpulse.pulls.adapters.outbound.pulls`: `PullStore`, the store the webhook deliveries and lifecycle events save to.
+- `starpulse.pulls.adapters.outbound.github`: `GitHubAdapter`, whose `change_ref(url)` names a GitHub pull request URL as the `change:<adapter>:<id>` reference a task link stores.
 - `starpulse.views.adapters.outbound.signal_folds`: `changed(events, after, views, since=0.0)`, the stored per-session results folded past a rowid cursor, for a sink that copies only what changed.
 - `starpulse.views.adapters.outbound.task_spend`: `TaskSpend(events)`, whose `catch_up()` relinks and resums the sessions whose spend fold was rewritten, for a seeder that fills the task spend a drawer reads.
 - `starpulse.views.application.queries.responses`: `spend_response(folds, task, query, now)`, the task spend body the route answers and its status, for a test that checks a seeded store renders it.

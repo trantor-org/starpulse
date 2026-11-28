@@ -17,7 +17,7 @@ from pydantic import (
 from starpulse.contracts.api._base import _Request
 from starpulse.contracts.api.dto.admin import Clock, Density, OpensOn, Scale, Theme
 from starpulse.contracts.api.dto.brief import Brief
-from starpulse.contracts.api.dto.harnesses import HarnessBody
+from starpulse.contracts.api.dto.harnesses import HarnessBodyRequest
 from starpulse.contracts.api.dto.machine_definition import MachineDefinition, PolicyRows
 from starpulse.contracts.api.dto.scheduler import QuietHours
 from starpulse.contracts.api.dto.task_fields import Changes, DocLink, EditBase, MemberKindSize, Title
@@ -408,7 +408,7 @@ class HarnessesRequest(_Request):
     out keeps its config, and the result must still define every tier on every harness."""
 
     tiers: list[NonBlank] | None = None
-    harnesses: list[HarnessBody] | None = None
+    harnesses: list[HarnessBodyRequest] | None = None
 
 
 class StepsRequest(_Request):

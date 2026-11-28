@@ -7,11 +7,11 @@ predicate the partial indexes carry, so the cost of a read follows the live boar
 from collections.abc import Collection
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, and_, column, exists, false, func, or_, select, true
+from sqlalchemy import ColumnElement, Select, and_, bindparam, column, exists, false, func, or_, select, true
 
-from starpulse.event_log.lane_events import done_lanes
 from starpulse.event_log.readmodel.tables import criteria, tasks
 from starpulse.event_log.tables import task_links
+from starpulse.machine_engine.model.transitions import done_lanes
 
 SUMMARY = (
     tasks.c.id,
@@ -77,14 +77,13 @@ def finished(ids: Collection[str], done: str) -> Select[Any]:
     return select(tasks.c.id).where(tasks.c.id.in_(ids), or_(tasks.c.archived == true(), lane.in_(done_lanes(done))))
 
 
-def linked(uuids: Collection[str], roles: Collection[str]) -> Select[Any]:
-    """The task, role and reference of each link of `roles` that the tasks of these UUIDs hold, oldest first: one seek of the
-    links' primary key for each task."""
-    return (
-        select(task_links.c.task, task_links.c.role, task_links.c.ref)
-        .where(task_links.c.task.in_(uuids), task_links.c.role.in_(roles))
-        .order_by(task_links.c.at, task_links.c.ref)
-    )
+#: The task, role and reference of each link of `roles` the tasks of `uuids` hold, oldest first: one seek of the links'
+#: primary key per task. Built once, so a read pays neither building the statement nor its cache key.
+LINKED = (
+    select(task_links.c.task, task_links.c.role, task_links.c.ref)
+    .where(task_links.c.task.in_(bindparam("uuids", expanding=True)), task_links.c.role.in_(bindparam("roles", expanding=True)))
+    .order_by(task_links.c.at, task_links.c.ref)
+)
 
 
 def cited() -> Select[Any]:
@@ -224,6 +223,5 @@ def dependencies_of(ids: Collection[str]) -> Select[Any]:
     return select(tasks.c.id, tasks.c.dependencies).where(tasks.c.id.in_(ids))
 
 
-def position() -> Select[Any]:
-    """The stream position of the newest change: one seek on the `seq` index."""
-    return select(func.max(tasks.c.seq))
+#: The stream position of the newest change: one seek on the `seq` index.
+POSITION = select(func.max(tasks.c.seq))

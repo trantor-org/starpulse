@@ -79,12 +79,12 @@ from starpulse.board.model.seam import (
 )
 from starpulse.contracts.doc_links import doc_link
 from starpulse.contracts.tiers import TIERS, implied_tier
-from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.event_log.readmodel.fold import Row
 from starpulse.event_log.store import StaleVersion
 from starpulse.event_log.tables import pull_requests, retired_tasks, task_links
 from starpulse.github.adapters.outbound.rest import connect, get, pull_mergeable
 from starpulse.machine_engine.model.state_roles import StateRoles
+from starpulse.machine_engine.model.transitions import ARCHIVED, COMPLETED
 lazy from starpulse.machine_engine.adapters.machine_loader import read_document
 
 if TYPE_CHECKING:

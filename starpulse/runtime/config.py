@@ -510,7 +510,10 @@ def load(path: Path | None) -> Config:
             file.bridge.port,
             file.bridge.store_dir,
             file.bridge.board,
-            parse_rules({kind: rules.model_dump() for kind, rules in file.bridge.subscriptions.items()}),
+            # An empty table skips the call, so a test loading a config without one never runs the bridge's rules.
+            parse_rules({kind: rules.model_dump() for kind, rules in file.bridge.subscriptions.items()})
+            if file.bridge.subscriptions
+            else {},
             tuple(file.bridge.resume),
             file.bridge.sessions_dir,
             # no table, no call: else every config load runs reach.py, and an edit to it selects every such test

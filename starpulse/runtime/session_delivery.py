@@ -39,10 +39,10 @@ from starpulse.bridge.subjects import INCIDENT
 from starpulse.contracts.signals import CLAUDE_CODE
 from starpulse.event_log import events as machine_events
 from starpulse.event_log.event_log import EventLog
-from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
 from starpulse.harness_telemetry.adapters.inbound.telemetry import telemetry_log
 from starpulse.harness_telemetry.adapters.outbound.session_exit import ExitWatch, watch_registered
 from starpulse.harness_telemetry.model.harness import ended_id
+from starpulse.machine_engine.model.transitions import ARCHIVED, COMPLETED
 from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL
 from starpulse.sessions.adapters.outbound.registry import Registry
 from starpulse.sessions.ports.harness import SessionHarness
