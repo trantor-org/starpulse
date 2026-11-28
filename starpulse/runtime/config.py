@@ -29,7 +29,6 @@ from pydantic import ValidationError
 
 from starpulse.board.model.adapter_types import DEFAULT_TYPE, module_name
 from starpulse.board.model.commit_keys import CommitKeys
-from starpulse.board.model.policy import refuse_retired
 from starpulse.board.model.search_config import Search, SearchError, parse_search
 from starpulse.bridge.reach import parse_reach
 from starpulse.bridge.subscriptions import parse_rules
@@ -275,6 +274,8 @@ class Config:
 
 def _scheduler(raw: object) -> Scheduler:
     """The `[scheduler]` table's policy, or the defaults when the config has none; a refusal is a `ConfigError`."""
+    if raw is None:
+        return Scheduler()
     try:
         return parse_scheduler(raw)
     except SchedulerError as exc:
@@ -404,13 +405,18 @@ def _harnesses(file: ConfigFile, path: Path | None) -> Harnesses | None:
     return None
 
 
+#: The `[board]` keys the policy DB replaced, each as the config spells it.
+_RETIRED_POLICY = {"guards": "[[board.guards]]", "rules": "[[board.rules]]", "default_profiles": "[board.default_profiles]"}
+
+
 def _board(table: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """The board's type, always `native`, and its table without `[board.actor]`; any other type is a `ConfigError`."""
     board = {key: value for key, value in table.items() if key != "actor"}
-    try:
-        refuse_retired(board)
-    except ValueError as exc:
-        raise ConfigError(str(exc)) from exc
+    if declared := [spelled for key, spelled in _RETIRED_POLICY.items() if key in board]:
+        raise ConfigError(
+            f"board: {', '.join(declared)} no longer read: board policy lives in the policy DB "
+            "(`starpulse policy show` prints it; `starpulse policy revision` changes it)"
+        )
     kind = board.get("type", DEFAULT_TYPE)
     if kind != DEFAULT_TYPE:
         raise ConfigError(f"board type {kind!r} is not native")
@@ -507,7 +513,10 @@ def load(path: Path | None) -> Config:
             parse_rules({kind: rules.model_dump() for kind, rules in file.bridge.subscriptions.items()}),
             tuple(file.bridge.resume),
             file.bridge.sessions_dir,
-            parse_reach({kind: reach.model_dump() for kind, reach in file.bridge.incidents.items()}),
+            # no table, no call: else every config load runs reach.py, and an edit to it selects every such test
+            parse_reach({kind: reach.model_dump() for kind, reach in file.bridge.incidents.items()})
+            if file.bridge.incidents
+            else {},
             {lane: tuple(writers) for lane, writers in file.bridge.quiet_moves.items()},
             tuple(file.bridge.end),
             frozenset(file.bridge.end_lanes),

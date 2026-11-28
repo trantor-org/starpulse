@@ -24,7 +24,7 @@ except ImportError:
 from starpulse.board.adapters import project_machines
 from starpulse.board.model.claims import assignee_of
 from starpulse.board.model.markdown import needs_attention_reason
-from starpulse.board.model.policy import Policy, waits_of
+from starpulse.board.model.policy import waits_of
 from starpulse.contracts.task_keys import TaskKeys
 from starpulse.contracts.tiers import DEFAULT_TIER, TIERS
 from starpulse.machine_engine.model.state_roles import StateRoles
@@ -444,7 +444,7 @@ def project_board(
     board_file = base / str(settings["machine"]) if "machine" in settings else None
     lane_ids = [lane_id(status) for status in config.statuses]
     if board_file:
-        compiled, drawn, cues = _machine(board_file, config, waits_of(settings.get("policy_rows") or Policy()))
+        compiled, drawn, cues = _machine(board_file, config, waits_of(rows) if (rows := settings.get("policy_rows")) is not None else {})
     else:
         compiled, drawn, cues = None, board_machine(config.statuses), []
     roles = StateRoles.of_machine(compiled) if compiled else StateRoles.of_statuses(config.statuses)

@@ -289,6 +289,25 @@ traces = Table(
     Index("ix_starpulse_traces_cluster_key", "cluster_key"),
 )
 
+#: Each Stay of a task: a state it held on a machine from `entered_at` for `seconds` (null while it holds it), and in
+#: `spend`, per model and effort, the Model step count, the four token classes and the WTE of the steps in it (`[]` for
+#: none; null when unknown, for a state entered before this table). The recorder opens and closes it
+#: (`flow_metrics.adapters.outbound.stays`), and the session ledger adds the steps.
+stays = Table(
+    "starpulse_stays",
+    metadata,
+    Column("task", String, nullable=False),
+    Column("task_uuid", String),
+    Column("machine", String, nullable=False),
+    Column("state", String, nullable=False),
+    Column("entered_at", Float, nullable=False),
+    Column("seconds", Float),
+    Column("reconstructed", Boolean, nullable=False, server_default="0"),
+    Column("spend", JSON(none_as_null=True)),
+    PrimaryKeyConstraint("task", "machine", "entered_at"),
+    Index("ix_starpulse_stays_task_uuid", "task_uuid", "machine", "entered_at"),
+)
+
 #: Each session whose `spend` fold names a task (`spend.named`): one task's spend reads its own sessions' folds by it.
 #: Derived from `signal_folds` by `views.adapters.outbound.task_spend`.
 task_sessions = Table(

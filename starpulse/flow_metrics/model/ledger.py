@@ -29,7 +29,7 @@ from starpulse.contracts.signals import Signal, signal_of
 from starpulse.flow_metrics.model.session_health import attribution, session_signals
 from starpulse.flow_metrics.model.steps import NO_SKILL, owned_of
 
-__all__ = ["Folded", "apply", "cost_of", "last_claim", "spend_of", "steps_of"]
+__all__ = ["Folded", "apply", "cost_of", "given", "last_claim", "spend_of", "steps_of"]
 
 #: How far behind its newest signal a session's signals settle, longer than a model request or a tool call runs.
 SETTLE_S = 600.0
@@ -246,8 +246,29 @@ def spend_of(folded: Folded, harness: str, session: str) -> dict[str, Any]:
         "steps": [
             {**row["step"], "edits": row["edits"]}
             for row in folded.rows
-            if row["step"]["captured"] and row["step"]["origin"] != "auxiliary" and row["step"]["task"] and row["named"]
+            if _spent(row) and row["step"]["task"] and row["named"]
         ],
         "claims": folded.carry["claims"],
         "compactions": folded.carry["compactions"],
     }
+
+
+def _spent(row: dict[str, Any]) -> bool:
+    return row["step"]["captured"] and row["step"]["origin"] != "auxiliary"
+
+
+def given(state: dict[str, Any] | None, folded: Folded) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    """The captured, non-auxiliary steps of `folded` that the session's stored `state` (None for its first export) has
+    not given out yet: those a task's Stays take, which name a task at or after the session's first naming signal, and
+    those none does; and the request keys to store under `given`, of the steps past the settle cut a later export may
+    meet again, so each step is given out once."""
+    cut = state["cut"] if state else None
+    held = set(state.get("given", ())) if state else set()
+    taken: list[dict[str, Any]] = []
+    untaken: list[dict[str, Any]] = []
+    for row in folded.rows:
+        step = row["step"]
+        if _spent(row) and (cut is None or step["at"] > cut) and step["key"] not in held:
+            (taken if step["task"] and row["named"] else untaken).append(step)
+    now = folded.state["cut"]
+    return taken, untaken, [r["step"]["key"] for r in folded.rows if now is None or r["step"]["at"] > now]

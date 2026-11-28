@@ -29,6 +29,10 @@ def create_flags(sub: argparse.ArgumentParser) -> None:
         dest="duplicate_queries",
         help="words to search the board for a task that does this work, which the server records; repeat for several",
     )
+    sub.add_argument(
+        "--duplicate-resolution",
+        help="why each open candidate the duplicate search listed is not this work (`TASK-9: different scope`)",
+    )
     sub.add_argument("--description", help=argparse.SUPPRESS)
     sub.add_argument("--priority", help="`high`, `medium` or `low`")
     sub.add_argument("--impact", help="how much the work matters: `high`, `medium` or `low`")

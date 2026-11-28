@@ -8,6 +8,7 @@ dimensions have the limits below. `lane`, `review_lane`, `unsized_points`, `stat
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
+from functools import partial
 from typing import Any
 
 __all__ = ["DIMENSIONS", "LEVELS", "Scheduler", "SchedulerError", "parse_scheduler", "served"]
@@ -42,7 +43,6 @@ _KEYS = {
 ACTOR = "starpulse/scheduler"
 
 
-
 class SchedulerError(ValueError):
     """The block cannot be run from; the message names the key to fix."""
 
@@ -66,13 +66,11 @@ class Scheduler:
     """The points a task with no `size-N` label counts as."""
     state_dir: str | None = None
     """Where the files the switch and the run ledger were kept in before the store are imported from, relative to the config's directory; none: beside the config."""
-    tier_weights: Mapping[str, float] = field(default_factory=lambda: {"fast": 1, "standard": 2, "deep": 4})
+    tier_weights: Mapping[str, float] = field(default_factory=partial(dict, fast=1, standard=2, deep=4))
     """What a point costs on each agent tier: a task's demand starts from its points times its tier's weight."""
-    priority_matrix: Mapping[str, float] = field(default_factory=lambda: dict(_MATRIX))
+    priority_matrix: Mapping[str, float] = field(default_factory=partial(dict, _MATRIX))
     """The Priority weight of each `<impact>/<urgency>` cell, and `default` for a Task with no Impact or Urgency."""
-    limits: Mapping[str, float] = field(
-        default_factory=lambda: {"cpu": 80, "memory": 80, "sessions": 2, "review": 20}
-    )
+    limits: Mapping[str, float] = field(default_factory=partial(dict, cpu=80, memory=80, sessions=2, review=20))
     """Each dimension's limit: CPU and memory in percent, sessions as a count, review in points."""
     session_limits: Mapping[str, float] = field(default_factory=dict)
     """Per-harness session caps; a harness left out uses `limits["sessions"]`."""
@@ -188,9 +186,7 @@ def _table(raw: object, key: str, known: Mapping[str, float] | None) -> dict[str
 
 
 def parse_scheduler(raw: object) -> Scheduler:
-    """The `[scheduler]` table as policy, or the defaults for `None`; each refusal names the key to fix."""
-    if raw is None:
-        return Scheduler()
+    """The `[scheduler]` table a config has, as policy; a config without one takes `Scheduler()` instead. Each refusal names the key to fix."""
     if not isinstance(raw, dict):
         raise SchedulerError("scheduler must be an [scheduler] table")
     if unknown := sorted(raw.keys() - _KEYS):

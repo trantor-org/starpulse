@@ -21,10 +21,10 @@ from starpulse.machine_engine.model.transitions import DEFAULT_STATUSES, board_m
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
     from starpulse.event_log.event_log import EventLog
     from starpulse.event_log.readmodel.read_model import ReadModel
-from starpulse.board.model.feed.pulls import PullMethods
 from starpulse.board.model.feed.follow import Followed, InstanceRuns, Resumable, follow, retained
 from starpulse.board.model.feed.ledgers import LedgerMethods
 from starpulse.board.model.feed.lifecycle import LifecycleMixin
+from starpulse.board.model.feed.pulls import PullMethods
 from starpulse.board.model.feed.reads import ReadMethods
 from starpulse.board.model.feed.records import LaneRow, RecordsMixin
 from starpulse.board.model.feed.runs import RunMethods
@@ -185,3 +185,16 @@ class BoardFeed(LifecycleMixin, RecordsMixin, PullMethods, ReadMethods, RunMetho
         #: The whole Ledger as last built, which every page request reads (`_refresh_ledgers`); with no pull, run or
         #: lane history yet it holds only the empty events, so its window does not matter.
         self._ledger_full = self._ledger({}, {}, 0.0)
+
+    def spawn(self, target: Callable[[StopEvent], None], name: str) -> None:
+        """Run `target(stopped)` on a daemon thread that `stop` ends: `target` returns once `stopped` is set."""
+        thread = threading.Thread(target=target, args=(self.stopped,), name=name, daemon=True)
+        self._threads.append(thread)
+        thread.start()
+
+    def stop(self, timeout: float = 5.0) -> None:
+        """End every thread `spawn` began, and wait up to `timeout` seconds for each, so the feed saves its last
+        checkpoint before the log it saves to is closed."""
+        self.stopped.set()
+        for thread in self._threads:
+            thread.join(timeout)
