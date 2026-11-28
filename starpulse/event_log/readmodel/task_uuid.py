@@ -16,6 +16,7 @@ KEYED = (
     ("starpulse_task_verdicts", "task"),
     ("starpulse_scheduler_runs", "task"),
     ("starpulse_task_criteria", "task_id"),
+    ("starpulse_stays", "task"),
 )
 
 

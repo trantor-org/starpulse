@@ -34,6 +34,7 @@ if TYPE_CHECKING:  # annotation only: the event log opens the database stack
 lazy from sqlalchemy.exc import SQLAlchemyError
 
 lazy from starpulse.flow_metrics.adapters.outbound.session_ledger import SessionLedger
+lazy from starpulse.harness_telemetry.adapters.outbound import step_seconds
 
 __all__ = ["CLAUDE_CODE", "Signal", "TelemetryLog", "held", "redactor", "signals", "telemetry_log"]
 
@@ -396,7 +397,7 @@ class TelemetryLog:
     def publish(self, found: Iterable[Signal]) -> None:
 
         try:
-            self._ledger().apply(found)
+            step_seconds.unassigned(self._ledger().apply(found))
         except SQLAlchemyError:
             log.warning("session folds unwritable; dropping signals", exc_info=True)
 

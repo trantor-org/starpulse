@@ -23,7 +23,6 @@ __all__ = [
     "from_files",
     "guards_of",
     "profile_matrix",
-    "refuse_retired",
     "waits_of",
 ]
 
@@ -112,19 +111,6 @@ class Policy:
     vocabularies: tuple[Vocabulary, ...] = ()
     profiles: tuple[Profile, ...] = ()
     tools: tuple[LaneTool, ...] = ()
-
-
-#: The `[board]` keys the policy DB replaced, each as the config spells it.
-RETIRED = {"guards": "[[board.guards]]", "rules": "[[board.rules]]", "default_profiles": "[board.default_profiles]"}
-
-
-def refuse_retired(board: Mapping[str, Any]) -> None:
-    """Raise ValueError naming the policy DB when `board` still declares policy the DB now holds."""
-    if declared := [spelled for key, spelled in RETIRED.items() if key in board]:
-        raise ValueError(
-            f"board: {', '.join(declared)} no longer read: board policy lives in the policy DB "
-            "(`starpulse policy show` prints it; `starpulse policy revision` changes it)"
-        )
 
 
 def guards_of(policy: Policy) -> list[dict[str, Any]]:

@@ -7,7 +7,9 @@ rewrite carries a new revision in `folded_through`, taken from one counter in th
 finds every session an export advanced since.
 
 The same write stores the Trace of each case the export ended (`flow_metrics.model.traces`) and keeps the case still
-open in the `ledger` row, so `close` writes it, marked unfinished, when its session ends.
+open in the `ledger` row, so `close` writes it, marked unfinished, when its session ends. It also adds each Model step
+the export brought to its task's Stays (`flow_metrics.adapters.outbound.stays`), once: the `ledger` row keeps under
+`given` the steps past its settle cut it already gave out.
 """
 
 import logging
@@ -25,7 +27,7 @@ from starpulse.contracts.analytics import Analytics
 from starpulse.contracts.signals import Signal
 from starpulse.event_log.event_log import EventLog
 from starpulse.event_log.tables import settings, signal_folds
-from starpulse.flow_metrics.adapters.outbound import traces
+from starpulse.flow_metrics.adapters.outbound import stays, traces
 from starpulse.flow_metrics.model import ledger
 from starpulse.flow_metrics.model.traces import cases_of
 
@@ -48,19 +50,22 @@ class SessionLedger:
         self._keys = keys
         self._analytics = analytics
 
-    def apply(self, found: Iterable[Signal]) -> None:
-        """Fold `found` into the folds of each session it names. A session whose fold raises is logged and keeps its
-        stored folds; a database error raises."""
+    def apply(self, found: Iterable[Signal]) -> list[dict[str, Any]]:
+        """Fold `found` into the folds of each session it names, adding each Model step new to them to its task's
+        Stays; return the new steps no Stay takes, as they name no task. A session whose fold raises is logged and
+        keeps its stored folds; a database error raises."""
         sessions: dict[tuple[str, str], list[Signal]] = defaultdict(list)
         for signal in found:
             sessions[signal.harness, signal.session].append(signal)
+        untaken: list[dict[str, Any]] = []
         for (harness, session), batch in sessions.items():
             try:
-                self._advance(harness, session, batch)
+                untaken += self._advance(harness, session, batch)
             except SQLAlchemyError:
                 raise
             except Exception:
                 log.exception("fold of %s session %s failed", harness, session)
+        return untaken
 
     def last_claim(self, harness: str, session: str) -> tuple[str, float] | None:
         """The task the session last claimed and when, from its stored ledger, or None when it claimed none. Raises
@@ -80,7 +85,7 @@ class SessionLedger:
             traces.close(db, harness, session)
             db.commit()
 
-    def _advance(self, harness: str, session: str, batch: list[Signal]) -> None:
+    def _advance(self, harness: str, session: str, batch: list[Signal]) -> list[dict[str, Any]]:
         with self._engine.connect() as db:
             db.exec_driver_sql("BEGIN IMMEDIATE")  # the read below and the write after it are one step of the session
             held = db.execute(
@@ -92,8 +97,10 @@ class SessionLedger:
             ended = cases_of(folded.rows)
             current = ended.pop() if ended else None
             traces.write(db, harness, session, ended, unfinished=False)
+            taken, untaken, given = ledger.given(held.result if held else None, folded)
+            stays.spend(db, taken)
             results: dict[str, Any] = {
-                LEDGER: {**folded.state, "open_case": current},
+                LEDGER: {**folded.state, "open_case": current, "given": given},
                 "steps": ledger.steps_of(folded.rows),
                 "cost": ledger.cost_of(folded.rows),
                 "spend": ledger.spend_of(folded, harness, session),
@@ -132,3 +139,4 @@ class SessionLedger:
                 ],
             )
             db.commit()
+        return untaken

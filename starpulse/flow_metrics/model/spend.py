@@ -30,7 +30,7 @@ from typing import Any
 
 from starpulse.flow_metrics.model.cells import MIN_N, cell_of, is_umbrella, norm_cells, profile_of
 
-__all__ = ["FLAG_RATIO", "combine_spend", "named", "phase_rows", "task_spend"]
+__all__ = ["CLASSES", "FLAG_RATIO", "combine_spend", "named", "phase_rows", "task_spend", "wte"]
 
 #: A peer's phase row, as the norms weigh it: (task, phase) to its (profile, wte).
 Peers = Mapping[tuple[str, str], tuple[str, float]]
@@ -38,10 +38,12 @@ Peers = Mapping[tuple[str, str], tuple[str, float]]
 #: How many times its cell's median a task's weighted tokens must reach to be flagged.
 FLAG_RATIO = 3
 _SKILL_PHASE = {"qa": "qa", "deliver": "deliver", "review-fix": "review_fix", "cr-triage": "review_fix"}
-_CLASSES = ("input", "output", "cache_read", "cache_write")
+#: The token classes a spend counts, each weighted in `wte`.
+CLASSES = ("input", "output", "cache_read", "cache_write")
 
 
-def _wte(tokens: Mapping[str, int]) -> float:
+def wte(tokens: Mapping[str, int]) -> float:
+    """The weighted token equivalent of one step's `tokens` (see the module docstring)."""
     return tokens["input"] + 1.25 * tokens["cache_write"] + 0.1 * tokens["cache_read"] + 5 * tokens["output"]
 
 
@@ -78,7 +80,7 @@ def _row(task: str, phase: str) -> dict[str, Any]:
         "phase": phase,
         "steps": 0,
         "side_steps": 0,
-        **dict.fromkeys(_CLASSES, 0),
+        **dict.fromkeys(CLASSES, 0),
         "wte": 0.0,
         "peak_context": 0,
         "compactions": 0,
@@ -123,9 +125,9 @@ def phase_rows(folds: Iterable[Mapping[str, Any]]) -> dict[tuple[str, str], dict
         tokens = step["tokens"]
         row["steps"] += 1
         row["side_steps"] += step["origin"] == "side"
-        for name in _CLASSES:
+        for name in CLASSES:
             row[name] += tokens[name]
-        row["wte"] += _wte(tokens)
+        row["wte"] += wte(tokens)
         row["peak_context"] = max(row["peak_context"], tokens["input"] + tokens["cache_read"] + tokens["cache_write"])
         row["models"].add(step["model"])
         if key not in main_profiled and (step["origin"] == "main" or not row["profile"]):

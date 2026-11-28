@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 from starpulse.board.model import lane_writes, write_steps
 from starpulse.event_log import lane_events
-from starpulse.event_log.wake import StopEvent
 from starpulse.machine_engine.model.transitions import lane_id
 
 if TYPE_CHECKING:  # annotation only: the event log opens the database stack
@@ -32,19 +31,6 @@ class RecordsMixin:
         """What the pull request reader last handed `set_pulls`, as saved; empty when nothing was."""
         with self._lock:
             return dict(self._pull_answers)
-
-    def spawn(self, target: Callable[[StopEvent], None], name: str) -> None:
-        """Run `target(stopped)` on a daemon thread that `stop` ends: `target` returns once `stopped` is set."""
-        thread = threading.Thread(target=target, args=(self.stopped,), name=name, daemon=True)
-        self._threads.append(thread)
-        thread.start()
-
-    def stop(self, timeout: float = 5.0) -> None:
-        """End every thread `spawn` began, and wait up to `timeout` seconds for each, so the feed saves its last
-        checkpoint before the log it saves to is closed."""
-        self.stopped.set()
-        for thread in self._threads:
-            thread.join(timeout)
 
     def record_take_over(self, task_id: str) -> None:
         """Show `task_id` as interactive in each snapshot from now on, and tell the streams it changed."""
@@ -70,7 +56,9 @@ class RecordsMixin:
     def recording_of(self, task_id: str) -> threading.RLock:
         """The lock one task's write holds from the board's write to the record of its lane, so a write of the same task,
         the task actor's included, waits for it and a write of any other task does not. An alias shares its task's lock."""
-        return self._recording_of.setdefault(self._keys.canonical(task_id) if self._keys else task_id, threading.RLock())
+        return self._recording_of.setdefault(
+            self._keys.canonical(task_id) if self._keys else task_id, threading.RLock()
+        )
 
     def record_written(self, task_id: str, lane: str, at: float, who: tuple[str, str, str]) -> None:
         """Record the lane a board write put `task_id` in at `at`, naming `who` (actor, session, harness), in the history
@@ -118,7 +106,10 @@ class RecordsMixin:
         lanes = self._lanes
 
         def record(connection: Connection | None) -> bool:
-            return bool(lanes.record_lane(f"{task_id}@{lane}@{at}", task_id, lane, at, event=event, connection=connection)) and event is not None
+            return (
+                bool(lanes.record_lane(f"{task_id}@{lane}@{at}", task_id, lane, at, event=event, connection=connection))
+                and event is not None
+            )
 
         return record
 

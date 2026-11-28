@@ -1680,8 +1680,8 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
     """
     if unknown := sorted(settings.keys() - _SETTINGS):
         raise ValueError(f"board: unknown key(s) {', '.join(unknown)}; known: {', '.join(sorted(_SETTINGS))}")
-    rows = settings.get("policy_rows", Policy())
-    if not isinstance(rows, Policy):
+    rows = settings.get("policy_rows")
+    if rows is not None and not isinstance(rows, Policy):
         raise ValueError(
             "board: `policy_rows` is the stored policy StarPulse hands the board; a config does not set it"
         )
@@ -1698,17 +1698,19 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         labelled = {name: spec["label"] for name, spec in document.get("states", {}).items() if spec.get("label")}
     retired = _Retired()
     view = TaskView()
+    # A board with no stored policy runs no policy code: no guard, profile cell or lane label.
+    guards, matrix, lanes = (guards_of(rows), profile_matrix(rows), rows.lanes) if rows is not None else ([], {}, ())
     guard = Guard(
-        rules.load(guards_of(rows)),
+        rules.load(guards),
         _hook(settings.get("validate")),
         _state_from(view),
         pull_of=_pull_of(retired),
         linked=_linked(retired),
         types=_types(settings),
-        effects=entry.load(settings.get("entry"), profile_matrix(rows)),
+        effects=entry.load(settings.get("entry"), matrix),
         warn_actors=_warn_actors(settings),
         dependencies_of=view.dependencies_of,
-        matrix=profile_matrix(rows),
+        matrix=matrix,
         qa_lenses=qa_verdicts.lenses_of(lambda: retired.engine, base),
     )
 
@@ -1774,7 +1776,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
         settings,
         base,
         surfaces,
-        tuple(lane.label or labelled.get(lane.name, lane.name) for lane in rows.lanes if lane.role),
+        tuple(lane.label or labelled.get(lane.name, lane.name) for lane in lanes if lane.role),
     )
 
     history = TaskHistory()

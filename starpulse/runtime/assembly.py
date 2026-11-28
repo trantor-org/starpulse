@@ -160,7 +160,7 @@ def assemble(
         standing=board.standing,
         readable=board.readable,
         activity=_holder_activity(config),
-        default_profiles=profile_matrix(rows or Policy()),
+        default_profiles=profile_matrix(rows) if rows is not None else {},
         change_url=GitHubAdapter().link_url,
     )
     return board, feed

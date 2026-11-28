@@ -40,6 +40,7 @@ def _step(task: str | None, s: Signal) -> dict[str, Any]:
     return {
         "harness": s.harness,
         "session": s.session,
+        "key": s.key,
         "task": task,
         "at": s.time,
         "model": s.model,

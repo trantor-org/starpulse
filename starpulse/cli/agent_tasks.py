@@ -448,6 +448,7 @@ def _created_task(args: argparse.Namespace) -> dict[str, Any]:
     given = {
         "brief": _brief(args.brief, args.description),
         "duplicateQueries": args.duplicate_queries,
+        "duplicateResolution": args.duplicate_resolution,
         "priority": args.priority,
         "impact": args.impact,
         "urgency": args.urgency,

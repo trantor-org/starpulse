@@ -47,7 +47,7 @@ from starpulse.event_log.store.machine_registry import TASK_MACHINE, active_vers
 from starpulse.event_log.tables import machine_events as _machine_events
 from starpulse.event_log.tables import metadata
 from starpulse.event_log.wake import RETRY_DELAY, StopEvent
-from starpulse.flow_metrics.adapters.outbound import daily_report, summaries  # noqa: F401 - declares the dead step-summaries table until a migration drops it
+from starpulse.flow_metrics.adapters.outbound import daily_report, stays, summaries  # noqa: F401 - declares the dead step-summaries table until a migration drops it
 from starpulse.machine_engine.model.transitions import Table as Transitions
 from starpulse.machine_engine.model.transitions import lane_id
 
@@ -238,6 +238,8 @@ class HistoryStore:
                     at = row["occurred_at"]
                     seconds = 0.0 if before is None else at - before[0]
                     daily_report.add(db, row["machine"], at, "" if before is None else before[1], state or "", seconds)
+                    if row["task"] and state is not None:
+                        stays.enter(db, row["task"], row["machine"], state, at, before)
             if cursor is not None:
                 self.checkpoints.save(machine_events.STREAM, cursor, conn=db)
 
@@ -315,6 +317,7 @@ class HistoryStore:
             return False
         seconds = 0.0 if previous is None else at - previous[1]
         daily_report.add(db, TASK_MACHINE, at, "" if last is None else lane_id(last), status, seconds)
+        stays.enter(db, task, TASK_MACHINE, status, at, None if previous is None else (previous[1], lane_id(previous[0])))
         return True
 
     def import_lanes(self, changes: Iterable[Change]) -> int:
