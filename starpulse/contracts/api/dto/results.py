@@ -64,6 +64,21 @@ class Created(_Api):
     task: str
 
 
+class Candidate(_Api):
+    """An open task a duplicate search found: `status` is its lane as the search index holds it."""
+
+    task: str
+    title: str
+    status: str
+
+
+class DuplicatesChecked(_Api):
+    """A `checkDuplicates` create's answer, which files nothing: the search's record and its open candidates."""
+
+    duplicateSearch: str
+    open: list[Candidate]
+
+
 class CreatedEach(_Api):
     """A batch create's answer: each spec's new task, or why it was refused, in the order the specs came."""
 

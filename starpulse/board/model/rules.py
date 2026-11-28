@@ -345,19 +345,24 @@ def _acyclic(spec: Mapping[str, Any], where: str) -> Primitive:
 
 
 def _unchanged(spec: Mapping[str, Any], where: str) -> Primitive:
-    _unknown(spec, {"field", "region", "ignoring"}, where, "unchanged")
+    _unknown(spec, {"field", "region", "ignoring", "matches"}, where, "unchanged")
     name, region = spec.get("field"), spec.get("region")
     if (name is None) == (region is None):
         raise ValueError(f"{where}: unchanged needs one of `field` (a front matter key) or `region`")
     if region is not None and region not in _REGIONS:
         raise ValueError(f"{where}: unchanged has no region {region}; known: {', '.join(_REGIONS)}")
+    if "matches" in spec and region is not None:
+        raise ValueError(f"{where}: unchanged `matches` filters a field's values, so it takes `field`, not `region`")
     try:
         ignored = re.compile(spec.get("ignoring") or "(?!)")
+        kept = re.compile(spec["matches"]) if "matches" in spec else None
     except (re.error, TypeError) as error:
-        raise ValueError(f"{where}: unchanged `ignoring` is not a regular expression: {error}") from error
+        raise ValueError(f"{where}: unchanged `ignoring` or `matches` is not a regular expression: {error}") from error
     bounds = _region(region) if region else None
 
     def read(record: Record) -> object:
+        if kept is not None:
+            return sorted(value for value in _values(record.front.get(name)) if kept.search(value))
         if bounds is None:
             return record.front.get(name)
         found = bounds.search(record.body)
