@@ -1,6 +1,7 @@
 """The events that tell a task's holder it went idle or died: a harness session settling or ending on the task's
 branch, or another session moving the task it parked back to In Progress."""
 
+import logging
 import threading
 import time
 from collections.abc import Callable
@@ -25,7 +26,11 @@ DISPATCHED = "SESSION_DISPATCHED"
 STOPPED = "SESSION_STOPPED"  # a turn's end, which trails a settle and says nothing of whether the session is idle
 WORKING = "in_progress"
 PARKED = frozenset({"needs_attention", "waiting", "done"})  # lanes whose holder ended its turn before the move
+logger = logging.getLogger(__name__)
 UNREACHABLE_EXIT = 3  # the `[board] idle` resume found no session subscribed to the task's resume topic
+#: The most closed-lane tasks one catch-up pass settles: each settle's end hook returns at once, so a day with many
+#: tasks closed or archived would otherwise start that many session ends together.
+CATCH_UP_ENDS = 25
 GRACE_EXIT = 4  # the `[board] idle` confirm found the holder busy only because it launched a `deliver` a moment ago
 
 
@@ -115,7 +120,7 @@ def follow_holder_idle(
     its holder settled or died while the actor was down and was not started again since. The cost is one indexed lookup per working task, never a read of
     the stream. A settle `covered` says a nudge sent since already answers (it came while that nudge was in flight, as a Stop hook's
     second turn does) is not called. A task of `closed` (an open one in a lane that ends its idle session) gets the same `settled` call for any newest
-    event but an end, which ends its session once idle: the move that closed the lane may have come while the actor was down, or its end
+    event but an end, the first `CATCH_UP_ENDS` of them only, which ends its session once idle: the move that closed the lane may have come while the actor was down, or its end
     been lost at a stop. It calls `dispatched` (`lease_ended` first for a dead holder it replaces) with each task of `working` or
     `unstarted` whose newest such event is a dispatch: the actor was down for it and pinned no session since. Nothing is called before `ready`, and the live tail's rows wait for it."""
     from starpulse.event_log.event_log import Tail  # the server imports no database stack until a store opens
@@ -164,7 +169,10 @@ def follow_holder_idle(
                 session(task, event)  # a session at work before this call reads awake until its next harness event
             for task in [task for task in tasks if newest[task][0] == SETTLED]:
                 settled(task)
-            for task in [task for task in shut if newest[task][0] not in ("", ENDED)]:
+            ending = [task for task in shut if newest[task][0] not in ("", ENDED)]
+            if len(ending) > CATCH_UP_ENDS:
+                logger.warning("holder idle: %d closed-lane sessions to end, ending the first %d", len(ending), CATCH_UP_ENDS)
+            for task in ending[:CATCH_UP_ENDS]:
                 settled(task)  # the reaper ends only an idle session, so a turn running now is left alone
             for task in [task for task in tasks if newest[task][0] == ENDED]:
                 lease_ended(task, str(newest[task][1].get("session") or ""))
