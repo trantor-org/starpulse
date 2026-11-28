@@ -264,6 +264,12 @@ def _waiting_description(current: dict[str, Any]) -> dict[str, Any]:
     return {"description": text} if text != current["description"].strip() else {}
 
 
+def _without_question(current: dict[str, Any]) -> dict[str, Any]:
+    """The edit that drops a Needs attention task's question when the task parks on the task or event that makes it moot."""
+    dropped = section_drop(current["description"], "Needs attention")
+    return {"description": dropped} if dropped != current["description"].strip() else {}
+
+
 def _wait_on_operator(reason: Any) -> str:
     """The request comment that asks the task actor to put the task in front of the operator with `reason` as the question."""
     if not _nonblank(reason):
@@ -368,7 +374,7 @@ def park_task(
         return refusal.answer
     plans = {
         "untilTask": lambda current: _wait_on_tasks(feed, task, current, value) | _waiting_description(current),
-        "until": lambda current: _wait_on_events(feed, task, current, value),
+        "until": lambda current: _wait_on_events(feed, task, current | _without_question(current), value),
         "operator": lambda current: _without_repeat(value, current),
     }
     return _lifecycle_edit(

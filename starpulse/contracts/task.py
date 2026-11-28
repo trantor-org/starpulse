@@ -63,6 +63,7 @@ class Task(BaseModel):
     frozen: FrozenEdit
     released: ClaimRelease | None
     archived: bool
+    archived_at: float | None
     comments: list[Comment]
     created_at: float
     updated_at: float

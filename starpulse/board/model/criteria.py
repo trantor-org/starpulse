@@ -18,7 +18,7 @@ _SECTION = re.compile(r"^## Start Criteria\s*$(.*?)(?=^## |\Z)", re.M | re.S)
 _FENCE = re.compile(r"```ya?ml\s*\n(.*?)```", re.S)
 
 
-def _declared(description: str) -> list[dict[str, Any]]:
+def declared(description: str) -> list[dict[str, Any]]:
     """The mappings of the description's `start_criteria` block that carry an id, as written."""
     section = _SECTION.search(description)
     fenced = _FENCE.search(section.group(1)) if section else None
@@ -32,7 +32,7 @@ def _declared(description: str) -> list[dict[str, Any]]:
 
 def expect_dates(description: str) -> list[str]:
     """The `expect_by` dates the description's Start Criteria declare, each as text, in the order written."""
-    return [str(raw["expect_by"]) for raw in _declared(description) if raw.get("expect_by") is not None]
+    return [str(raw["expect_by"]) for raw in declared(description) if raw.get("expect_by") is not None]
 
 
 def authored(description: str) -> list[dict[str, Any]]:
@@ -43,7 +43,7 @@ def authored(description: str) -> list[dict[str, Any]]:
             "kind": str(raw.get("kind") or ""),
             "expr": str(raw.get("query") or raw.get("expr") or raw.get("path") or ""),
         }
-        for raw in _declared(description)
+        for raw in declared(description)
     ]
 
 
@@ -61,7 +61,7 @@ def commits(description: str) -> dict[str, str]:
     """The commit each event subject waits for: only an event whose build contains it releases the task."""
     return {
         each["expr"]: str(raw["commit"])
-        for each, raw in zip(authored(description), _declared(description))
+        for each, raw in zip(authored(description), declared(description))
         if raw.get("commit")
     }
 
@@ -70,6 +70,6 @@ def accepting_met(description: str) -> frozenset[str]:
     """The event subjects whose park accepts an event recorded before it (`accept_met: true`): the rest wait for a newer one."""
     return frozenset(
         each["expr"]
-        for each, raw in zip(authored(description), _declared(description))
+        for each, raw in zip(authored(description), declared(description))
         if raw.get("accept_met") is True
     )

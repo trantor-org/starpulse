@@ -206,9 +206,10 @@ def route(
     """A session with no registration has no route, so its events stay on its consumer. A consumer named for a
     holder URL is the running session the harness resolves it to, which registered
     under its local id. `head` is the
-    store's head of a repository's pull request by number, empty or None when it holds none. A consumer's event the
-    session already received (the server redelivers one whose ack was lost) is acked with no line, the last
-    `_SEEN_MAX` of each consumer being remembered. `lane_of` is a task's lane now: a `holder_resume` or
+    store's head of a repository's pull request by number, empty or None when it holds none. An event the session
+    already received is acked with no line, the last `_SEEN_MAX` of each registered session being remembered: the
+    server redelivers one whose ack was lost, and a session resumed under a new URL gets a new consumer that replays
+    the last of each subject. `lane_of` is a task's lane now: a `holder_resume` or
     `review_refused` for a task not In Progress (a restart redelivers a resume whose ack was lost after the task
     parked; a refusal queued behind a busy holder is moot once the repaired task moved to review) is acked with no
     line; `forgotten` is the keys `forget_ended` removed, so a routed registration gone for any other cause is logged once.
@@ -237,7 +238,7 @@ def route(
 
         def deliver(events: list[Event]) -> bool:
             own = harness.local_id(registration.session)
-            received = seen.setdefault(name, {})
+            received = seen.setdefault(key, {})
             sent = [
                 event
                 for event in events
@@ -254,9 +255,9 @@ def route(
             lines = [line_for(event) for event in sent]
             notified = notifier.notify(registration, lines) if lines else True
             if notified:
-                received.update(dict.fromkeys(key for event in sent if (key := _seen_key(event))))
-                for key in list(received)[:-_SEEN_MAX]:
-                    del received[key]
+                received.update(dict.fromkeys(seen_key for event in sent if (seen_key := _seen_key(event))))
+                for seen_key in list(received)[:-_SEEN_MAX]:
+                    del received[seen_key]
             delivered = notified and not held
             outcome = (
                 "held for the freeze"

@@ -100,7 +100,7 @@ class EditBase(_Fields, total=False):
     """The value each changed field had when the caller read it, a field the record holds as it holds it: a field the
     edit does not change may be named or left out."""
 
-    __pydantic_config__ = ConfigDict(extra="ignore")  # type: ignore[misc]
+    __pydantic_config__ = ConfigDict(extra="forbid")  # type: ignore[misc]
     title: str
     documentation: list[str]
 

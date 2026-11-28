@@ -72,6 +72,7 @@ export interface ApiContract {
     | WindowRequest
     | GraphqlRequest
     | AdminRequest
+    | HarnessesRequest
   )[];
   retiredTasks: RetiredTasks;
   searchResults: SearchResults;
@@ -1962,7 +1963,6 @@ export interface EditBase {
   title?: string;
   type?: string;
   urgency?: string;
-  [k: string]: unknown;
 }
 /**
  * One acceptance criterion or definition-of-done item; an item without `n` is numbered after the highest given.
@@ -2383,6 +2383,14 @@ export interface DisplayPatch {
   motion?: boolean | null;
   scale?: number | null;
   view?: ("constellation" | "kanban") | null;
+}
+/**
+ * `PUT /api/harnesses`: the tier names in order and/or each harness that changes, whole, by name; a harness left
+ * out keeps its config, and the result must still define every tier on every harness.
+ */
+export interface HarnessesRequest {
+  harnesses?: HarnessBody[] | null;
+  tiers?: string[] | null;
 }
 /**
  * `GET /api/retired[?task=<id>][&milestone=<id>][&fields=dependencies][&limit=<n>][&before=<cursor>]`: the one

@@ -703,6 +703,85 @@
                 }
               }
             }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Change the tiers and any harness, naming only the harnesses that change",
+        "tags": [
+          "board"
+        ],
+        "operationId": "put_api_harnesses",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HarnessesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Harnesses"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -5698,6 +5777,7 @@
         "type": "object"
       },
       "EditBase": {
+        "additionalProperties": false,
         "description": "The value each changed field had when the caller read it, a field the record holds as it holds it: a field the\nedit does not change may be named or left out.",
         "properties": {
           "description": {
@@ -6409,6 +6489,42 @@
           "harnesses"
         ],
         "title": "Harnesses",
+        "type": "object"
+      },
+      "HarnessesRequest": {
+        "additionalProperties": false,
+        "description": "`PUT /api/harnesses`: the tier names in order and/or each harness that changes, whole, by name; a harness left\nout keeps its config, and the result must still define every tier on every harness.",
+        "properties": {
+          "tiers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "harnesses": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/HarnessBody"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "HarnessesRequest",
         "type": "object"
       },
       "HeldNext": {

@@ -5,7 +5,8 @@
 - `GET /api/done`, `/api/search`: the Done lane and a search of the tasks.
 - `GET /api/search/similar`: `/api/search` that waits to embed a new query, for a caller that needs the tasks nearest
   in meaning, not an answer within a budget.
-- `GET /api/harnesses`: the harnesses a session may start on.
+- `GET /api/harnesses`: the harnesses a session may start on, as `PUT /api/harnesses` last set them.
+- `PUT /api/harnesses`: change the tiers and/or any harness, naming only the harnesses that change.
 """
 
 from typing import TYPE_CHECKING
@@ -14,8 +15,10 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from starpulse.harness_telemetry.model.harnesses import Harnesses
-from starpulse.views.adapters.inbound.api.answering import answer, query, reading, seams
-from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute
+from starpulse.views.adapters.inbound.api.answering import answer, client, query, reading, seams
+from starpulse.views.adapters.inbound.api.table import ApiRoute, ReadRoute, WriteRoute
+from starpulse.views.adapters.inbound.api.writing import guarded, whole
+from starpulse.views.application.commands.settings import put_harnesses
 from starpulse.views.application.queries.responses import done_response, search_response
 from starpulse.views.model.encoding import encode
 
@@ -55,10 +58,18 @@ def similar(request: Request) -> Response:
 
 @reading
 def harnesses(request: Request) -> Response:
-    return answer(request, encode("harnesses", (seams(request).services.harnesses or Harnesses((), {})).as_json()))
+    kept = seams(request).services.harness_config() or Harnesses((), {})
+    return answer(request, encode("harnesses", kept.as_json()))
 
 
 def routes(api: Api) -> list[ApiRoute]:
+    settings = api.services.harness_settings
+
+    def change(request: Request) -> tuple[int, dict]:
+        if settings is None:
+            return 404, {"error": "this instance keeps no harness config (harnesses_file)"}
+        return put_harnesses(client(request), whole(request), settings)
+
     searching = frozenset({"before", "finished_within_days", "label", "limit", "q"})
     return [
         ReadRoute("/doctor", doctor),
@@ -67,4 +78,5 @@ def routes(api: Api) -> list[ApiRoute]:
         ReadRoute("/search", search, params=searching),
         ReadRoute("/search/similar", similar, params=searching),
         ReadRoute("/harnesses", harnesses),
+        WriteRoute("/harnesses", ("PUT",), guarded("harnesses", change)),
     ]

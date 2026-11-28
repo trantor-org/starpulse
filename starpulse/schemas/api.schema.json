@@ -2776,6 +2776,7 @@
       "type": "object"
     },
     "EditBase": {
+      "additionalProperties": false,
       "description": "The value each changed field had when the caller read it, a field the record holds as it holds it: a field the\nedit does not change may be named or left out.",
       "properties": {
         "acceptanceCriteria": {
@@ -3622,6 +3623,42 @@
         "harnesses"
       ],
       "title": "Harnesses",
+      "type": "object"
+    },
+    "HarnessesRequest": {
+      "additionalProperties": false,
+      "description": "`PUT /api/harnesses`: the tier names in order and/or each harness that changes, whole, by name; a harness left\nout keeps its config, and the result must still define every tier on every harness.",
+      "properties": {
+        "harnesses": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/HarnessBody"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tiers": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "HarnessesRequest",
       "type": "object"
     },
     "HeldNext": {
@@ -9844,6 +9881,9 @@
           },
           {
             "$ref": "#/$defs/AdminRequest"
+          },
+          {
+            "$ref": "#/$defs/HarnessesRequest"
           }
         ]
       },

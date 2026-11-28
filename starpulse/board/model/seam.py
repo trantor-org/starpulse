@@ -329,3 +329,7 @@ class Board:
     halted: Callable[[str, str], None]
     """Tells the board that the task actor wrote or cleared a task's `frozen` fact, given its id and `freeze` or `thaw`, so
     the holder session is halted in place or resumed; a raise is logged and the fact stands."""
+    faulted: Callable[[str, str], str] | None = None
+    """The open task that owns a fault the task actor met working a task, given the task's id and the fault, filed when
+    none does, so the task parks in Waiting on it; a raise leaves the task with the operator. None when the config sets
+    no `faulted` command."""

@@ -6,13 +6,16 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ValidationError
 
 from starpulse.board.adapters.display_settings import DisplaySettings
+from starpulse.harness_telemetry.adapters.outbound.harness_settings import HarnessSettings
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.contracts.api.dto.admin import Display, Theme
 from starpulse.contracts.api.dto.requests import (
     AdminRequest,
+    HarnessesRequest,
     SchedulerRequest,
     WindowRequest,
 )
+from starpulse.harness_telemetry.model.harnesses import HarnessError, parse_harnesses
 from starpulse.views.application.commands.guard import lan_refusal, on_lan, with_request
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
@@ -121,3 +124,26 @@ def admin(
     if method == "PUT":
         return _put_admin(source, raw, runtime, store)
     return 200, _state(runtime, store)
+
+
+_HARNESSES_USAGE = 'harnesses takes {"tiers": [<name>, ...]} and/or {"harnesses": [<harness as GET answers it>, ...]}'
+
+
+@with_request(HarnessesRequest, "The harness config")
+def put_harnesses(request: HarnessesRequest, store: HarnessSettings) -> tuple[int, dict[str, Any]]:
+    """Set the tiers and/or each named harness over the kept config: the HTTP status and the whole config it keeps,
+    or the refusal of a body that would leave a harness the harness rules refuse, which changes nothing."""
+    if request.tiers is None and request.harnesses is None:
+        return 400, {"error": _HARNESSES_USAGE}
+    kept = store.current().as_toml()
+    if request.tiers is not None:
+        kept["tiers"] = request.tiers
+    for harness in request.harnesses or ():
+        body = harness.model_dump(exclude_none=True)
+        kept["harnesses"][body.pop("name")] = body
+    try:
+        harnesses = parse_harnesses(kept)
+    except HarnessError as exc:
+        return 400, {"error": str(exc)}
+    store.write(harnesses)
+    return 200, harnesses.as_json()

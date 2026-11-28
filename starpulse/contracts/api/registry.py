@@ -31,6 +31,7 @@ from starpulse.contracts.api.dto.pages import DailyReports, DonePage, MachineDet
 from starpulse.contracts.api.dto.report import ContractReport, ReadyReport
 from starpulse.contracts.api.dto.requests import (
     AdminRequest,
+    HarnessesRequest,
     CreateRequest,
     DocCreateRequest,
     DailyReportListRequest,
@@ -117,6 +118,7 @@ REQUESTS: dict[str, type[BaseModel]] = {
     "/api/history-window": WindowRequest,
     "/graphql": GraphqlRequest,
     "/api/admin": AdminRequest,
+    "/api/harnesses": HarnessesRequest,
 }
 
 #: Each list route's request body: a POST to a path a PUT also writes, which `REQUESTS` names.
@@ -147,7 +149,7 @@ BODIES: dict[str, Any] = {
     "search": SearchResults | ApiError,
     "spend": Spend | ApiError | WindowTooLong,
     "trajectories": Trajectories | ApiError | WindowTooLong,
-    "harnesses": Harnesses,
+    "harnesses": Harnesses | ApiError,
     "window": WindowState | ApiError,
     "admin": AdminState | ApiError,
     "doctor": ContractReport,
@@ -238,6 +240,7 @@ ROUTES: dict[tuple[str, str], Op] = {
         "Tasks like a text", "search", "before", "finished_within_days", "label", "limit", "q"
     ),
     ("GET", "/api/harnesses"): _read("The harnesses and their windows", "harnesses"),
+    ("PUT", "/api/harnesses"): _write("Change the tiers and any harness, naming only the harnesses that change", "harnesses", HarnessesRequest),
     ("GET", "/api/history-window"): _read("How many hours of history the store keeps", "window"),
     ("PUT", "/api/history-window"): _write("Set the history window", "window", WindowRequest),
     ("DELETE", "/api/history-window"): _write("Reset the history window to its default", "window"),

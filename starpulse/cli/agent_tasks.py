@@ -57,6 +57,8 @@ _TASK_EDIT_FIELDS = {
     "final_summary": "finalSummary",
     "members": "members",
 }
+#: The change-only keys of an edit (`EXTRA["edit"]`, kept here so the CLI loads no pydantic): no base value.
+_UNBASED = frozenset({"appendNotes", "planReason"})
 #: The checklists `task edit` changes: each record field's flag key (`--ac`, `--reword-ac`, ...) and the name a refusal gives it.
 _CHECKLISTS = {"acceptanceCriteria": ("ac", "Acceptance Criteria"), "definitionOfDone": ("dod", "Definition of Done")}
 #: A checklist's flag destinations, as `{}` stands for its key: add, reword, remove, check and uncheck.
@@ -557,7 +559,7 @@ def _task_edit_call(
     base = agent_wire.server_url(args.server, environ)
     if base_record is None:
         current = _read_record(args, environ)
-        base_record = {field: current.get(field) for field in changes}
+        base_record = {field: current.get(field) for field in changes.keys() - _UNBASED}
     who = {"actor": OPERATOR, "breakGlass": True} if break_glass else writer(args, environ)
     body = {"base": base_record, "changes": changes, "comment": comment, **who}
     path = f"/api/tasks/{args.task}"
@@ -674,13 +676,13 @@ def task_edit(args: argparse.Namespace, environ: Mapping[str, str]) -> dict[str,
             base_record = None
         if not isinstance(base_record, dict):
             raise agent_wire.CliError("usage", '--base must be a JSON object of the values read, as {"title": "..."}')
-    unbased = base_record is not None and not changes.keys() - {"appendNotes", "planReason"} <= base_record.keys()
+    unbased = base_record is not None and not changes.keys() - _UNBASED <= base_record.keys()
     if checklists or unbased:
         # The items are edited as read, so the same read is the edit's base, as it is for a field `--base` leaves out.
         record = _read_record(args, environ)
         for field in checklists:
             changes[field] = _checklist_after(args, field, record[field])
-        read = {field: record.get(field) for field in changes if field not in ("appendNotes", "planReason")}
+        read = {field: record.get(field) for field in changes.keys() - _UNBASED}
         base_record = {**read, **(base_record or {})}
     return {"task": args.task, "changed": _task_edit_call(args, environ, changes, base_record, args.comment)}
 

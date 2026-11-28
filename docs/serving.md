@@ -387,7 +387,10 @@ POST /graphql      the views a board shows come from the task query: each Task c
                    `interactive`, `criteria` [{text, checked}], `pauseReason`, `readable` and `released` {at, session, last_renewal, ttl, idle},
                    and `board` answers `columns`, `roles` (the state roles), `machines` (each machine's states, transitions, submachines and next edge),
                    `dags` and the runs `error`, as the stored body holds them
-GET /api/harnesses  {tiers, harnesses} from the config's `harnesses_file`; both empty with no file
+GET /api/harnesses  {tiers, harnesses} as the last PUT set them, else from the config's `harnesses_file`; both empty with no file
+PUT /api/harnesses  {tiers} and/or {harnesses: [each harness that changes, whole, as GET answers it]}, kept in the history
+                   store, which `POST /api/start` checks too; 400 for a body that leaves a harness without every tier,
+                   404 with no `harnesses_file`. A client that reads `harnesses_file` itself sees no PUT
 Connect `starpulse.v1.CloudEventsIngest` Publish and PublishBatch on this port (docs/sources.md)
                    post machine events and runs as CloudEvents 1.0, with `authorization: Bearer <token>` of a `[[producers]]`
                    entry; the one write path for both over a port, needing no Redis. A machine event is written to
@@ -1072,7 +1075,7 @@ pauses until the reset clock the message names (or five hours when it names none
 admission for that harness for an hour after the first occurrence: one `ERROR` journal line names the refusal and path, `pauses`
 lists it with `reason` `start halted: <refusal>`, and one start tries again when the hour ends. A start that succeeds comments
 `Scheduler started <task>: <session address>` on the task; a board that refuses the comment leaves the session started.
-A start the board or the session-start service did not answer (`did not answer`) leaves its task Ready for the next admission; any other failed start is handed to the task actor, which parks the task in Needs attention with the reason.
+A start the board or the session-start service did not answer (`did not answer`) leaves its task Ready for the next admission; any other failed start is handed to the task actor, which parks the task in Waiting on the task owning the fault through the board's `faulted` command, else in Needs attention with the reason.
 
 A session starts through `session_start_url` when the config sets it; the loop's request is
 `POST <url>/start/<task>?harness=<selected harness>&mode=interactive&by=scheduler`, so the service can brief an unattended session
@@ -1246,6 +1249,16 @@ move from Waiting to Ready runs the board's `released` command the same way, so 
 parked the task. A task In Progress whose holder settles idle (the harness machine's `SESSION_SETTLED`, from the session's Stop hook completing) runs the board's `idle` command with `{id}` and `{verdict}` `confirm`, so a board can say whether the holder is busy; a nonzero `confirm` holds the task until the next move of a machine other than the harness settles it again, which the session's own activity cancels. An idle holder is then run with `resume`, so a board can wake it in place with its next step; after two resumes with no progress the next settle runs `escalate` first, and an `escalate` that fails moves the task to Needs attention. A task with an open criterion is nudged instead: its fourth idle settle with no criterion resolved since moves it to Needs attention. A `resume` that exits nonzero is sent again at once, as a holder whose resume was lost settles no more, and the third failure in a row moves the task to Needs attention; one that exits 3 means no session can receive the wake, so no later settle comes, and moves the task to Needs attention at once. A holder that settled while the task actor was down is treated as settling when the actor has indexed its tasks, unless a later harness event for the task shows it started again.
 A move from the working lane to Review that the board refuses (an open review thread, a conflict, an unchecked criterion) publishes the `in-progress` machine event `REVIEW_REFUSED` once (reason in its data, so `task.<id>.review_refused` on the NATS bridge), until the task's facts change, so the holder is told why a ready pull request did not reach Review. A move from Review back to the working lane runs the board's `returned` command the same way, so a board can wake the session that delivered a pull request that turned draft or conflicting. A move to an archived lane runs the board's `archived` command once the same way, so a board can close the pull requests the archived task leaves open. A move to Done runs the board's `closed` command once the same way, so a board can file what follows the close, such as a
 check that waits on time after the merge. A command that exits nonzero is logged; the move stands.
+
+A task the board itself strands, rather than one waiting on an operator's choice, parks in Waiting on the task that owns
+the fault when the board sets a `faulted` command. The stranding cases are a start the scheduler could not make, a session that no
+session can resume, a session that keeps ending after its one resume, a holder's nudge that fails, and a task that left
+Waiting with no session started. The actor runs `faulted` off its lock with `{id}` and `{verdict}` replaced by the task's id
+and the fault as `<what>: <why>`, and reads the owner task's id from its output. It then adds that task to the stranded
+task's dependencies and comments `Blocked: <task> <what>: <why>. Parked on <owner>, which owns the fault.`, so the derive moves
+it to Waiting and the owner's Done releases it. With no `faulted` command, or one that fails or names no task, the task goes
+to Needs attention with the reason as before. A command that files the owner when none exists keys it on the fault
+without the task's id, so the same fault on any task meets one owner.
 
 A write the board refuses is logged and counted, and is not retried until the task's facts change; checking the last
 Definition of Done item of a task (`definition_of_done` in its record) is such a change, so a Done move a guard refused
@@ -1432,7 +1445,9 @@ publishes nothing, so a page keeps a card until it reloads. The page's snapshot 
   indexing it (a sourced machine's step adds its `id` as a fourth member): `dt` is the whole milliseconds since the step
   before, the epoch for the first. A `move` delta carries `names` for its own agent's trail, which the page interns into
   the flow's. A step's `data` is not sent (`_interned` in `views/model/encoding.py`);
-- `archived_today` counts the tasks archived since local midnight (one range of the archive index, `archived_since`); an archived
+- `archived_today` counts the tasks archived since local midnight by `archived_at`, the time of a task's last `Archived` event
+  (one range of `ix_starpulse_tasks_archived_at`, `archived_since`, migration 0083), never `updated_at`, which any later write
+  to an archived task moves; an archived
   `task` delta carries the new number;
 - `settled` keeps the tasks created or settled in the last 24 h, and `milestone_done` (`{milestone: count}`)
   counts every settled completed task by milestone;

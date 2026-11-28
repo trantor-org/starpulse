@@ -87,7 +87,7 @@ def task_record(
     """The full record of `task` from the board's reader: the HTTP status and JSON body.
 
     The record is keyed by the task's editable fields, which the snapshot's small entry does not carry; the page
-    opens it with this and sends it back as the `base` of an edit. Reading is not LAN-limited, like the snapshot. An
+    opens it with this and sends back the value of each field it changes as the `base` of an edit. Reading is not LAN-limited, like the snapshot. An
     archived task is read through `read_archived`, its body `archived`, so a closed task stays readable. An alias
     answers with the task that carries it, never an archived ghost bearing the alias as its id.
     """

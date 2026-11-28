@@ -39,6 +39,7 @@ from starpulse.contracts.api.dto.requests import (
     DocCreateRequest,
     DocListRequest,
     DocPutRequest,
+    HarnessesRequest,
     JobListRequest,
     MachineCreateRequest,
     MachineListRequest,
@@ -129,6 +130,7 @@ class ApiContract(_Api):
         | WindowRequest
         | GraphqlRequest
         | AdminRequest
+        | HarnessesRequest
     ]
     answers: list[
         Edited
