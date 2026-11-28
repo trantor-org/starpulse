@@ -4,7 +4,14 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from starpulse.harness_telemetry.model.harnesses import Harness, HarnessError, Harnesses, Tier, load_harnesses
+    from starpulse.harness_telemetry.model.harnesses import (
+        Harness,
+        HarnessError,
+        Harnesses,
+        Tier,
+        load_harnesses,
+        parse_harnesses,
+    )
     from starpulse.harness_telemetry.adapters.inbound.otlp import (
         ASSISTANT_RESPONSE,
         BRANCH,
@@ -24,6 +31,7 @@ _EXPORTS = {
     "Harnesses": ("starpulse.harness_telemetry.model.harnesses", "Harnesses"),
     "Tier": ("starpulse.harness_telemetry.model.harnesses", "Tier"),
     "load_harnesses": ("starpulse.harness_telemetry.model.harnesses", "load_harnesses"),
+    "parse_harnesses": ("starpulse.harness_telemetry.model.harnesses", "parse_harnesses"),
     "ASSISTANT_RESPONSE": ("starpulse.harness_telemetry.adapters.inbound.otlp", "ASSISTANT_RESPONSE"),
     "BRANCH": ("starpulse.harness_telemetry.adapters.inbound.otlp", "BRANCH"),
     "SKILL_ACTIVATED": ("starpulse.harness_telemetry.adapters.inbound.otlp", "SKILL_ACTIVATED"),
@@ -47,6 +55,7 @@ __all__ = [
     "Tier",
     "load_harnesses",
     "parse",
+    "parse_harnesses",
     "receiver",
 ]
 
