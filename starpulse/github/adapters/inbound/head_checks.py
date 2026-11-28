@@ -6,7 +6,7 @@ base branch and read again on each `pull_request` delivery, so a ruleset is neve
 checks are read once, then kept current by the deliveries, and a delivery whose payload names only unlinked pull requests
 reads nothing. While GitHub's quota is spent no read is made. A head's rollup is published
 only when its state changes or a required check fails again with a report not seen before, and only for a pull request that is not a draft
-and a commit that is still the head its last `pull_request` delivery named: a late check of a replaced commit would swap the rollup back and forth with the new head's.
+and a commit that is still the head its last `pull_request` delivery or pull request read named: a late check of a replaced commit would swap the rollup back and forth with the new head's.
 A check that posts pending after a final result on a head whose rollup is failing is a rerun of that head: its failures read pending until they report again.
 """
 
@@ -116,11 +116,14 @@ class HeadChecks:
         self._stamps.pop(key, None)
 
     def _heads_of(self, repository: str, sha: str, report: Report, links: Links) -> list[Head]:
-        """The open pull requests of the head, read once per commit; none when the payload names only unlinked ones."""
+        """The open pull requests of the head, read once per commit; none when the payload names only unlinked ones.
+        The read names only pull requests whose head is `sha`, so it marks `sha` pushed before their `pull_request` delivery does."""
         if report.pulls and not any(links.task_for(repository, number) for number in report.pulls):
             return []
         if (repository, sha) not in self._heads:
             _put(self._heads, (repository, sha), self._reader.pulls(repository, sha))
+            for head in self._heads[repository, sha]:
+                _put(self._pushed, (repository, head.number), sha)
         return self._heads[repository, sha]
 
     def _stale(self, repository: str, sha: str, report: Report) -> bool:
