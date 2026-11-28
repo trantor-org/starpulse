@@ -60,6 +60,8 @@ export interface KanbanTask {
   release?: ClaimRelease | null;
   /** What the holder session is doing, from the snapshot; absent unless the task is held and working. */
   sessionActivity?: { state: "working" | "idle" | "unknown"; last_turn_at?: string | null } | null;
+  /** The event the task actor awaits for the task, which the card says in place of an idle or unknown session. */
+  awaiting?: { event: string; pr?: number | null } | null;
   /** The verdict on each Board column the task may move to, by state id; a column absent here has no transition. */
   moves: Record<string, Move>;
   /** When the task entered its column, epoch seconds; 0 when the server gave no time. */
@@ -235,11 +237,12 @@ export const unheldShown = (tasks: KanbanTask[], roles: Roles, prefs: Prefs) =>
 /** What the footer chip says of a working card whose claim ended: its struck session and how long the task has sat idle. */
 export type ClaimChip = { session: string; age: string };
 
-/** What a held working card says of its session: how long it has sat idle since its last turn, `unknown` when no running session holds the task, nothing while it works. */
-export type SessionChip = { kind: "idle"; age: string } | { kind: "unknown" };
+/** What a held working card says of its session: the event the task awaits, else how long it has sat idle since its last turn, `unknown` when no running session holds the task, nothing while it works. */
+export type SessionChip = { kind: "awaiting"; what: string } | { kind: "idle"; age: string } | { kind: "unknown" };
 
 export const sessionChip = (t: KanbanTask, now: number): SessionChip | null => {
   const a = t.sessionActivity;
+  if (t.awaiting && a?.state !== "working") return { kind: "awaiting", what: `${t.awaiting.event}${t.awaiting.pr ? ` on #${t.awaiting.pr}` : ""}` };
   if (a?.state === "unknown") return { kind: "unknown" };
   return a?.state === "idle" && a.last_turn_at ? { kind: "idle", age: idleAge(now - Date.parse(a.last_turn_at) / 1000) } : null;
 };
@@ -410,7 +413,7 @@ export function kanbanTasks(sky: Sky): KanbanTask[] {
       id: a.id, title: a.title, lane: a.state, milestone: a.milestone ?? "", labels: a.labels ?? [], assignee: a.assignee ?? "", profile: a.profile ?? "", dependencies,
       openDeps: dependencies.filter((d) => open.has(d)).length, prs, runs: a.runs ?? [], description: a.description ?? "",
       live: latest ? { machine: latest.flow, state: latest.flow === "ci" ? ciState(latest.state, prs) : latest.state, at: latest.at, source: sky.flows[latest.flow]?.machine.source, skill: skillOf(sky.flows, latest.flow) } : null,
-      released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, frozen: a.frozen ?? null, sessionActivity: a.session_activity ?? null, moves: a.moves ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
+      released: a.state === roles.ready && a.previous === roles.waiting, release: a.released ?? null, frozen: a.frozen ?? null, sessionActivity: a.session_activity ?? null, awaiting: a.awaiting ?? null, moves: a.moves ?? {}, entered: a.entered ?? 0, created: a.created ?? null, workableSince: a.workable_since ?? null,
       machines: sessions.get(a.id) ?? [],
       phase: climb(sky, a.id),
       ...(a.criteria ? { acceptanceCriteria: numbered(a.criteria) } : {}),

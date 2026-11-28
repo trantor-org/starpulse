@@ -699,6 +699,10 @@ export interface RawTask {
    */
   assignee?: string | null;
   /**
+   * The event the task actor awaits for a held In Progress task; null when it awaits none.
+   */
+  awaiting?: Awaiting | null;
+  /**
    * When a Board task was created, in epoch seconds; null or absent when unknown.
    */
   created?: number | null;
@@ -840,6 +844,20 @@ export interface RawTask {
    * Since when a workable Board task has been, epoch seconds.
    */
   workable_since?: number | null;
+  [k: string]: unknown;
+}
+/**
+ * The event the task actor awaits for a held working task, which the card draws in place of an idle session.
+ */
+export interface Awaiting {
+  /**
+   * What ends the wait: `checks`, `pull request record`, `deliver machine` or `<machine> machine`.
+   */
+  event: string;
+  /**
+   * The pull request number the event is on; absent for a machine.
+   */
+  pr?: number | null;
   [k: string]: unknown;
 }
 /**

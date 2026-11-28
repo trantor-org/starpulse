@@ -27,7 +27,7 @@ from starpulse.github.model.delivery import Delivery
 from starpulse.github.model.reconcile import epoch
 from starpulse.github.ports.events import OpenWatch, Queue, Stop
 from starpulse.pulls.adapters.inbound.pull_facts import FACTS, forced_push
-from starpulse.pulls.adapters.outbound.pull_events import Record, bare_detail, opened, reopened
+from starpulse.pulls.adapters.outbound.pull_events import Record, bare_detail, opened, reopened, unjudged
 from starpulse.pulls.adapters.outbound.pull_reads import PULL_READS, READ_EVENTS, PullReads, refresh
 from starpulse.pulls.adapters.outbound.pulls import PullStore
 
@@ -85,7 +85,7 @@ def _head(record: Record, pull: Mapping[str, Any], _at: float) -> Record:
     if sha == record["headRefOid"]:
         return {"headRefOid": sha}
     forgotten = [{"name": check["name"], "result": "pending"} for check in record["requiredChecks"]]  # the old head's verdicts
-    return {"headRefOid": sha, "requiredChecks": forgotten}
+    return {"headRefOid": sha, "requiredChecks": forgotten} | unjudged(record)
 
 
 def _merge(record: Record, pull: Mapping[str, Any], at: float) -> Record:

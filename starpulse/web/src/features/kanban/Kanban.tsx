@@ -184,7 +184,9 @@ export function Card({ task, holds = 0, chain, under = false, links, cross, onCr
             </button>
           ))}
           {chip ? <ClaimWho chip={chip} /> : task.assignee ? <span className="who"><i style={{ background: profileColor(task.assignee) }} />{shortProfile(task.assignee)}</span> : <span className="who">unassigned</span>}
-          {session && (session.kind === "idle"
+          {session && (session.kind === "awaiting"
+            ? <span className="who sess" title="The task actor holds the session until this event ends the wait.">awaiting {session.what}</span>
+            : session.kind === "idle"
             ? <span className="who sess" title={`The holder session finished its last turn ${session.age} ago and has not started another.`}>session idle {session.age}</span>
             : <span className="who sess unknown" title="No running session with a transcript holds this task.">session unknown</span>)}
         </div>

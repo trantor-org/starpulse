@@ -15,6 +15,15 @@ from starpulse.contracts.api.dto.machine import HeldNext
 TrailPoint = tuple[int, int, int] | tuple[int, int, int, str]
 
 
+class Awaiting(_Api):
+    """The event the task actor awaits for a held working task, which the card draws in place of an idle session."""
+
+    event: str = Field(
+        description="What ends the wait: `checks`, `pull request record`, `deliver machine` or `<machine> machine`."
+    )
+    pr: int | None = Field(default=None, description="The pull request number the event is on; absent for a machine.")
+
+
 class SessionActivity(_Api):
     """What a held working task's holder session is doing, read from its transcript when the snapshot is drawn."""
 
@@ -92,6 +101,9 @@ class RawTask(_Api):
     )
     session_activity: SessionActivity | None = Field(
         default=None, description="What a held In Progress task's holder session is doing; absent off that lane or when unheld."
+    )
+    awaiting: Awaiting | None = Field(
+        default=None, description="The event the task actor awaits for a held In Progress task; null when it awaits none."
     )
     labels: list[str] | None = None
     dependencies: list[str] | None = Field(default=None, description="A task's dependencies, as task ids.")

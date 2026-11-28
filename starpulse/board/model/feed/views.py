@@ -121,9 +121,9 @@ class ViewMethods:
         )
 
     def _active(self, agent: dict) -> dict:
-        """A copy of a held working task's agent with its holder's `session_activity`."""
+        """A copy of a held working task's agent with its holder's `session_activity`; any other task awaits nothing."""
         if agent["state"] != self._roles.working or not agent.get("assignee"):
-            return agent
+            return {**agent, "awaiting": None} if agent.get("awaiting") else agent
         return {**agent, "session_activity": self._activity(agent["assignee"])}
 
     def drawn_task(self, task_id: str) -> tuple[dict | None, str | None]:

@@ -38,7 +38,7 @@ export interface StreamHandlers {
 const TASK =
   "id title lane profile impact urgency tier source assignee labels milestone type dependencies workable createdAt movedAt description " +
   "prs { repo number state isDraft mergeable checks threads mergedAt mergeSha } lanePath { from } criteria { text checked } " +
-  "released { at session last_renewal ttl idle } sessionActivity { state last_turn_at } skill { name states current next { kind name } } phase substate";
+  "released { at session last_renewal ttl idle } sessionActivity { state last_turn_at } awaiting { event pr } skill { name states current next { kind name } } phase substate";
 const SETTLED = "id state at created title model milestone labels";
 const MACHINE_TASK = "machine id title model task state steps active trail { state event at id }";
 const MACHINE =
@@ -60,7 +60,7 @@ interface GqlPull {
   mergedAt: string | null;
   mergeSha: string | null;
 }
-type GqlTask = Pick<RawTask, "id" | "title" | "profile" | "impact" | "urgency" | "tier" | "source" | "assignee" | "labels" | "milestone" | "type" | "dependencies" | "workable" | "description" | "criteria" | "released" | "skill"> & {
+type GqlTask = Pick<RawTask, "id" | "title" | "profile" | "impact" | "urgency" | "tier" | "source" | "assignee" | "labels" | "milestone" | "type" | "dependencies" | "workable" | "description" | "criteria" | "released" | "skill" | "awaiting"> & {
   lane: string;
   createdAt: number;
   movedAt: number;

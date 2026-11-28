@@ -108,6 +108,7 @@ def summary_agent(
         "description": "",
         "criteria": [],
         "pause_reason": None,
+        "awaiting": awaited if isinstance(awaited := (meta.get("actorMemory") or {}).get("awaited"), dict) else None,
         "moves": dict(moves),
         "created": summary["updated_at"],
         "entered": summary["updated_at"],

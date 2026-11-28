@@ -47,6 +47,12 @@ type SessionActivity {
   last_turn_at: String
 }
 
+"""The event a settled task waits on, with its pull request when it has one."""
+type Awaiting {
+  event: String!
+  pr: Int
+}
+
 """One open task as a card draws it."""
 type Task {
   id: ID!
@@ -99,6 +105,8 @@ type Task {
   interactive: Boolean!
   """What the holder's session is doing, for a held working task; null for any other."""
   sessionActivity: SessionActivity
+  """What the task actor awaits for the task (checks, a record, a machine); null when nothing."""
+  awaiting: Awaiting
   """The acceptance criteria, in order."""
   criteria: [Criterion!]!
   """Why the task waits on a person: the first line of its `## Needs attention` section; empty in any other lane."""
