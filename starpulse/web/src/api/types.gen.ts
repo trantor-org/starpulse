@@ -20,6 +20,7 @@ export interface ApiContract {
     | FreezeRequested
     | Created
     | CreatedEach
+    | DuplicatesChecked
     | MachineWritten
     | MachineRetired
     | MilestoneCreated
@@ -456,6 +457,23 @@ export interface ApiError {
   schema?: {
     [k: string]: unknown;
   } | null;
+  [k: string]: unknown;
+}
+/**
+ * A `checkDuplicates` create's answer, which files nothing: the search's record and its open candidates.
+ */
+export interface DuplicatesChecked {
+  duplicateSearch: string;
+  open: Candidate[];
+  [k: string]: unknown;
+}
+/**
+ * An open task a duplicate search found: `status` is its lane as the search index holds it.
+ */
+export interface Candidate {
+  status: string;
+  task: string;
+  title: string;
   [k: string]: unknown;
 }
 /**

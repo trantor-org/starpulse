@@ -1283,6 +1283,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/CreatedEach"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DuplicatesChecked"
                     }
                   ]
                 }
@@ -1300,6 +1303,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/CreatedEach"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DuplicatesChecked"
                     }
                   ]
                 }
@@ -3790,6 +3796,27 @@
         "title": "Brief",
         "type": "object"
       },
+      "Candidate": {
+        "description": "An open task a duplicate search found: `status` is its lane as the search index holds it.",
+        "properties": {
+          "task": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "title",
+          "status"
+        ],
+        "title": "Candidate",
+        "type": "object"
+      },
       "Changes": {
         "additionalProperties": false,
         "description": "An edit's fields by name, each as the board's writer takes it. `documentation` entries are links; `appendNotes`\nadds to the notes as they are when the write lands, and `planReason` is why the plan changes: neither has a base.",
@@ -5800,6 +5827,26 @@
           "more"
         ],
         "title": "DonePage",
+        "type": "object"
+      },
+      "DuplicatesChecked": {
+        "description": "A `checkDuplicates` create's answer, which files nothing: the search's record and its open candidates.",
+        "properties": {
+          "duplicateSearch": {
+            "type": "string"
+          },
+          "open": {
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "duplicateSearch",
+          "open"
+        ],
+        "title": "DuplicatesChecked",
         "type": "object"
       },
       "EditBase": {

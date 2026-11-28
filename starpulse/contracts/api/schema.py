@@ -58,6 +58,7 @@ from starpulse.contracts.api.dto.results import (
     Completed,
     Created,
     CreatedEach,
+    DuplicatesChecked,
     Dispatched,
     DocArchived,
     DocCreated,
@@ -145,6 +146,7 @@ class ApiContract(_Api):
         | FreezeRequested
         | Created
         | CreatedEach
+        | DuplicatesChecked
         | MachineWritten
         | MachineRetired
         | MilestoneCreated

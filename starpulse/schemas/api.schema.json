@@ -726,6 +726,27 @@
       "title": "Calibration",
       "type": "object"
     },
+    "Candidate": {
+      "description": "An open task a duplicate search found: `status` is its lane as the search index holds it.",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "title",
+        "status"
+      ],
+      "title": "Candidate",
+      "type": "object"
+    },
     "ChainState": {
       "properties": {
         "expected_days": {
@@ -2799,6 +2820,26 @@
         "more"
       ],
       "title": "DonePage",
+      "type": "object"
+    },
+    "DuplicatesChecked": {
+      "description": "A `checkDuplicates` create's answer, which files nothing: the search's record and its open candidates.",
+      "properties": {
+        "duplicateSearch": {
+          "type": "string"
+        },
+        "open": {
+          "items": {
+            "$ref": "#/$defs/Candidate"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "duplicateSearch",
+        "open"
+      ],
+      "title": "DuplicatesChecked",
       "type": "object"
     },
     "EditBase": {
@@ -9851,6 +9892,9 @@
           },
           {
             "$ref": "#/$defs/CreatedEach"
+          },
+          {
+            "$ref": "#/$defs/DuplicatesChecked"
           },
           {
             "$ref": "#/$defs/MachineWritten"

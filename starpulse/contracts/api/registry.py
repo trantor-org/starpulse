@@ -57,6 +57,7 @@ from starpulse.contracts.api.dto.results import (
     Completed,
     Created,
     CreatedEach,
+    DuplicatesChecked,
     Dispatched,
     DocArchived,
     DocCreated,
@@ -160,7 +161,7 @@ BODIES: dict[str, Any] = {
     "task_records": TaskRecords,
     "start": Started | SkillRefusal | ApiError,
     "retired": RetiredTasks | ApiError,
-    "create": Created | CreatedEach | SkillRefusal | ApiError,
+    "create": Created | CreatedEach | DuplicatesChecked | SkillRefusal | ApiError,
     "task_link_put": Link | NotHolder | DeliveredElsewhere | UnrecognisedUrl | ApiError,
     "task_link_delete": Link | NotHolder | ApiError,
     "task_put": Edited
