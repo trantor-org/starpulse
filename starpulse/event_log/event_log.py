@@ -154,7 +154,8 @@ def _watch_commits(
             # after a failed check a commit may have landed before this baseline read: wake the readers once
             if not healthy or version is None or current != version:
                 _read_head(connection, owner)
-                owner._signals.probe(connection)
+                if (signals := owner._signals) is not None:
+                    signals.probe(connection)
             if not healthy or (version is not None and current != version):
                 owner._wake()
             version, healthy = current, True
@@ -162,7 +163,8 @@ def _watch_commits(
             logger.debug("EventLog: data_version check failed: %s", exc)
             if healthy:
                 owner._forget_head()
-                owner._signals.reset()
+                if (signals := owner._signals) is not None:
+                    signals.reset()
                 owner._wake()
             connection, version, healthy = None, None, False
         del owner
@@ -283,7 +285,7 @@ class EventLog:
         self._appends = 0
         self._head: int | None = None  # the newest event id seen (0 for none), None while unknown
         self._head_moved = threading.Condition()
-        self._signals = Signals()
+        self._signals: Signals | None = None  # built by the first follower of a signal (`_signal_watch`)
         #: How often each follower woke, and whether the events head had moved.
         self.wakes = Wakes()
         self._wakes_child: str | None = None
@@ -545,7 +547,7 @@ class EventLog:
             if signal is None:
                 self.wait_for_append(seen, stop)
             else:
-                self._signals.wait(signal, seen, stop)
+                self._signal_watch().wait(signal, seen, stop)
             if not stop.is_set() and self.wakes.count(follower, self._head != head):
                 self._publish_wakes()
 
@@ -567,7 +569,13 @@ class EventLog:
 
     def _signal_version(self, sql: str) -> int:
         self._watch()
-        return self._signals.version(sql, self._read_signal)
+        return self._signal_watch().version(sql, self._read_signal)
+
+    def _signal_watch(self) -> Signals:
+        with self._lock:
+            if self._signals is None:
+                self._signals = Signals()  # a log no follower reads a signal from runs none of it, commit watch included
+            return self._signals
 
     def _read_signal(self, sql: str) -> Any:
         connection = self.engine.raw_connection()
