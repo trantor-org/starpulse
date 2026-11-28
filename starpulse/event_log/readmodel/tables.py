@@ -15,6 +15,8 @@ tasks = Table(
     Column("version", Integer, nullable=False),
     Column("created_at", Float, nullable=False),
     Column("updated_at", Float, nullable=False),
+    #: When the Task was last archived; None while it is not. `updated_at` moves with every write, this only with `Archived`.
+    Column("archived_at", Float, nullable=True),
     Column("title", Text, nullable=False),
     Column("type", String, nullable=False),
     Column("state", String, nullable=False),
@@ -52,6 +54,7 @@ tasks = Table(
     Index("ix_starpulse_tasks_live_milestone", "milestone", sqlite_where=text("archived = 0")),
     Index("ix_starpulse_tasks_live_assignee", "assignee", sqlite_where=text("archived = 0")),
     Index("ix_starpulse_tasks_archived_updated", "updated_at", sqlite_where=text("archived = 1")),
+    Index("ix_starpulse_tasks_archived_at", "archived_at", sqlite_where=text("archived = 1")),
     Index("ix_starpulse_tasks_live_set", "archived", "state", "updated_at", sqlite_where=text("archived = 0")),
 )
 

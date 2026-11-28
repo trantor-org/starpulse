@@ -25,6 +25,7 @@ from typing import Any
 lazy from sqlalchemy.engine import make_url
 
 from starpulse.board.adapters.display_settings import DisplaySettings
+from starpulse.harness_telemetry.adapters.outbound.harness_settings import HarnessSettings
 from starpulse.board.adapters.history_window import HistoryWindow
 from starpulse.board.adapters.holder_idle import dispatcher
 from starpulse.board.adapters.lane_metrics import metrics_of as lane_metrics_of
@@ -197,6 +198,7 @@ def serve_page(
     services = Services(
         machines=MachineStore(log.engine),
         harnesses=config.harnesses,
+        harness_settings=HarnessSettings(log, config.harnesses) if config.harnesses else None,
         views=config.views,
         start_session=starter(config.session_start_url),
         dispatch=dispatcher(log),

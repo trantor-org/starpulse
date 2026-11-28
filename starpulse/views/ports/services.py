@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # annotation only: a runtime import would put the scheduler in the Delivery worker's import closure
     from starpulse.board.adapters.display_settings import DisplaySettings
+    from starpulse.harness_telemetry.adapters.outbound.harness_settings import HarnessSettings
     from starpulse.board.adapters.search import SearchIndex
     from starpulse.contracts.analytics import Analytics
     from starpulse.event_log.machine_store import MachineStore
@@ -22,6 +23,8 @@ class Services:
     """What the routes use beside the Board: each field None (or empty) leaves its routes unconfigured."""
 
     harnesses: Harnesses | None = None
+    harness_settings: HarnessSettings | None = None
+    """The harness config `PUT /api/harnesses` keeps over `harnesses`; None refuses the PUT."""
     start_session: Callable[..., str] | None = None
     """Starts a task's session in the harness the page picked."""
     dispatch: Callable[[str, str, str], bool] | None = None
@@ -64,3 +67,7 @@ class Services:
     child_cpu_metrics: Callable[[], str] | None = None
     follower_wake_metrics: Callable[[], str] | None = None
     github_metrics: Callable[[], str] | None = None
+
+    def harness_config(self) -> Harnesses | None:
+        """The harness config `GET /api/harnesses` answers and `/start` checks: the kept one, else the declared one."""
+        return self.harness_settings.read() if self.harness_settings else self.harnesses

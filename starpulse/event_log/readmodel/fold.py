@@ -1,7 +1,7 @@
 """How a Task's Events fold into its read-model row.
 
 The row's keys are the read model's columns: StarPulse's own Task fields, the `fields` a deployment declares, a flat
-`meta` map, the claim, the archive marker and the Criteria. `version` is the stream version folded last."""
+`meta` map, the claim, the archive marker and time, and the Criteria. `version` is the stream version folded last."""
 
 import copy
 from collections.abc import Callable, Iterable
@@ -32,6 +32,7 @@ def _blank(event: StoredEvent) -> Row:
         "assignee": "",
         "released": None,
         "archived": False,
+        "archived_at": None,
         "fields": {},
         "meta": {},
         "criteria": [],
@@ -134,8 +135,8 @@ _RULES: dict[str, Callable[[Row, StoredEvent], None]] = {
     "TaskUnfrozen": lambda row, event: row["meta"].pop("frozen", None),
     "Transitioned": lambda row, event: row.update(state=event.payload["to"]),
     "Remapped": _remapped,
-    "Archived": lambda row, event: row.update(archived=True),
-    "Rehydrated": lambda row, event: row.update(archived=False),
+    "Archived": lambda row, event: row.update(archived=True, archived_at=event.at),
+    "Rehydrated": lambda row, event: row.update(archived=False, archived_at=None),
 }
 
 

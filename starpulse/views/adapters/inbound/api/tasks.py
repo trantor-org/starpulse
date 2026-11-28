@@ -139,7 +139,7 @@ def routes(api: Api) -> list[ApiRoute]:
 
     writes: dict[str, tuple[TaskWrite, str]] = {
         "/start": (
-            lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harnesses),
+            lambda client, raw: start_task(client, raw, feed, assign, services.start_session, services.harness_config()),
             "start",
         ),
     }

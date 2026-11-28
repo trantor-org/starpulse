@@ -128,6 +128,7 @@ _SETTINGS = {
     "archived",
     "frozen",
     "halted",
+    "faulted",
     "validate",
     "python_path",
     "types",
@@ -1651,6 +1652,26 @@ def _probe(command: object, base: Path) -> Callable[[str], bool]:
     return probe
 
 
+def _owner(command: object, base: Path) -> Callable[[str, str], str] | None:
+    """The `faulted` command, run in `base` with `{id}` replaced by the task's id and `{verdict}` by the fault the task
+    actor met working it: it prints the id of the open task that owns the fault, filing it when none does. A nonzero
+    exit, or output that is no task id, raises. With no command there is no hook."""
+    if not command:
+        return None
+    parts = shlex.split(str(command))
+
+    def owner(task: str, fault: str) -> str:
+        argv = [part.replace("{id}", task).replace("{verdict}", fault) for part in parts]
+        done = subprocess.run(argv, cwd=base, capture_output=True, text=True, timeout=HOOK_TIMEOUT, check=False)
+        printed = done.stdout.strip().upper()
+        if done.returncode or not re.fullmatch(r"[A-Z][A-Z0-9]*-\d+", printed):
+            said = done.stderr.strip() or done.stdout.strip() or "printed nothing"
+            raise ValueError(f"{shlex.join(argv)}: exit {done.returncode}: {said}")
+        return printed
+
+    return owner
+
+
 def board(settings: Mapping[str, Any], base: Path) -> Board:
     """The native board at `settings["path"]` (default `.starpulse/board`), created empty when absent, as the project named for `base`'s directory, kept current by a directory watch.
 
@@ -1723,6 +1744,7 @@ def board(settings: Mapping[str, Any], base: Path) -> Board:
             "archived": _notice(settings.get("archived"), base),
             "frozen": _notice(settings.get("frozen"), base),
             "halted": _notice(settings.get("halted"), base),
+            "faulted": _owner(settings.get("faulted"), base),
             "entered": _entered(settings.get("entered"), base, shelf, settings.get("entered_labels")),
             "edit": _editor(shelf, gate, link, roles.attention, _unstarted(roles)),
             "judge": _editor(shelf, gate, link, roles.attention, _unstarted(roles), True),

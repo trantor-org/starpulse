@@ -196,17 +196,17 @@ def archived_ids() -> Select[Any]:
 
 
 def archived_since(since: float) -> Select[Any]:
-    """How many Tasks were archived at or after `since`: one range of the archive index."""
-    return select(func.count()).where(tasks.c.archived == true(), tasks.c.updated_at >= since)
+    """How many Tasks were archived at or after `since`: one range of the archive-time index."""
+    return select(func.count()).where(tasks.c.archived == true(), tasks.c.archived_at >= since)
 
 
 def settled_done(done: str, since: float, only: str | None = None) -> Select[Any]:
-    """The archived Done Tasks changed at or after `since`, with their meta, in id order: one range of the archive index;
+    """The Done Tasks archived at or after `since`, with their meta, in id order: one range of the archive-time index;
     `only` limits them to one."""
     lane = func.lower(func.replace(tasks.c.state, " ", "_"))
     query = (
         select(*SUMMARY, tasks.c.meta)
-        .where(tasks.c.archived == true(), tasks.c.updated_at >= since, lane.in_(done_lanes(done)))
+        .where(tasks.c.archived == true(), tasks.c.archived_at >= since, lane.in_(done_lanes(done)))
         .order_by(tasks.c.id)
     )
     return query if only is None else query.where(tasks.c.id == only)

@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-__all__ = ["Harness", "HarnessError", "Harnesses", "Tier", "load_harnesses"]
+__all__ = ["Harness", "HarnessError", "Harnesses", "Tier", "load_harnesses", "parse_harnesses"]
 
 
 class HarnessError(ValueError):
@@ -84,6 +84,11 @@ class Harnesses:
             ],
         }
 
+    def as_toml(self) -> dict[str, Any]:
+        """The config as the harness file holds it, which `parse_harnesses` reads back."""
+        body = self.as_json()
+        return {"tiers": body["tiers"], "harnesses": {h.pop("name"): h for h in body["harnesses"]}}
+
 
 def _names(value: object) -> tuple[str, ...] | None:
     ok = isinstance(value, list) and all(isinstance(item, str) and item for item in value)
@@ -131,7 +136,11 @@ def _per_effort(harness: str, tier: str, key: str, raw: object, efforts: tuple[s
 
 def load_harnesses(path: Path) -> Harnesses:
     """The harnesses `path` declares, or a `HarnessError` naming what is wrong."""
-    raw = tomllib.loads(path.read_text())
+    return parse_harnesses(tomllib.loads(path.read_text()))
+
+
+def parse_harnesses(raw: dict[str, Any]) -> Harnesses:
+    """The harnesses a config in the harness file's shape declares, or a `HarnessError` naming what is wrong."""
     if not (tiers := _names(raw.get("tiers"))):
         raise HarnessError("tiers must be a non-empty list of names")
     return Harnesses(tiers, {name: _harness(name, spec, tiers) for name, spec in raw.get("harnesses", {}).items()})

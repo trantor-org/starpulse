@@ -389,8 +389,12 @@ class TaskActor:
         hold: Callable[[str, str | None], None] = _unheld,
         mergeable: Callable[[str, int], str | None] = lambda _repo, _number: None,
         checks: Callable[[dict[str, Any]], None] | None = None,
+        faulted: Callable[[str, str], str] | None = None,
     ) -> None:
         self._main_green = main_green
+        #: The open task that owns a board fault stranding a task, given the task and `<what>: <why>`, filed when none
+        #: does (`[board] faulted`): the task waits on it, so the fault's fix releases every task it stranded.
+        self._faulted = faulted
         #: Reads a stored open pull request's head checks live and stores them; once per head, again after a failed read, for a
         #: record that holds no rollup, which only an event lost before it was stored leaves.
         self._checks = checks
@@ -1726,17 +1730,15 @@ class TaskActor:
             return [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == roles.attention]
 
     def closed(self) -> list[str]:
-        """The open tasks in an `end_lanes` lane but Ready, and, when `archived` is one (`closed_lane` reads a settled task so), the Done tasks the board settled in the last day (the board
-        archives a Done task at once, so `open_tasks` never holds one), whose holders `follow_holder_idle` checks for a settle
-        while down, so a move into the lane that the actor missed still ends the session."""
-        roles = self._feed.roles
+        """The open tasks in an `end_lanes` lane but Ready, whose holders `follow_holder_idle` checks for a settle while down,
+        so a move into the lane that the actor missed still ends the session."""
+        ready = self._feed.roles.ready
         with self._lock:
-            open_ = [
+            return [
                 agent["id"]
                 for agent in self._feed.open_tasks()
-                if agent["state"] in self._end_lanes and agent["state"] != roles.ready
+                if agent["state"] in self._end_lanes and agent["state"] != ready
             ]
-            return open_ + (list(self._feed.settled()) if "archived" in self._end_lanes else [])
 
     def unstarted(self) -> list[str]:
         """The open tasks in the ready lane, whose dispatch `follow_holder_idle` replays when the actor was down for it."""
@@ -1763,8 +1765,8 @@ class TaskActor:
         ended, as the session that settled may never settle again, unless its holder is at work by then (a lens's end woke it): that
         holder settles anew. The one nudge is the only one: a settle after it with no progress (a phase or
         submachine event, a new head) moves the task to Needs attention with its session kept and its profile unchanged,
-        except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never nudged: it moves to Needs attention at once when no lifecycle rule
-        takes it (a reopened task's earlier merge), freeing its session slot. A `confirm` that
+        except a settle that an ended wait on checks or an awaited machine queued, which resets the count. A task whose own pull requests have all ended is never nudged while a lifecycle rule takes it; a reopened task's
+        earlier merge is no such rule, so its holder is nudged to deliver the reopened work on a new pull request. A `confirm` that
         raises (the holder is busy) holds the task: the next move of a machine other than the harness settles it again, and the
         session's own activity ends the hold. A `nudge` that fails moves the task to Needs attention with the reason, as a
         holder whose nudge was lost settles no more; a holder no session can reach is resumed once as `holder_ended`
@@ -1800,18 +1802,16 @@ class TaskActor:
             )
             own = self._own_prs(agent)
             records = [self._record(url) for url in own]
-            if own and all(record and record["state"] in TERMINAL for record in records):
-                # a merge GitHub has not timed yet settles on its next read; else no lifecycle rule takes the task
-                if derivation.pr_terminal(self._port, agent) is None and all(
-                    record["mergedAt"] or record["state"] != "MERGED" for record in records
-                ):
-                    self._attend(
-                        name,
-                        "every pull request it cites has ended, yet none proves the work since it entered In Progress",
-                        "settled with no pull request left to deliver",
-                        "Which?",
-                        ("deliver the reopened work on a new pull request", "close the task as done"),
-                    )
+            # a lifecycle rule takes a task whose own pull requests all ended, and a merge GitHub has not timed yet settles
+            # on its next read; a reopened task's earlier merge leaves its holder the reopened work to deliver anew
+            if (
+                own
+                and all(record and record["state"] in TERMINAL for record in records)
+                and (
+                    derivation.pr_terminal(self._port, agent) is not None
+                    or any(record["state"] == "MERGED" and not record["mergedAt"] for record in records)
+                )
+            ):
                 return
             items = agent.get("criteria", ())
             if opened := open_criteria(items):
@@ -1920,11 +1920,8 @@ class TaskActor:
                 if parked:
                     return
                 self._memory.keep(name, resumes=None)
-                self._attend(
-                    name,
-                    "its session ended again after its one resume with no progress",
-                    "keeps ending",
-                    "Which?",
+                self._park_on_fault(
+                    name, "its session ended again after its one resume with no progress", "keeps ending"
                 )
                 return
         if not self._admitted(name, "resume"):
@@ -1941,7 +1938,7 @@ class TaskActor:
             with self._lock:
                 now = self._feed.task(name, lean=True)
                 if now and now["state"] == self._feed.roles.working:  # a parked task is already with the operator
-                    self._attend(
+                    self._park_on_fault(
                         name,
                         f"no session can start for it: {error}",
                         "could not be resumed",
@@ -2032,7 +2029,7 @@ class TaskActor:
                 if (
                     agent is not None
                     and agent["state"] == self._feed.roles.ready
-                    and not self._attend(
+                    and not self._park_on_fault(
                         name,
                         reason,
                         "could not be started",
@@ -2180,9 +2177,54 @@ class TaskActor:
             if agent is None or agent["state"] != self._feed.roles.working:
                 return
             if not isinstance(error, HolderUnreachable):
-                self._attend(name, f"its holder's nudge failed: {error}", "could not be nudged")
+                self._park_on_fault(name, f"its holder's nudge failed: {error}", "could not be nudged")
                 return
         self.holder_ended(name, unreachable=True)
+
+    def _park_on_fault(
+        self,
+        name: str,
+        why: str,
+        what: str,
+        ask: str = "Which?",
+        options: Sequence[str] = ("resume it by hand", "rescope the task"),
+        again: Callable[[], None] | None = None,
+    ) -> bool:
+        """Park `name`, stranded by a board fault, in Waiting on the open task that owns the fault: off the lock the
+        `faulted` hook finds or files that owner, then a dependency on it lets the derive move the task, so the owner's
+        Done releases it. With no hook, or one that fails, the task goes to Needs attention as `_attend` puts it. A write
+        the board's lock holds up queues the park again, as the caller has already let the fault go."""
+        faulted, agent = self._faulted, self._feed.task(name, lean=True)
+        if faulted is None or agent is None:
+            return self._attend(name, why, what, ask, options, again)
+        lane = agent["state"]
+
+        def find() -> None:
+            try:
+                owner = faulted(name, f"{what}: {why}")
+            except Exception:
+                logger.exception("task actor: no task owns the fault %s %s", name, what)
+                owner = ""
+            park(owner)
+
+        def park(owner: str) -> None:
+            def retry() -> None:  # the owner found stays: the hook runs once per fault
+                self._queue(lambda: park(owner))
+
+            with self._lock:
+                now = self._feed.task(name, lean=True)
+                if now is None or now["state"] != lane:
+                    return  # the task moved on meanwhile: the fault no longer strands it
+                if owner:
+                    waits = list(dict.fromkeys([*now.get("dependencies", ()), owner]))
+                    comment = f"Blocked: {name} {what}: {why}. Parked on {owner}, which owns the fault."
+                    written = self._apply(name, {"dependencies": waits}, comment, again=retry)
+                    if written.ok or written.transient:
+                        return
+                self._attend(name, why, what, ask, options, retry)
+
+        self._queue(find)
+        return True
 
     def _attend(
         self,
@@ -2507,7 +2549,7 @@ class TaskActor:
             agent = self._feed.task(name, lean=True)
             if agent is None or agent["state"] != self._feed.roles.working or name not in self._released_visit:
                 return
-            self._attend(
+            self._park_on_fault(
                 name,
                 "no session could be started for it",
                 "left Waiting but no session started",
