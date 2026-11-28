@@ -143,7 +143,8 @@ def routes(api: Api) -> list[ApiRoute]:
             "start",
         ),
     }
-    links, tasks, store = TaskLinks(api.history.engine), ReadModel(api.history.engine), EventStore(api.history.engine)
+    # A link route builds its `TaskLinks` per request, so a test that only builds the routes runs none of its code.
+    tasks, store = ReadModel(api.history.engine), EventStore(api.history.engine)
     forges = {"github": GitHubAdapter()}
     return [
         ReadRoute("/task/{id:path}", task),
@@ -166,7 +167,7 @@ def routes(api: Api) -> list[ApiRoute]:
                     request.path_params["id"],
                     feed,
                     tasks,
-                    links,
+                    TaskLinks(api.history.engine),
                     forges,
                     board.read,
                     store,
@@ -180,7 +181,7 @@ def routes(api: Api) -> list[ApiRoute]:
             guarded(
                 "task_link_delete",
                 lambda request: delete_link(
-                    client(request), whole(request), request.path_params["id"], feed, tasks, links, forges, board.read, store
+                    client(request), whole(request), request.path_params["id"], feed, tasks, TaskLinks(api.history.engine), forges, board.read, store
                 ),
             ),
         ),

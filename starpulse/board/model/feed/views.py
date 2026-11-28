@@ -76,7 +76,7 @@ class ViewMethods:
         """`POST /api/jobs` and `GET /api/jobs/{name}`: the snapshot's `dags`, `domains`, `cues`, `pools` and `error`, with no board read."""
         with self._lock:
             return {
-                "dags": self._workflows(),
+                "dags": self._workflow_rows,
                 **declared(self._domains, self._cues, self._processes),
                 "pools": self._drawn_pools(),
                 "error": self._error(),
@@ -90,7 +90,7 @@ class ViewMethods:
     def contract_inputs(self) -> dict[str, Any]:
         """The `dags` and `cues` of the snapshot, the only two fields the doctor's contract checks read, with no board read."""
         with self._lock:
-            return {"dags": self._workflows(), "cues": list(self._cues)}
+            return {"dags": self._workflow_rows, "cues": list(self._cues)}
 
     def _hot(self) -> list[dict]:
         """The live Tasks of the read model as agents, queried on each call; `open_tasks` keeps the last build until a task changes."""
@@ -304,7 +304,7 @@ class ViewMethods:
         return {
             "graphs": [*self._drawn, "runs"],
             **modelled,
-            "dags": self._workflows(),
+            "dags": self._workflow_rows,
             "pools": self._drawn_pools(),
             "pulls": self._pulls,
             **self._ledger_marks(self._ledger_full),

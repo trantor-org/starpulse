@@ -166,6 +166,8 @@ class BoardFeed(LifecycleMixin, RecordsMixin, PullMethods, ReadMethods, RunMetho
         #: Each key a task was known by before, to the key it holds now.
         self._aliases: dict[str, str] = {}
         self._dags: dict[str, list] = {}
+        #: The workflows as the page draws them (`RunMethods._workflows`), redrawn only when `set_dags` takes new ones.
+        self._workflow_rows: list[dict] = []
         self._pools: dict[str, list] = {}
         self._runs_errors: dict[str, str] = {}
         self._pulls: dict[str, list[dict]] = {}

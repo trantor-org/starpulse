@@ -13,8 +13,7 @@ from starpulse.board.model.feed.shared import (
     read_model_detail,
     summary_agent,
 )
-from starpulse.event_log.lane_events import done_lanes
-from starpulse.machine_engine.model.transitions import lane_id
+from starpulse.machine_engine.model.transitions import done_lanes, lane_id
 
 
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)

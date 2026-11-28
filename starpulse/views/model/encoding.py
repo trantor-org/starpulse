@@ -14,7 +14,7 @@ from starpulse.contracts.api.dto.cue import Pull
 from starpulse.contracts.api.dto.flow import Settled
 from starpulse.contracts.api.dto.task import RawTask
 from starpulse.contracts.api.registry import BODIES
-from starpulse.event_log.lane_events import done_lanes
+from starpulse.machine_engine.model.transitions import done_lanes
 
 _ADAPTERS: dict[int, TypeAdapter[Any]] = {}
 

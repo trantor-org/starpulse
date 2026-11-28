@@ -21,9 +21,8 @@ from starpulse.board.model.seam import OPERATOR
 from starpulse.board.model.view import AGENT, board_columns, board_flow, cold_agent, done_ids, roles_of, task_view
 from starpulse.cli import agent_wire, step_times
 from starpulse.cli.agent_keys import LIFECYCLE_KEYS
-from starpulse.event_log.lane_events import ARCHIVED
 from starpulse.github.model.pulls import cited_pull
-from starpulse.machine_engine.model.transitions import lane_id
+from starpulse.machine_engine.model.transitions import ARCHIVED, lane_id
 from starpulse.sessions.harness import DEFAULT, configured
 from starpulse.sessions.identity import same_session
 from starpulse.sessions.ports.harness import SessionHarness

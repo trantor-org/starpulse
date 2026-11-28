@@ -2,10 +2,12 @@
 
 from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-from starpulse.sessions.ports.identity import SessionIdentity
 from starpulse.sessions.ports.notify import Line, Notifier
+
+if TYPE_CHECKING:  # annotation only: an edit to the identity port reaches no importer of this one
+    from starpulse.sessions.ports.identity import SessionIdentity
 
 
 class SessionHarness(Protocol):

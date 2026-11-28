@@ -11,6 +11,18 @@ from starpulse.event_log.readmodel.fold import Row
 from starpulse.event_log.readmodel.tables import board_keys, criteria, tasks
 
 
+#: Built once, so a read pays neither building the statement nor its cache key, which cost more than running it.
+_TASK = select(tasks).where(tasks.c.id == bindparam("id"))
+_IN_ORDER = (criteria.c.kind, criteria.c.n)
+_CRITERIA = select(criteria).where(criteria.c.task_id == bindparam("id")).order_by(*_IN_ORDER)
+#: A renamed task's criteria follow its UUID; a criterion of another UUID is not told by the key it once held.
+_UUID_CRITERIA = (
+    select(criteria)
+    .where(or_(and_(criteria.c.task_id == bindparam("id"), criteria.c.task_uuid.is_(None)), criteria.c.task_uuid == bindparam("uuid")))
+    .order_by(*_IN_ORDER)
+)
+
+
 def load(db: Connection, task_id: str) -> Row | None:
     """The Task's row, or None when it has none."""
     return load_at(db, task_id)[0]
@@ -24,13 +36,10 @@ def load_any_case(db: Connection, task_id: str) -> Row | None:
 
 def load_at(db: Connection, task_id: str) -> tuple[Row | None, int]:
     """The Task's row and the position of the last Event folded into it, or (None, 0) when it has no row."""
-    found = db.execute(select(tasks).where(tasks.c.id == task_id)).mappings().first()
+    found = db.execute(_TASK, {"id": task_id}).mappings().first()
     if found is None:
         return None, 0
-    mine = criteria.c.task_id == task_id
-    if found["uuid"]:  # a renamed task's criteria follow its UUID; a criterion of another UUID is not told by the key it once held
-        mine = or_(and_(mine, criteria.c.task_uuid.is_(None)), criteria.c.task_uuid == found["uuid"])
-    items = db.execute(select(criteria).where(mine).order_by(criteria.c.kind, criteria.c.n)).mappings()
+    items = db.execute(_UUID_CRITERIA if found["uuid"] else _CRITERIA, {"id": task_id, "uuid": found["uuid"]}).mappings()
     row = {key: value for key, value in found.items() if key not in ("seq", "uuid", *STORED)} | {
         "criteria": [{key: value for key, value in item.items() if key not in ("task_id", "task_uuid")} for item in items]
     }

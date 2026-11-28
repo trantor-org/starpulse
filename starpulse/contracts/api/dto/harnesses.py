@@ -1,6 +1,6 @@
 """`/api/harnesses` and `/api/history-window`."""
 
-from starpulse.contracts.api._base import _Api
+from starpulse.contracts.api._base import _Api, _Request
 
 
 class HarnessTier(_Api):
@@ -18,6 +18,19 @@ class HarnessBody(_Api):
     sessions: bool
     reason: str | None
     tiers: dict[str, HarnessTier]
+
+
+class HarnessTierRequest(HarnessTier):
+    """A tier as `PUT /api/harnesses` takes it: an unknown key is refused."""
+
+    model_config = _Request.model_config
+
+
+class HarnessBodyRequest(HarnessBody):
+    """A harness as `PUT /api/harnesses` takes it, whole, as GET answers it: an unknown key is refused."""
+
+    model_config = _Request.model_config
+    tiers: dict[str, HarnessTierRequest]
 
 
 class Harnesses(_Api):

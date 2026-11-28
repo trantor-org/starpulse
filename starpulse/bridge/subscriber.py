@@ -23,8 +23,7 @@ from starpulse.bridge.reach import Reach
 from starpulse.bridge.subjects import CLAIMS, INCIDENT, LANES, MACHINE, pull_number, pull_of, token
 from starpulse.bridge.subscriptions import EXPLICIT, Rules, Subscription, expand
 from starpulse.event_log.event_log import Entry
-from starpulse.event_log.lane_events import ARCHIVED, COMPLETED
-from starpulse.machine_engine.model.transitions import lane_id
+from starpulse.machine_engine.model.transitions import ARCHIVED, COMPLETED, lane_id
 
 FINISHED = frozenset({"done", COMPLETED, ARCHIVED})
 

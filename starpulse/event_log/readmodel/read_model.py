@@ -113,7 +113,7 @@ class ReadModel:
         if not uuids:
             return found
         with self._reading() as db:
-            for task, role, ref in db.execute(queries.linked(uuids, roles)):
+            for task, role, ref in db.execute(queries.LINKED, {"uuids": list(uuids), "roles": list(roles)}):
                 found.setdefault(task, []).append((role, ref))
         return found
 
@@ -185,7 +185,7 @@ class ReadModel:
     def position(self) -> int:
         """The stream position of the newest change; 0 when no Task has one."""
         with self._reading() as db:
-            return db.execute(queries.position()).scalar() or 0
+            return db.execute(queries.POSITION).scalar() or 0
 
     def machine_tasks(self, machine: str, since: float | None = None) -> list[dict[str, Any]]:
         """Each agent `machine` holds that it placed at or after `since` (None: every one), as the page draws it."""

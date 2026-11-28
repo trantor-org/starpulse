@@ -6447,6 +6447,46 @@
         "title": "HarnessBody",
         "type": "object"
       },
+      "HarnessBodyRequest": {
+        "additionalProperties": false,
+        "description": "A harness as `PUT /api/harnesses` takes it, whole, as GET answers it: an unknown key is refused.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "sessions": {
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tiers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/HarnessTierRequest"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "sessions",
+          "reason",
+          "tiers"
+        ],
+        "title": "HarnessBodyRequest",
+        "type": "object"
+      },
       "HarnessTier": {
         "properties": {
           "model": {
@@ -6494,6 +6534,55 @@
         "title": "HarnessTier",
         "type": "object"
       },
+      "HarnessTierRequest": {
+        "additionalProperties": false,
+        "description": "A tier as `PUT /api/harnesses` takes it: an unknown key is refused.",
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "efforts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "models": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "run_efforts": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "model",
+          "efforts"
+        ],
+        "title": "HarnessTierRequest",
+        "type": "object"
+      },
       "Harnesses": {
         "description": "`GET /api/harnesses`: the tiers in order and each harness with its models and efforts.",
         "properties": {
@@ -6539,7 +6628,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/HarnessBody"
+                  "$ref": "#/components/schemas/HarnessBodyRequest"
                 },
                 "type": "array"
               },

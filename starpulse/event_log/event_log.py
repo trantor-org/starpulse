@@ -48,7 +48,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
 from starpulse.event_log.checkpoints import Checkpoints
-from starpulse.event_log.follower_wakes import STATE as WAKES_STATE, Wakes
+from starpulse.event_log.follower_wakes import STATE as WAKES_STATE, samples as wake_samples
 from starpulse.event_log.migrate import require_migrated
 from starpulse.event_log.signals import Signals, read_value
 from starpulse.event_log.tables import events, settings, worker_state
@@ -241,6 +241,31 @@ def bound_wal(engine: Engine, stop: threading.Event) -> None:
                 pass
 
     threading.Thread(target=truncate, name="wal-truncate", daemon=True).start()
+
+
+#: `keep_wakes` keeps the counts again each time the wakes of this process reach another multiple, never on a timer.
+PUBLISH_EVERY = 256
+
+
+class Wakes:
+    """The wakes of each follower thread, by whether the events head had moved since its last wake. Every log builds
+    one, so it lives with the log: in `follower_wakes` it would tie that metric module to every test that opens a log."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._counts: dict[tuple[str, bool], int] = {}
+        self._total = 0
+
+    def count(self, follower: str, head_moved: bool) -> bool:
+        """Count one wake; whether the total has reached another `PUBLISH_EVERY`."""
+        with self._lock:
+            self._counts[follower, head_moved] = self._counts.get((follower, head_moved), 0) + 1
+            self._total += 1
+            return self._total % PUBLISH_EVERY == 0
+
+    def counts(self) -> dict[tuple[str, bool], int]:
+        with self._lock:
+            return dict(self._counts)
 
 
 class EventLog:
@@ -533,7 +558,7 @@ class EventLog:
     def _publish_wakes(self) -> None:
         if (child := self._wakes_child) is not None:
             try:
-                self.put_state(WAKES_STATE + child, self.wakes.samples(child))
+                self.put_state(WAKES_STATE + child, wake_samples(self.wakes.counts(), child))
             except Exception:
                 logger.warning("EventLog: the follower wakes were not kept for the metric", exc_info=True)
 

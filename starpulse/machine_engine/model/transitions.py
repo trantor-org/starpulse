@@ -9,16 +9,35 @@ if TYPE_CHECKING:  # annotation only: the machine definition imports this module
 
 lazy from starpulse.contracts.adapters import Move
 
-__all__ = ["DEFAULT_STATUSES", "Table", "board_machine", "board_moves", "lane_id", "tables"]
+__all__ = [
+    "ARCHIVED",
+    "COMPLETED",
+    "DEFAULT_STATUSES",
+    "Table",
+    "board_machine",
+    "board_moves",
+    "done_lanes",
+    "lane_id",
+    "tables",
+]
 
 
 #: Upstream's own defaults, used for a project with no `config.yml`.
 DEFAULT_STATUSES = ("To Do", "In Progress", "Done")
+#: The lane an archived task enters: its file keeps its status, so only the folder it sits in says it was archived.
+ARCHIVED = "archived"
+#: The lane a swept task enters where the Board has it: its file keeps the done status in the folder it was swept to.
+COMPLETED = "completed"
 
 
 def lane_id(status: str) -> str:
     """A status as the Board machine's state id: lower-cased, spaces as `_`."""
     return status.lower().replace(" ", "_")
+
+
+def done_lanes(done: str) -> tuple[str, str]:
+    """The lanes in which a dependency is done to its dependents: the Board's done lane `done`, or `completed`."""
+    return done, COMPLETED
 
 
 def board_machine(statuses: tuple[str, ...]) -> dict:

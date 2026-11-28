@@ -2407,8 +2407,33 @@ export interface DisplayPatch {
  * out keeps its config, and the result must still define every tier on every harness.
  */
 export interface HarnessesRequest {
-  harnesses?: HarnessBody[] | null;
+  harnesses?: HarnessBodyRequest[] | null;
   tiers?: string[] | null;
+}
+/**
+ * A harness as `PUT /api/harnesses` takes it, whole, as GET answers it: an unknown key is refused.
+ */
+export interface HarnessBodyRequest {
+  label: string;
+  name: string;
+  reason: string | null;
+  sessions: boolean;
+  tiers: {
+    [k: string]: HarnessTierRequest;
+  };
+}
+/**
+ * A tier as `PUT /api/harnesses` takes it: an unknown key is refused.
+ */
+export interface HarnessTierRequest {
+  efforts: string[];
+  model: string;
+  models?: {
+    [k: string]: string;
+  } | null;
+  run_efforts?: {
+    [k: string]: string;
+  } | null;
 }
 /**
  * `GET /api/retired[?task=<id>][&milestone=<id>][&fields=dependencies][&limit=<n>][&before=<cursor>]`: the one

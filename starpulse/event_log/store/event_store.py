@@ -6,10 +6,18 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from sqlalchemy import Connection, Engine, func, insert, select
+from sqlalchemy import Connection, Engine, bindparam, func, insert, select
 from sqlalchemy.exc import IntegrityError
 
 from starpulse.event_log.store.tables import stream_events
+
+_OF_STREAM = (
+    stream_events.c.subject_kind == bindparam("kind"),
+    stream_events.c.subject_id == bindparam("subject"),
+)
+#: Built once, so a read pays neither building the statement nor its cache key, which cost more than running it.
+_STREAM = select(stream_events).where(*_OF_STREAM, stream_events.c.version > bindparam("after")).order_by(stream_events.c.version)
+_HEAD = select(func.coalesce(func.max(stream_events.c.version), 0)).where(*_OF_STREAM)
 
 
 class StaleVersion(Exception):
@@ -137,16 +145,8 @@ class EventStore:
 
     def read_in(self, db: Connection, subject_kind: str, subject_id: str, after: int = 0) -> list[StoredEvent]:
         """`read` inside the caller's transaction `db`."""
-        query = (
-            select(stream_events)
-            .where(
-                stream_events.c.subject_kind == subject_kind,
-                stream_events.c.subject_id == subject_id,
-                stream_events.c.version > after,
-            )
-            .order_by(stream_events.c.version)
-        )
-        return [self._upcasters.apply(_stored(row)) for row in db.execute(query).mappings()]
+        found = db.execute(_STREAM, {"kind": subject_kind, "subject": subject_id, "after": after}).mappings()
+        return [self._upcasters.apply(_stored(row)) for row in found]
 
     def read_after(self, subject_kind: str, position: int, limit: int = 1000) -> list[StoredEvent]:
         """Up to `limit` Events of every `subject_kind` stream after `position`, in the order they were appended."""
@@ -180,10 +180,7 @@ class EventStore:
 
     @staticmethod
     def _head(db: Connection, subject_kind: str, subject_id: str) -> int:
-        query = select(func.coalesce(func.max(stream_events.c.version), 0)).where(
-            stream_events.c.subject_kind == subject_kind, stream_events.c.subject_id == subject_id
-        )
-        return db.execute(query).scalar_one()
+        return db.execute(_HEAD, {"kind": subject_kind, "subject": subject_id}).scalar_one()
 
 
 def _stored(row: Mapping[str, Any]) -> StoredEvent:
