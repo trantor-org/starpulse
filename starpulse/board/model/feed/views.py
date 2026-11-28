@@ -240,8 +240,11 @@ class ViewMethods:
             {**pool, "name": f"{instance}/{pool['name']}"} for instance, pools in self._pools.items() for pool in pools
         ]
 
+    def _replaying(self) -> bool:
+        return self._awaiting and not self.ready.is_set()
+
     def _error(self) -> str | None:
-        if self._awaiting and not self.ready.is_set():
+        if self._replaying():
             return f"board: reading {self._source}"
         return "; ".join(f"{instance}: {error}" for instance, error in self._runs_errors.items()) or None
 
