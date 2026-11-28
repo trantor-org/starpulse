@@ -47,4 +47,18 @@ describe("a working card's session activity", () => {
     expect(sess("TASK-3")?.textContent).toBe("session unknown");
     expect(sess("TASK-4")).toBeNull();
   });
+
+  it("draws the event a task awaits in place of idle or unknown, never over a working session", () => {
+    mount([
+      card("TASK-1", "in_progress", "@agent-a", { sessionActivity: { state: "idle", last_turn_at: turn(60) }, awaiting: { event: "checks", pr: 7 } }),
+      card("TASK-2", "in_progress", "@agent-b", { sessionActivity: { state: "unknown" }, awaiting: { event: "deliver machine" } }),
+      card("TASK-3", "in_progress", "@agent-c", { sessionActivity: { state: "working", last_turn_at: turn(5) }, awaiting: { event: "checks", pr: 7 } }),
+      card("TASK-4", "in_progress", "@agent-d", { sessionActivity: { state: "idle", last_turn_at: turn(120) } }),
+    ]);
+
+    expect(sess("TASK-1")?.textContent).toBe("awaiting checks on #7");
+    expect(sess("TASK-2")?.textContent).toBe("awaiting deliver machine");
+    expect(sess("TASK-3")).toBeNull();
+    expect(sess("TASK-4")?.textContent).toBe("session idle 2m");
+  });
 });

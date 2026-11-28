@@ -102,6 +102,7 @@ EXTRA: dict[str, frozenset[str]] = {
         {
             "model", "session_activity", "prs", "delivered", "runs", "task", "steps", "trail", "active", "pause_reason",
             "readable", "skill", "interactive", "previous", "moves", "entered", "workable", "workable_since", "stored",
+            "awaiting",
         }
     ),
     "column": frozenset({"seq", "version", "fields", "meta", "phase", "substate", "skill", "prs", "open_dependencies"}),

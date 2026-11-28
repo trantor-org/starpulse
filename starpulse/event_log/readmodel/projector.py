@@ -1,6 +1,7 @@
 """The projector: folds Task Events into the read model and remembers how far it got."""
 
 from collections.abc import Callable, Collection, Mapping, Sequence
+from functools import cached_property
 from typing import TYPE_CHECKING, Protocol
 
 from sqlalchemy import Connection, Engine, select
@@ -68,7 +69,7 @@ class Projector:
         self._store = store
         self._search = search
         self._log = log
-        self._placer = Placer(drawn, keys) if drawn is not None else None
+        self._keys = keys
         self._drawn = drawn
         #: The roles a card's phase and open-dependency count read: the board's own, unless given. None with no board drawn.
         self._roles = roles or (StateRoles.of_drawn(drawn["board"]) if drawn and "board" in drawn else None)
@@ -148,7 +149,7 @@ class Projector:
 
     def fold_machines(self) -> None:
         """Fold every `machine:events` entry past the machine checkpoint into `starpulse_machine_tasks`, a batch at a time."""
-        if self._log is None or self._placer is None:
+        if self._log is None or self._drawn is None:
             return
         position, _ = self._checkpoints.load(MACHINE_CHECKPOINT)
         tail = self._tail(position or 0)
@@ -159,6 +160,12 @@ class Projector:
                 self._save_machines(db, placed)
                 card_fields.restate_phase(db, {task for _, task in placed}, self._drawn, self._roles)
                 self._checkpoints.save(MACHINE_CHECKPOINT, batch[-1][0], conn=db)
+
+    @cached_property
+    def _placer(self) -> Placer:
+        # Built at the first machine event, so a projector that folds none never builds its machines' tables.
+        assert self._drawn is not None  # fold_machines returns before any event without them
+        return Placer(self._drawn, self._keys)
 
     def _place(
         self,

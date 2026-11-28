@@ -85,7 +85,7 @@ from starpulse.event_log.wake import StopEvent, save_on_change
 from starpulse.pulls.adapters.inbound.task_facts import ActorFacts
 from starpulse.pulls.adapters.inbound.task_memory import TaskMemory
 from starpulse.pulls.adapters.inbound.unblock import PinGate
-from starpulse.pulls.adapters.outbound.pull_requests import pull_record
+from starpulse.pulls.adapters.outbound.pull_requests import PULL_URL, pull_record
 from starpulse.pulls.model.histogram import Histogram
 from starpulse.pulls.model.pins import LiveBuild, Pins, Repo
 from starpulse.pulls.model.task_actor import TaskTouched, Trigger, derivation
@@ -872,8 +872,8 @@ class TaskActor:
                 for agent in tasks:
                     if agent["state"] != self._feed.roles.working:
                         continue
-                    if self._awaits(agent):
-                        self._memory.keep(agent["id"], awaited=True)
+                    if awaited := self._awaits(agent):
+                        self._memory.keep(agent["id"], awaited=awaited)
                     self._settle_graced(agent["id"])  # a busy hold, its grace deadline lost with the stop, settles again
             open_ids = {agent["id"] for agent in tasks}
             self._derived = {name: digest for name, digest in self._derived.items() if name in open_ids}
@@ -1787,8 +1787,8 @@ class TaskActor:
             if wait_ended and name in self._awake:
                 self._memory.keep(name, resumes=None)
                 return
-            if self._awaits(agent):
-                self._memory.keep(name, awaited=True)
+            if awaited := self._awaits(agent):
+                self._memory.keep(name, awaited=awaited)
                 return
             self._settling = name
             try:
@@ -1905,9 +1905,10 @@ class TaskActor:
                     and all((record := self._record(url)) and record["state"] in TERMINAL for url in own)
                 ):
                     return
-                if self._awaits(agent):
+                if awaited := self._awaits(agent):
                     logger.info("task actor: %s has no live session and its resume waits for an awaited event", name)
-                    self._memory.keep(name, awaited=True, resume_held=True, unreachable=True if unreachable else None)
+                    unreached = True if unreachable else None
+                    self._memory.keep(name, awaited=awaited, resume_held=True, unreachable=unreached)
                     return
             held = ("parked", self._progress(agent))  # the one resume a task gets in Needs attention, counted apart
             key = (
@@ -2302,8 +2303,9 @@ class TaskActor:
     def _last_step(placement: dict[str, Any]) -> float | None:
         return next((step["at"] for step in reversed(placement["trail"]) if step["event"] != HOLDER_RESUME), None)
 
-    def _awaits(self, agent: dict[str, Any]) -> bool:
-        """Whether an event ends the wait of a settled task: its open pull request's checks still pending (a CI pass,
+    def _awaits(self, agent: dict[str, Any]) -> dict[str, Any] | None:
+        """The event that ends the wait of a settled task, `{"event", "pr"?}` as the card draws it, None when none
+        does: its open pull request's checks still pending (a CI pass,
         fail or merge), a pull request of its own the store holds no record of yet (the record landing), a task citing
         none whose deliver machine opened its pull request (the cite or the record landing), or an unfinished
         placement in an awaited machine (`awaits`): a lens a link of the phase it is in runs, until its exit state (a
@@ -2314,10 +2316,12 @@ class TaskActor:
         for url in own:
             state, _, _, _, mergeable, checks, _, _ = self._pull_state(url)
             if not state or state == "OPEN" and checks == "pending" and mergeable != "CONFLICTING":
-                return True  # no state: the pulls consumer lags the delivery; a conflicting head runs no checks
+                # no state: the pulls consumer lags the delivery; a conflicting head runs no checks
+                found = PULL_URL.fullmatch(url)
+                return {"event": "checks" if state else "pull request record", **({"pr": int(found[2])} if found else {})}
         delivery = self._feed.machine_task("deliver", name)
         if not own and delivery and delivery["state"] in _DELIVERED:  # its cite and record lag
-            return True
+            return {"event": "deliver machine"}
         for machine in self._awaiting:
             placed = self._feed.machine_task(machine, name)
             if not placed:
@@ -2333,13 +2337,13 @@ class TaskActor:
                     and not link["exits"].get(placed["state"])
                     for parent, link in named
                 ):
-                    return True
+                    return {"event": f"{machine} machine"}
             elif not any(
                 each["id"] == placed["state"] and each["final"]
                 for each in self._feed.machines.get(machine, {}).get("states", ())
             ):
-                return True
-        return False
+                return {"event": f"{machine} machine"}
+        return None
 
     def _comments(self, agent: dict[str, Any]) -> list[str] | None:
         """The texts of the task's comments, oldest first, None when the read fails."""

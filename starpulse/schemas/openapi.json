@@ -3597,6 +3597,32 @@
         "title": "Archived",
         "type": "object"
       },
+      "Awaiting": {
+        "description": "The event the task actor awaits for a held working task, which the card draws in place of an idle session.",
+        "properties": {
+          "event": {
+            "description": "What ends the wait: `checks`, `pull request record`, `deliver machine` or `<machine> machine`.",
+            "type": "string"
+          },
+          "pr": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The pull request number the event is on; absent for a machine."
+          }
+        },
+        "required": [
+          "event"
+        ],
+        "title": "Awaiting",
+        "type": "object"
+      },
       "BlastRadius": {
         "additionalProperties": false,
         "description": "The four scores, each 0 to 3, and the sentence on the worst axis.",
@@ -9307,6 +9333,18 @@
             ],
             "default": null,
             "description": "What a held In Progress task's holder session is doing; absent off that lane or when unheld."
+          },
+          "awaiting": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Awaiting"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The event the task actor awaits for a held In Progress task; null when it awaits none."
           },
           "labels": {
             "anyOf": [

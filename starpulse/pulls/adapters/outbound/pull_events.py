@@ -52,6 +52,13 @@ REPORT_RESULTS = {"passed": "pass", "failing": "failing", "pending": "pending"}
 Record = dict[str, Any]
 
 
+def unjudged(record: Record) -> Record:
+    """What a new head does to the stored mergeability: a verdict of the head the record names (a conflict before a
+    rebase push) says nothing of the new one. A record with no head (a `PUSHED` cleared it) keeps its verdict: the
+    pre-push hook judged the new head after that push."""
+    return {"mergeable": "UNKNOWN"} if record["headRefOid"] else {}
+
+
 def bare_detail(at: float) -> Record:
     """What the Board reads of a record that no read of GitHub made: nothing known of files or the merge commit."""
     stamp = iso_utc(at)
@@ -318,11 +325,12 @@ class RecordProjection:
             if head != record["headRefOid"]:
                 if at < record["fetchedAt"]:
                     return None
-                checks = []
+                checks, moved = [], unjudged(record)
             else:
-                checks = [check for check in record["requiredChecks"] if check["name"] != job]
+                checks, moved = [check for check in record["requiredChecks"] if check["name"] != job], {}
             checks = sorted([*checks, {"name": job, "result": result}], key=lambda check: check["name"])
-            patched = record | {"headRefOid": head, "requiredChecks": checks, "fetchedAt": max(at, record["fetchedAt"])}
+            stamps = {"headRefOid": head, "requiredChecks": checks, "fetchedAt": max(at, record["fetchedAt"])}
+            patched = record | moved | stamps
             return patched if patched != record else None
 
         if self._store.amend(repo, number, change) and self._changed:

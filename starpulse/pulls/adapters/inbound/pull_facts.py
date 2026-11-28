@@ -54,9 +54,9 @@ def _posted(name: str, result: str) -> Edit:
 
 
 def _check_run(store: PullStore, delivery: Delivery, payload: Mapping[str, Any], now: float) -> bool:
-    if delivery.action != "completed":
-        return False
     run = payload["check_run"]
+    if delivery.action not in {"created", "completed"} or not run.get("conclusion"):  # created already completed arrives as `created`; a rerequest repeats an old conclusion
+        return False
     result = "pass" if run["conclusion"] in _PASSED else "failing"
     return _write(store, _at_head(store, delivery.repository, run["head_sha"]), _posted(run["name"], result), now, run["head_sha"])
 
