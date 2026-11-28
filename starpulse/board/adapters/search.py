@@ -159,8 +159,10 @@ _SHAPE = text(f"SELECT count(*), coalesce(max(rowid), 0) FROM {_VECTORS}")
 #: The number of floats in one stored vector of the model, which `warm` reads before it knows what a search would ask for.
 _DIMENSION = text(f"SELECT length(vector) / 4 FROM {_VECTORS} WHERE model = :model LIMIT 1")
 #: Each vector's task row and id, read from the key index alone (about 20 ms for 17,000 vectors, where reading them all
-#: took seconds): a row whose id differs from the held one, or that appeared or went, is the only one read again.
-_KEYS = text(f"SELECT task_row, rowid FROM {_VECTORS} WHERE model = :model")
+#: took seconds): a row whose id differs from the held one, or that appeared or went, is the only one read again. One
+#: JSON row, never a row per vector: sqlite3 releases and retakes the GIL for each row it hands back, so beside a crowd
+#: of busy request threads 19,000 rows took 6 to 11 s.
+_KEYS = text(f"SELECT json_group_array(json_array(task_row, rowid)) FROM {_VECTORS} WHERE model = :model")
 _TEXT_LIMIT = 8000
 _TIMEOUT = 10.0
 #: Seconds each attempt at a search query's vector waits, and the attempts made, by a search that waits (`wait=True`) or
@@ -473,11 +475,14 @@ class SearchIndex:
             ]
             if filtered and near_enough:
                 facets, _ = _filtered(labels, finished_since, before)
-                kept = connection.execute(
-                    text(f"SELECT rowid FROM {_TABLE} WHERE rowid IN (SELECT value FROM json_each(:rows)){facets}"),
+                kept = connection.execute(  # one JSON row, as `_KEYS` is: thousands of tasks can be near
+                    text(
+                        f"SELECT json_group_array(rowid) FROM {_TABLE} "
+                        f"WHERE rowid IN (SELECT value FROM json_each(:rows)){facets}"
+                    ),
                     {"rows": json.dumps([near.rows[at] for at in near_enough]), **narrowing},
-                ).scalars()
-                allowed = set(kept)
+                ).scalar_one()
+                allowed = set(json.loads(kept))
                 near_enough = [at for at in near_enough if near.rows[at] in allowed]
             top = max((hit["score"] for hit in hits), default=0.0) or 1.0
             for hit in hits:
@@ -517,7 +522,7 @@ class SearchIndex:
                 shape = tuple(connection.execute(_SHAPE).one())
                 if held is not None and shape == self._shape:
                     return held
-                keys = dict(connection.execute(_KEYS, {"model": self._recipe}).all())
+                keys = dict(json.loads(connection.execute(_KEYS, {"model": self._recipe}).scalar_one()))
             changed = {row for row, key in keys.items() if self._keys.get(row) != key} | (self._keys.keys() - keys)
             if len(changed) > _RELOAD_AT:
                 held = None
