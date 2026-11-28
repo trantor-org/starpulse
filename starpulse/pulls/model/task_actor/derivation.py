@@ -247,7 +247,7 @@ def pr_terminal(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
     """The merge evidence when the task cites pull requests and every one has ended, else None. A check task that
     cites only other tasks' pull requests has no delivery of its own to wait for: its checked criteria close it.
     Review proves its work on `proof_prs`; every other lane still waits on its own pull requests only. In the
-    working lane the latest merge must follow the task's work floor."""
+    working lane the latest merge must follow the task's work floor, unless the holder settles on `nothing_to_fix`."""
     own = facts.own_prs(agent)
     if not own and agent["prs"] and agent["type"] == "check":
         if not all(criterion["checked"] for criterion in agent.get("criteria", ())):
@@ -278,6 +278,7 @@ def pr_terminal(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
         agent["state"] == facts.roles.working
         and merged is not None
         and merged < work_floor(facts, agent)
+        and not nothing_to_fix(facts, agent)
     ):
         return None  # the merge predates the work floor: a reopened task's earlier delivery proves nothing
     # the board's guard wants the evidence to name every cited pull request: a reference is named as one, not proof
@@ -285,6 +286,13 @@ def pr_terminal(facts: TaskFacts, agent: Agent) -> tuple[str, str] | None:
         parts.append(f"cites as a reference, not proof: {', '.join(references)}")
     proof = "; ".join(parts)
     return proof, f"{MERGE_EVIDENCE} {proof}"
+
+
+def nothing_to_fix(facts: TaskFacts, agent: Agent) -> bool:
+    """Whether the holder's session settles on a newest comment (the actor's notes aside) that opens `NO_MERGE`: a
+    reopened task whose holder found nothing to fix, so its earlier merge is the delivery again. The merge alone is no
+    proof, and the statement alone none while the holder may still be at work."""
+    return facts.settling(agent["id"]) and _requested(NO_MERGE)(facts, agent) is not None
 
 
 def work_floor(facts: TaskFacts, agent: Agent) -> float:

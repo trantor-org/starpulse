@@ -1155,7 +1155,9 @@ move the machine declares. For a task in a state with `waits`, the first fact th
   a read of GitHub) is not terminal until the store's next read settles it.
 - `pr_merged`: `pr_terminal` holds and at least one cited pull request merged, so a task whose every pull request
   closed unmerged stays. A state that parks work for a person may declare `waits: {pr_merged: MERGED}` to close a task
-  whose delivery merged while it waited there.
+  whose delivery merged while it waited there. In the working lane a merge older than the task's latest entry (a
+  reopened task) holds only when its holder's session settles on a newest comment opening `No merge needed:`, the
+  holder's word that the reopen left nothing to fix.
 - `pr_closed_unmerged`: `pr_terminal` holds and no cited pull request merged. A state that waits on it moves the task
   to Needs attention, asking whether to redeliver or archive it.
   A task whose comments show an `Operator answer` after the last comment carrying an ask's question is not parked on it
