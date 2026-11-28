@@ -76,7 +76,7 @@ is public for the names listed here:
 - The `Task` model in `starpulse/contracts/task.py`, internal to StarPulse and no adapter import, defines once every field a task's requests, Events, read-model rows and responses carry. `ALIASES` maps each name a surface gives a field other than its canonical one (the create and edit bodies' `brief` is the input alias of `description`), and `tests/unit/contracts/test_task_model.py` fails when a surface names a field `Task` lacks or types one differently.
 - `starpulse.event_log`: the database event log readers tail; [Build a consumer](consumers.md) shows a reader that keeps its cursor in its own store.
 - `starpulse.flow_metrics`: the history store, and placing a task's events on a machine.
-- `starpulse.harness_telemetry`: loading the harness file and the tiers and efforts an agent profile names, and decoding Claude Code's OpenTelemetry log export.
+- `starpulse.harness_telemetry`: loading the harness file or a config in its shape and the tiers and efforts an agent profile names, and decoding Claude Code's OpenTelemetry log export.
 - `starpulse.machine_engine`: loading and validating a machine and the `Registry` of guards and actions, replaying recorded moves (`check_lanes`, `check_events`) and event traces (`conform`, `replay`, `runs`) against it, the paths and gate `bypasses` it generates, how it is described to the page and its workflows are named, and drafting one from a Mermaid state diagram (`draft_machine`).
 - `starpulse.runs`: the runs instance a config file declares (`RunsInstance`).
 - `starpulse.sessions`: what an agent session did: the Activity each tool call performed (`activities`, labels with no arguments).
