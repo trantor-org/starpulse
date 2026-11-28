@@ -1730,15 +1730,17 @@ class TaskActor:
             return [agent["id"] for agent in self._feed.open_tasks() if agent["state"] == roles.attention]
 
     def closed(self) -> list[str]:
-        """The open tasks in an `end_lanes` lane but Ready, whose holders `follow_holder_idle` checks for a settle while down,
-        so a move into the lane that the actor missed still ends the session."""
+        """The open tasks in an `end_lanes` lane but Ready, and, when `archived` is one, the Done tasks archived in the last
+        day (by archive time, which an edit to an archived task never moves), whose holders `follow_holder_idle` checks for
+        a settle while down, so a move into the lane that the actor missed still ends the session."""
         ready = self._feed.roles.ready
         with self._lock:
-            return [
+            open_ = [
                 agent["id"]
                 for agent in self._feed.open_tasks()
                 if agent["state"] in self._end_lanes and agent["state"] != ready
             ]
+            return open_ + (list(self._feed.settled()) if "archived" in self._end_lanes else [])
 
     def unstarted(self) -> list[str]:
         """The open tasks in the ready lane, whose dispatch `follow_holder_idle` replays when the actor was down for it."""
